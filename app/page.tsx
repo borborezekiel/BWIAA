@@ -16,8 +16,8 @@ export default function BWIAAElection2026() {
   const chapters = ["Harbel and RIA", "Monrovia", "Buchanan", "Gbarnga", "Kakata", "Voinjama", "Zwedru", "Robertsport", "Greenville", "Harper", "Sanniquellie", "Cestos City"];
   
   const positions = [
-    { title: "President", candidates: ["Candidate 1", "Candidate 2"] },
-    { title: "Vice President (Administration)", candidates: ["Candidate A", "Candidate B"] },
+    { title: "President", candidates: ["Candidate A", "Candidate B"] },
+    { title: "Vice President (Administration)", candidates: ["Candidate C", "Candidate D"] },
     { title: "Secretary General", candidates: ["Candidate C", "Candidate D"] },
     { title: "Financial Secretary", candidates: ["Candidate E", "Candidate F"] },
     { title: "Treasurer", candidates: ["Candidate G", "Candidate H"] },
@@ -25,7 +25,6 @@ export default function BWIAAElection2026() {
     { title: "CHAPLAIN", candidates: ["Candidate K", "Candidate L"] }
   ];
 
-  // --- 1. THE BRAIN: Loading User & Real-Time Setup ---
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -54,10 +53,9 @@ export default function BWIAAElection2026() {
     if (data) setVotes(data);
   }
 
-  // --- 2. THE GATE: Chapter & Class Registration ---
   async function registerAndLogin(chapter: string, classYear: string) {
     if (!classYear || classYear.length < 4) {
-      setErrorMessage("Please enter a valid 4-digit Graduating Class Year (e.g. 1995)");
+      setErrorMessage("Please enter a valid 4-digit Graduating Class Year.");
       return;
     }
     localStorage.setItem('pending_voter_data', JSON.stringify({ chapter, classYear }));
@@ -84,41 +82,29 @@ export default function BWIAAElection2026() {
     }
   }, [user]);
 
-  // --- 3. THE BALLOT: Casting the Vote ---
   async function castBallot(pos: string, cand: string) {
+    // This part ensures the CLASS YEAR is saved with the vote
     const { data, error } = await supabase.from('votes').insert([{ 
       position_name: pos, 
       candidate_name: cand, 
       voter_name: user.email, 
       voter_id: user.id, 
       chapter: myChapter, 
-      class_year: myClass // This fixes the "Unknown" issue
+      class_year: myClass
     }]).select().single();
 
     if (error) setErrorMessage(`INTEGRITY ALERT: Already voted for ${pos}.`);
     else setReceipt(data);
   }
 
-  // --- 4. STATS ENGINE ---
-  const getTurnoutByDecade = () => {
-    const decades: any = {};
-    votes.forEach(v => {
-      const year = v.class_year || "Unknown";
-      const decade = year !== "Unknown" ? year.substring(0, 3) + '0s' : "Unknown";
-      decades[decade] = (decades[decade] || 0) + 1;
-    });
-    return decades;
-  };
+  if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-black animate-pulse uppercase tracking-[0.5em]">Syncing National Ledger...</div>;
 
-  if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white font-black animate-pulse uppercase tracking-[0.5em]">Syncing National Ledger...</div>;
-
-  // --- VIEW: CHAPTER & CLASS WALL ---
   if (!myChapter) {
     return (
       <div className="min-h-screen bg-slate-950 p-6 flex flex-col items-center justify-center">
-        <h1 className="text-white text-6xl font-black mb-4 uppercase italic">BWIAA 2026</h1>
+        <h1 className="text-white text-5xl font-black mb-4 uppercase italic">BWIAA 2026</h1>
         <div className="bg-white p-6 rounded-3xl mb-8 shadow-2xl w-full max-w-sm border-t-8 border-red-600">
-            <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest text-center">Your Graduating Class Year</label>
+            <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest text-center italic">Your Graduating Class Year</label>
             <input 
               id="class-input"
               type="number" 
@@ -131,7 +117,7 @@ export default function BWIAAElection2026() {
             <button key={c} onClick={() => {
               const cy = (document.getElementById('class-input') as HTMLInputElement).value;
               registerAndLogin(c, cy);
-            }} className="bg-slate-900 border border-white/5 hover:border-red-600 p-8 rounded-[2.5rem] text-white font-black transition-all flex flex-col items-center gap-4 active:scale-95 group">
+            }} className="bg-slate-900 border border-white/5 hover:border-red-600 p-8 rounded-[2.5rem] text-white font-black transition-all flex flex-col items-center gap-4 group">
               <Vote size={32} className="text-red-600 group-hover:text-white" />
               <span className="text-sm uppercase tracking-widest">{c}</span>
             </button>
@@ -143,44 +129,35 @@ export default function BWIAAElection2026() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20">
-      {/* HEADER */}
       <header className="bg-white border-b-2 p-6 mb-10 sticky top-0 z-40 shadow-sm flex justify-between items-center max-w-5xl mx-auto rounded-b-[2.5rem]">
         <div className="flex items-center gap-3">
             <div className="bg-red-600 text-white p-2 rounded-xl"><ShieldCheck size={20}/></div>
-            <div className="font-black text-slate-900 uppercase leading-none">BWIAA<br/><span className="text-[10px] text-red-600">{myChapter} • CLASS OF {myClass}</span></div>
+            <div className="font-black text-slate-900 uppercase leading-none">BWIAA<br/><span className="text-[10px] text-red-600 italic font-bold uppercase">{myChapter} • CLASS OF {myClass || "Verifying..."}</span></div>
         </div>
         <button onClick={() => { localStorage.clear(); supabase.auth.signOut().then(() => window.location.href = window.location.origin); }} className="bg-slate-100 p-3 rounded-xl text-slate-400 hover:text-red-600 transition-all"><LogOut size={20}/></button>
       </header>
 
-      {/* ERROR MODAL */}
       {errorMessage && (
-        <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
           <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-red-600">
             <AlertCircle size={64} className="text-red-600 mx-auto mb-6" />
-            <h2 className="text-3xl font-black text-slate-900 uppercase italic mb-4">Ballot Denied</h2>
-            <p className="text-slate-500 mb-8 font-medium">{errorMessage}</p>
-            <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 text-white font-black py-5 rounded-2xl">UNDERSTOOD</button>
+            <h2 className="text-3xl font-black text-slate-900 uppercase italic mb-4 tracking-tighter">Ballot Denied</h2>
+            <p className="text-slate-500 mb-8 font-medium italic">{errorMessage}</p>
+            <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 text-white font-black py-5 rounded-2xl uppercase tracking-widest">Understood</button>
           </div>
         </div>
       )}
 
-      {/* RECEIPT MODAL */}
       {receipt && (
-        <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
           <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-green-500">
             <CheckCircle2 size={64} className="text-green-500 mx-auto mb-6" />
-            <h2 className="text-3xl font-black text-slate-900 uppercase italic mb-4">Vote Verified</h2>
-            <div className="bg-slate-50 p-6 rounded-3xl text-left font-mono text-[10px] mb-8 space-y-1">
-                <p>CERTIFICATE: {receipt.id}</p>
-                <p>CLASS: {receipt.class_year}</p>
-                <p>STAMP: {new Date(receipt.created_at).toLocaleString()}</p>
-            </div>
-            <button onClick={() => setReceipt(null)} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl">CONTINUE</button>
+            <h2 className="text-3xl font-black text-slate-900 uppercase italic mb-4 italic tracking-tighter">Vote Verified</h2>
+            <button onClick={() => setReceipt(null)} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl uppercase tracking-widest">Close Receipt</button>
           </div>
         </div>
       )}
 
-      {/* MAIN BALLOT */}
       <main className="max-w-4xl mx-auto px-4 space-y-12">
         {positions.map(pos => (
           <section key={pos.title} className="bg-white p-8 md:p-12 rounded-[4rem] shadow-xl border-b-[18px] border-slate-200">
@@ -192,7 +169,7 @@ export default function BWIAAElection2026() {
                 const total = chapterVotes.length;
                 const percent = total > 0 ? (count / total) * 100 : 0;
                 return (
-                  <button key={cand} onClick={() => castBallot(pos.title, cand)} className="relative w-full text-left p-8 rounded-[2.5rem] border-2 border-slate-50 hover:border-red-600 transition-all overflow-hidden bg-slate-50/50 active:scale-95 group">
+                  <button key={cand} onClick={() => castBallot(pos.title, cand)} className="relative w-full text-left p-8 rounded-[2.5rem] border-2 border-slate-50 hover:border-red-600 transition-all overflow-hidden bg-slate-50/50 active:scale-95 group shadow-sm">
                     <div className="relative z-10 flex justify-between items-center font-black">
                         <span className="text-xl group-hover:text-red-700 uppercase tracking-tight">{cand}</span>
                         <div className="text-right">
@@ -209,38 +186,28 @@ export default function BWIAAElection2026() {
         ))}
       </main>
 
-      {/* CHAIRPERSON INTELLIGENCE DASHBOARD */}
+      {/* NATIONAL AUDIT INTELLIGENCE LOG */}
       <footer className="max-w-4xl mx-auto mt-24 mx-4 p-12 bg-slate-900 rounded-[3.5rem] text-white shadow-3xl relative overflow-hidden">
         <Fingerprint size={200} className="absolute -right-10 -bottom-10 opacity-5" />
         <div className="relative z-10">
             <div className="flex flex-col md:flex-row justify-between items-center border-b border-white/10 pb-8 mb-10 gap-4">
-                <h3 className="text-2xl font-black italic uppercase text-blue-400 tracking-tighter flex items-center gap-2"><TrendingUp /> Audit Intelligence</h3>
-                <span className="bg-blue-600 px-6 py-2 rounded-full font-black text-2xl shadow-xl">{votes.length} BALLOTS CAST</span>
+                <h3 className="text-2xl font-black italic uppercase text-blue-400 tracking-tighter flex items-center gap-2"><Activity /> Audit Log Intelligence</h3>
+                <span className="bg-blue-600 px-6 py-2 rounded-full font-black text-2xl shadow-xl">{votes.length} NATIONAL BALLOTS</span>
             </div>
             
-            <div className="grid md:grid-cols-2 gap-10">
-                <div className="bg-white/5 p-6 rounded-3xl border border-white/5">
-                    <h4 className="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest">Turnout by Decade</h4>
-                    {Object.entries(getTurnoutByDecade()).map(([decade, count]: any) => (
-                        <div key={decade} className="flex justify-between py-2 border-b border-white/5 last:border-0">
-                            <span className="text-xs font-bold text-slate-300">The {decade}</span>
-                            <span className="text-sm font-black text-blue-400">{count} Votes</span>
-                        </div>
-                    ))}
+            <div className="space-y-4 max-h-80 overflow-y-auto pr-4 scrollbar-hide">
+              {votes.map((v, i) => (
+                <div key={i} className="flex flex-col md:flex-row md:justify-between items-start md:items-center py-4 border-b border-white/5 last:border-0 gap-2 italic">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black uppercase text-blue-400 tracking-[0.2em]">Verified Ballot • {v.chapter}</span>
+                    <span className="text-xs font-bold text-slate-300 italic">{v.voter_name}</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-[10px] bg-slate-800 px-3 py-1 rounded-lg text-red-500 font-black uppercase tracking-widest">CLASS OF {v.class_year}</span>
+                    <span className="text-xs font-black text-white uppercase tracking-tighter italic">→ Choice: {v.candidate_name}</span>
+                  </div>
                 </div>
-
-                <div className="bg-black/20 p-6 rounded-3xl border border-white/5">
-                    <h4 className="text-[10px] font-black uppercase text-slate-500 mb-4 tracking-widest italic">Live National Feed</h4>
-                    <div className="space-y-3 max-h-48 overflow-y-auto pr-2 scrollbar-hide">
-                        {votes.slice(0, 10).map((v, i) => (
-                            <div key={i} className="text-[10px] flex justify-between items-center border-b border-white/5 pb-2">
-                                <span className="text-slate-400 truncate w-24 italic">{v.voter_name}</span>
-                                <span className="text-red-500 font-black">CLASS OF {v.class_year}</span>
-                                <span className="text-blue-400 font-bold">→ {v.candidate_name}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+              ))}
             </div>
         </div>
       </footer>
