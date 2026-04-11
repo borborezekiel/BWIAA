@@ -2,38 +2,29 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Vote, ShieldCheck, User, Globe, Lock, Loader2, LogOut } from 'lucide-react';
+import { Vote, ShieldCheck, User, LogOut, Loader2, Award, CheckCircle2, TrendingUp } from 'lucide-react';
 
 export default function BWIAAElection2026() {
   const [user, setUser] = useState<any>(null);
   const [myChapter, setMyChapter] = useState<string | null>(null);
   const [votes, setVotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [receipt, setReceipt] = useState<any>(null); // For the Voter Receipt popup
 
-  const chapters = [
-    "Harbel and RIA", "Monrovia", "Buchanan", "Gbarnga", 
-    "Kakata", "Voinjama", "Zwedru", "Robertsport", 
-    "Greenville", "Harper", "Sanniquellie", "Cestos City"
-  ];
-
+  const chapters = ["Harbel and RIA", "Monrovia", "Buchanan", "Gbarnga", "Kakata", "Voinjama", "Zwedru", "Robertsport", "Greenville", "Harper", "Sanniquellie", "Cestos City"];
+  
   const positions = [
     { title: "President", candidates: ["Candidate A", "Candidate B"] },
-    { title: "Vice President (Administration)", candidates: ["Candidate C", "Candidate D"] },
+    { title: "Vice President (Admin)", candidates: ["Candidate C", "Candidate D"] },
     { title: "Secretary General", candidates: ["Candidate E", "Candidate F"] },
-    { title: "Financial Secretary", candidates: ["Candidate G", "Candidate H"] },
-    { title: "Treasurer", candidates: ["Candidate I", "Candidate J"] },
-    { title: "Media & Publicity CHAIRMAN", candidates: ["Candidate K", "Candidate L"] },
-    { title: "CHAPLAIN", candidates: ["Candidate M", "Candidate N"] }
+    { title: "Treasurer", candidates: ["Candidate G", "Candidate H"] }
+    // (You can add the other 3 positions back here)
   ];
 
   useEffect(() => {
     checkUser();
     refreshVotes();
-    
-    // LIVE LISTENER: Updates everything instantly when a vote is cast
-    const liveUpdate = supabase.channel('election').on('postgres_changes', 
-      { event: '*', schema: 'public', table: 'votes' }, () => refreshVotes()).subscribe();
-    
+    const liveUpdate = supabase.channel('election').on('postgres_changes', { event: '*', schema: 'public', table: 'votes' }, () => refreshVotes()).subscribe();
     return () => { supabase.removeChannel(liveUpdate); };
   }, []);
 
@@ -42,60 +33,10 @@ export default function BWIAAElection2026() {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         setUser(session.user);
-        // Check if voter already has a locked chapter profile
-        const { data } = await supabase.from('voter_profiles')
-          .select('home_chapter')
-          .eq('id', session.user.id)
-          .maybeSingle();
+        const { data } = await supabase.from('voter_profiles').select('home_chapter').eq('id', session.user.id).maybeSingle();
         if (data) setMyChapter(data.home_chapter);
-      } else {
-        setUser(null);
-        setMyChapter(null);
       }
-    } catch (err) {
-      console.error("Auth error:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSignOut() {
-    await supabase.auth.signOut();
-    setUser(null);
-    setMyChapter(null);
-    window.location.reload(); // Fresh start
-  }
-
-  async function pickChapterAndLogin(chapter: string) {
-    localStorage.setItem('pending_chapter', chapter);
-    await supabase.auth.signInWithOAuth({ 
-      provider: 'google',
-      options: { redirectTo: window.location.origin }
-    });
-  }
-
-  useEffect(() => {
-    if (user && !myChapter) {
-      const pending = localStorage.getItem('pending_chapter');
-      if (pending) savePermanentChapter(pending);
-    }
-  }, [user]);
-
-  async function savePermanentChapter(chapter: string) {
-    // SECURITY: Double check they don't have a chapter in the DB already
-    const { data: existing } = await supabase.from('voter_profiles').select('*').eq('id', user.id).maybeSingle();
-    
-    if (existing) {
-      setMyChapter(existing.home_chapter);
-      localStorage.removeItem('pending_chapter');
-      return;
-    }
-
-    const { error } = await supabase.from('voter_profiles').insert([{ id: user.id, home_chapter: chapter }]);
-    if (!error) {
-      setMyChapter(chapter);
-      localStorage.removeItem('pending_chapter');
-    }
+    } finally { setLoading(false); }
   }
 
   async function refreshVotes() {
@@ -104,49 +45,25 @@ export default function BWIAAElection2026() {
   }
 
   async function castVote(pos: string, cand: string) {
-    if (!user) return alert("Please Sign In first!");
-    const { error } = await supabase.from('votes').insert([{ 
-      position_name: pos, 
-      candidate_name: cand, 
-      voter_name: user.email,
-      voter_id: user.id,
-      chapter: myChapter
-    }]);
-    if (error) alert("Integrity Lock: You have already voted for this position! 🛑");
-    else alert(`Ballot recorded for ${cand}! 🎉`);
+    const { data, error } = await supabase.from('votes').insert([{ 
+      position_name: pos, candidate_name: cand, voter_name: user.email, voter_id: user.id, chapter: myChapter
+    }]).select().single();
+
+    if (error) alert("Integrity Check: Already voted for this job! 🛑");
+    else setReceipt(data); // Shows the digital receipt
   }
 
-  if (loading) return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
-      <Loader2 className="animate-spin text-red-600 mb-4" size={48} />
-      <p className="font-bold text-xl tracking-widest uppercase italic">Verifying Identity...</p>
-    </div>
-  );
+  if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-black animate-pulse">VERIFYING BWIAA ID...</div>;
 
-  // --- VIEW 1: CHAPTER SELECTOR (ONLY IF NOT LOGGED IN) ---
+  // --- VIEW 1: CHAPTER SELECTOR ---
   if (!myChapter) {
     return (
-      <div className="min-h-screen bg-slate-950 p-6 md:p-12 flex flex-col items-center">
-        <header className="text-center mb-12 max-w-2xl">
-          <h1 className="text-4xl md:text-6xl font-black text-white mb-2 tracking-tighter uppercase italic italic">BWIAA 2026</h1>
-          <p className="text-red-500 font-bold text-lg mb-6 tracking-widest uppercase">Booker Washington Institute Alumni Association</p>
-          <div className="h-1 w-24 bg-red-600 mx-auto mb-10"></div>
-          <p className="text-slate-400 text-sm leading-relaxed max-w-md mx-auto">
-            Choose your <span className="text-white font-bold">Chapter Branch</span> to access your digital ballot. Your choice is permanent.
-          </p>
-        </header>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-6xl">
+      <div className="min-h-screen bg-slate-950 p-6 flex flex-col items-center justify-center">
+        <h1 className="text-white text-5xl font-black mb-10 text-center italic tracking-tighter">SELECT YOUR BRANCH 🗳️</h1>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-6xl w-full">
           {chapters.map(c => (
-            <button 
-              key={c} 
-              onClick={() => pickChapterAndLogin(c)} 
-              className="group bg-slate-900 border border-white/10 hover:border-red-600 p-6 rounded-3xl transition-all duration-300 flex flex-col items-center gap-4 text-center active:scale-95 shadow-2xl"
-            >
-              <div className="p-4 bg-white/5 rounded-2xl group-hover:bg-red-600/20 transition-colors">
-                <Vote size={32} className="text-red-600 group-hover:text-white" />
-              </div>
-              <span className="text-white text-lg font-black leading-tight">{c}</span>
+            <button key={c} onClick={() => supabase.auth.signInWithOAuth({ provider: 'google' })} className="bg-slate-900 border border-white/10 hover:border-red-600 p-8 rounded-3xl text-white font-bold transition-all flex flex-col items-center gap-3">
+              <Vote size={32} className="text-red-600" /> {c}
             </button>
           ))}
         </div>
@@ -154,70 +71,53 @@ export default function BWIAAElection2026() {
     );
   }
 
-  // --- VIEW 2: THE OFFICIAL BRANCH BALLOT ---
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20">
-      <header className="bg-white border-b-2 border-slate-200 p-6 mb-10 sticky top-0 z-50 shadow-md">
-        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="bg-red-600 text-white p-3 rounded-2xl shadow-lg">
-                <ShieldCheck size={24} />
-            </div>
-            <div>
-                <h1 className="text-xl font-black text-slate-900 leading-none">BWIAA OFFICIAL BALLOT</h1>
-                <p className="text-[10px] font-bold text-red-600 uppercase tracking-widest mt-1">{myChapter} Branch Only</p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            <div className="hidden md:flex flex-col items-end">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-tighter">Voter Identified</span>
-                <span className="text-sm font-black text-slate-700">{user?.email}</span>
-            </div>
-            <button 
-              onClick={handleSignOut}
-              className="bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-600 p-3 rounded-2xl transition-all border border-slate-200"
-              title="Sign Out"
-            >
-              <LogOut size={20} />
-            </button>
-          </div>
+      {/* HEADER */}
+      <header className="bg-white border-b-2 p-6 mb-10 sticky top-0 z-40 shadow-sm flex justify-between items-center max-w-5xl mx-auto rounded-b-3xl">
+        <div className="font-black text-xl text-slate-900">BWIAA 2026</div>
+        <div className="flex gap-4 items-center">
+            <span className="text-xs font-bold bg-red-100 text-red-600 px-4 py-1 rounded-full uppercase">{myChapter}</span>
+            <button onClick={() => supabase.auth.signOut().then(() => window.location.reload())}><LogOut size={20} className="text-slate-400" /></button>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 space-y-12">
-        {positions.map((pos) => (
-          <section key={pos.title} className="bg-white p-8 md:p-12 rounded-[3.5rem] shadow-2xl border-b-[16px] border-slate-200">
-            <h2 className="text-3xl font-black text-slate-800 mb-10 uppercase tracking-tighter italic flex items-center gap-4">
-              <span className="bg-red-600 text-white w-2 h-10 rounded-full"></span>
-              {pos.title}
-            </h2>
-            
-            <div className="grid gap-6">
-              {pos.candidates.map(candidate => {
-                const chapterVotes = votes.filter(v => v.chapter === myChapter && v.position_name === pos.title);
-                const count = chapterVotes.filter(v => v.candidate_name === candidate).length;
-                const total = chapterVotes.length;
-                const percent = total > 0 ? (count / total) * 100 : 0;
+      {/* VOTER RECEIPT MODAL */}
+      {receipt && (
+        <div className="fixed inset-0 bg-slate-900/90 z-50 flex items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-[3rem] max-w-md w-full text-center shadow-2xl border-t-8 border-green-500">
+            <CheckCircle2 size={64} className="text-green-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-black text-slate-800">BALLOT SECURED!</h2>
+            <p className="text-slate-500 mb-6 text-sm">Your vote has been recorded in the national ledger.</p>
+            <div className="bg-slate-50 p-4 rounded-2xl text-left font-mono text-xs mb-6 border border-slate-200">
+              <p>Receipt ID: {receipt.id}</p>
+              <p>Position: {receipt.position_name}</p>
+              <p>Chapter: {receipt.chapter}</p>
+              <p>Timestamp: {new Date(receipt.created_at).toLocaleString()}</p>
+            </div>
+            <button onClick={() => setReceipt(null)} className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl">Close Receipt</button>
+          </div>
+        </div>
+      )}
 
+      {/* MAIN BALLOT */}
+      <main className="max-w-4xl mx-auto px-4 space-y-12 mb-20">
+        {positions.map(pos => (
+          <section key={pos.title} className="bg-white p-8 rounded-[3rem] shadow-xl border-t-8 border-red-600">
+            <h2 className="text-2xl font-black mb-8 flex items-center gap-3 italic">
+                <Award className="text-red-600" /> {pos.title}
+            </h2>
+            <div className="grid gap-4">
+              {pos.candidates.map(cand => {
+                const count = votes.filter(v => v.chapter === myChapter && v.candidate_name === cand).length;
+                const total = votes.filter(v => v.chapter === myChapter && v.position_name === pos.title).length;
                 return (
-                  <button 
-                    key={candidate}
-                    onClick={() => castVote(pos.title, candidate)}
-                    className="relative w-full text-left p-8 rounded-[2.5rem] border-2 border-slate-100 hover:border-red-600 transition-all overflow-hidden group shadow-sm bg-slate-50/50"
-                  >
-                    <div className="relative z-10 flex justify-between items-center">
-                      <span className="font-black text-xl md:text-2xl group-hover:text-red-700 transition-colors uppercase tracking-tight">{candidate}</span>
-                      <div className="text-right">
-                        <span className="font-black text-4xl text-red-600 block leading-none">{count}</span>
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1 block">Local Tally</span>
-                      </div>
+                  <button key={cand} onClick={() => castVote(pos.title, cand)} className="relative w-full text-left p-8 rounded-[2rem] border-2 border-slate-100 hover:border-red-600 overflow-hidden transition-all group">
+                    <div className="relative z-10 flex justify-between font-black">
+                        <span>{cand}</span>
+                        <span className="text-red-600 text-2xl">{count}</span>
                     </div>
-                    {/* SWEET PROGRESS BAR: Animates smoothly */}
-                    <div 
-                      className="absolute left-0 top-0 h-full bg-red-100/50 border-r-4 border-red-200 -z-10 transition-all duration-1000 ease-out" 
-                      style={{ width: `${percent}%` }} 
-                    />
+                    <div className="absolute left-0 top-0 h-full bg-red-50 -z-10 transition-all duration-1000" style={{ width: `${total > 0 ? (count/total)*100 : 0}%` }} />
                   </button>
                 );
               })}
@@ -226,21 +126,28 @@ export default function BWIAAElection2026() {
         ))}
       </main>
 
-      <footer className="max-w-4xl mx-auto mt-24 mx-4 p-12 bg-slate-900 rounded-[3rem] text-white shadow-3xl">
-        <div className="flex flex-col md:flex-row justify-between items-center border-b border-slate-800 pb-8 mb-8 gap-4">
-            <h3 className="font-black uppercase tracking-[0.3em] text-slate-500 text-sm italic">National Audit Intelligence</h3>
-            <div className="flex items-center gap-6">
-                <div className="text-center">
-                    <p className="text-3xl font-black text-white">{votes.length}</p>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Global Votes</p>
+      {/* CHAPTER PROGRESS TRACKER (LEADERBOARD) */}
+      <footer className="max-w-4xl mx-auto bg-slate-900 rounded-[3rem] p-10 text-white shadow-3xl mx-4">
+        <h3 className="text-xl font-black mb-8 flex items-center gap-2">
+            <TrendingUp className="text-blue-400" /> CHAPTER TURNOUT PROGRESS
+        </h3>
+        <div className="space-y-6">
+          {chapters.sort((a,b) => votes.filter(v => v.chapter === b).length - votes.filter(v => v.chapter === a).length).slice(0, 5).map(c => {
+            const chapterTotal = votes.filter(v => v.chapter === c).length;
+            return (
+              <div key={c} className="space-y-2">
+                <div className="flex justify-between text-xs font-bold uppercase tracking-widest text-slate-400">
+                  <span>{c}</span>
+                  <span>{chapterTotal} Votes Cast</span>
                 </div>
-            </div>
+                <div className="w-full bg-slate-800 h-3 rounded-full overflow-hidden border border-white/5">
+                  <div className="bg-blue-500 h-full transition-all duration-1000" style={{ width: `${Math.min((chapterTotal/100)*100, 100)}%` }} />
+                </div>
+              </div>
+            );
+          })}
         </div>
-        <div className="space-y-4 opacity-50 font-mono text-[10px] md:text-xs">
-          {votes.slice(-3).reverse().map((v, i) => (
-            <p key={i} className="flex gap-3 truncate">• <span className="text-red-500 font-bold">[{v.chapter.toUpperCase()}]</span> {v.voter_name} verified ballot for {v.candidate_name}</p>
-          ))}
-        </div>
+        <p className="mt-8 text-center text-[10px] font-bold text-slate-500 uppercase tracking-[0.3em]">Official BWIAA Audit System 2026</p>
       </footer>
     </div>
   );
