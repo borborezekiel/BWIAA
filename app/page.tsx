@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Vote, ShieldCheck, User, LogOut, Loader2, Award, CheckCircle2, TrendingUp, AlertCircle, Fingerprint, Activity } from 'lucide-react';
+import { Vote, ShieldCheck, User, LogOut, Loader2, Award, CheckCircle2, TrendingUp, AlertCircle, Fingerprint, FileSpreadsheet, BarChart3 } from 'lucide-react';
 
-export default function BWIAAElection2026() {
+export default function BWIAAFinalBallot2026() {
   const [user, setUser] = useState<any>(null);
   const [myChapter, setMyChapter] = useState<string | null>(null);
   const [myClass, setMyClass] = useState<string | null>(null);
@@ -15,11 +15,9 @@ export default function BWIAAElection2026() {
 
   const chapters = ["Harbel and RIA", "Monrovia", "Buchanan", "Gbarnga", "Kakata", "Voinjama", "Zwedru", "Robertsport", "Greenville", "Harper", "Sanniquellie", "Cestos City"];
   
-  // Replace these with your real BWIAA candidates
   const positions = [
-    { title: "President", candidates: ["Candidate X", "Candidate Y", "Candidate Z"] },
-    { title: "Vice President", candidates: ["Candidate A", "Candidate B"] },
-    { title: "Secretary General", candidates: ["Candidate C", "Candidate D"] }
+    { title: "President", candidates: ["Candidate 1", "Candidate 2"] },
+    { title: "Vice President", candidates: ["Candidate 3", "Candidate 4"] }
   ];
 
   useEffect(() => {
@@ -42,12 +40,12 @@ export default function BWIAAElection2026() {
   }, []);
 
   async function refreshVotes() {
-    const { data } = await supabase.from('votes').select('*');
+    const { data } = await supabase.from('votes').select('*').order('created_at', { ascending: false });
     if (data) setVotes(data);
   }
 
   async function registerAndLogin(chapter: string, classYear: string) {
-    if (!classYear) return alert("Please enter your graduating class!");
+    if (!classYear || classYear.length !== 4) return setErrorMessage("Please enter a valid 4-digit Class Year (e.g., 1998)");
     localStorage.setItem('pending_voter_data', JSON.stringify({ chapter, classYear }));
     await supabase.auth.signInWithOAuth({ 
       provider: 'google', 
@@ -59,7 +57,7 @@ export default function BWIAAElection2026() {
     if (user && !myChapter) {
       const pending = JSON.parse(localStorage.getItem('pending_voter_data') || '{}');
       if (pending.chapter) {
-        supabase.from('voter_profiles').insert([{ 
+        supabase.from('voter_profiles').upsert([{ 
           id: user.id, 
           home_chapter: pending.chapter, 
           class_year: pending.classYear 
@@ -77,23 +75,35 @@ export default function BWIAAElection2026() {
       position_name: pos, candidate_name: cand, voter_name: user.email, voter_id: user.id, chapter: myChapter, class_year: myClass
     }]).select().single();
 
-    if (error) setErrorMessage(`INTEGRITY ALERT: Record shows a vote already cast for ${pos}.`);
+    if (error) setErrorMessage(`INTEGRITY ALERT: Already voted for ${pos}.`);
     else setReceipt(data);
   }
 
-  if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-black italic">AUTHENTICATING BWIAA CREDENTIALS...</div>;
+  // --- STATISTICS FOR CHAIRPERSON ---
+  const getTurnoutByDecade = () => {
+    const decades: any = {};
+    votes.forEach(v => {
+      const decade = v.class_year ? v.class_year.substring(0, 3) + '0s' : 'Unknown';
+      decades[decade] = (decades[decade] || 0) + 1;
+    });
+    return decades;
+  };
 
-  // --- CHAPTER & CLASS ENTRY ---
+  if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-black animate-pulse">VERIFYING BWIAA CREDENTIALS...</div>;
+
   if (!myChapter) {
     return (
       <div className="min-h-screen bg-slate-950 p-6 flex flex-col items-center justify-center">
-        <h1 className="text-white text-5xl font-black mb-4 uppercase italic">BWIAA 2026</h1>
-        <input 
-          id="class-input"
-          type="text" 
-          placeholder="Enter Class Year (e.g., 1995)" 
-          className="mb-8 p-4 rounded-xl text-slate-900 font-bold w-full max-w-xs text-center border-4 border-red-600"
-        />
+        <h1 className="text-white text-5xl font-black mb-8 uppercase italic">BWIAA 2026</h1>
+        <div className="bg-white p-6 rounded-2xl mb-8 shadow-2xl w-full max-w-sm">
+            <label className="block text-xs font-black text-slate-400 uppercase mb-2">Graduating Class Year</label>
+            <input 
+              id="class-input"
+              type="number" 
+              placeholder="e.g. 1995" 
+              className="p-4 rounded-xl text-slate-900 font-bold w-full text-center border-2 border-slate-200 focus:border-red-600 outline-none transition-all"
+            />
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-6xl">
           {chapters.map(c => (
             <button 
@@ -102,7 +112,7 @@ export default function BWIAAElection2026() {
                 const classYear = (document.getElementById('class-input') as HTMLInputElement).value;
                 registerAndLogin(c, classYear);
               }} 
-              className="bg-slate-900 border border-white/5 hover:border-red-600 p-8 rounded-[2.5rem] text-white font-bold transition-all flex flex-col items-center gap-4"
+              className="bg-slate-900 border border-white/5 hover:border-red-600 p-8 rounded-[2.5rem] text-white font-bold transition-all flex flex-col items-center gap-4 active:scale-95 shadow-xl"
             >
               <Vote size={32} className="text-red-600" />
               <span>{c}</span>
@@ -116,20 +126,21 @@ export default function BWIAAElection2026() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20">
       <header className="bg-white border-b-2 p-6 mb-10 sticky top-0 z-40 shadow-sm flex justify-between items-center max-w-5xl mx-auto rounded-b-3xl">
-        <div className="flex flex-col">
+        <div>
             <span className="text-xl font-black text-slate-900 uppercase">OFFICIAL BALLOT</span>
-            <span className="text-[10px] font-bold text-red-600 uppercase tracking-widest">{myChapter} • CLASS OF {myClass}</span>
+            <div className="text-[10px] font-bold text-red-600 uppercase tracking-widest">{myChapter} • CLASS OF {myClass}</div>
         </div>
-        <button onClick={() => supabase.auth.signOut().then(() => { localStorage.clear(); window.location.reload(); })} className="bg-slate-100 p-3 rounded-xl text-slate-400 hover:text-red-600"><LogOut size={20}/></button>
+        <button onClick={() => supabase.auth.signOut().then(() => { localStorage.clear(); window.location.reload(); })} className="bg-slate-100 p-3 rounded-xl text-slate-400 hover:text-red-600 transition-all"><LogOut size={20}/></button>
       </header>
 
+      {/* ERROR MODAL */}
       {errorMessage && (
         <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4">
           <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-red-600">
             <AlertCircle size={64} className="text-red-600 mx-auto mb-6" />
-            <h2 className="text-2xl font-black text-slate-900 uppercase italic mb-4">Ballot Denied</h2>
-            <p className="text-slate-500 mb-8 font-medium">{errorMessage}</p>
-            <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 text-white font-black py-5 rounded-2xl uppercase tracking-widest">Understood</button>
+            <h2 className="text-2xl font-black text-slate-900 uppercase italic mb-4 italic">Action Denied</h2>
+            <p className="text-slate-500 mb-8 font-medium leading-relaxed">{errorMessage}</p>
+            <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 text-white font-black py-5 rounded-2xl">UNDERSTOOD</button>
           </div>
         </div>
       )}
@@ -139,10 +150,10 @@ export default function BWIAAElection2026() {
           <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-green-500">
             <CheckCircle2 size={64} className="text-green-500 mx-auto mb-6" />
             <h2 className="text-2xl font-black text-slate-900 uppercase mb-4 italic text-green-600">Ballot Verified</h2>
-            <div className="bg-slate-50 p-6 rounded-3xl text-left font-mono text-[10px] mb-8 space-y-1 text-slate-400">
+            <div className="bg-slate-50 p-6 rounded-3xl text-left font-mono text-[10px] mb-8 space-y-1">
                 <p>CERTIFICATE: {receipt.id}</p>
-                <p>CHAPTER: {receipt.chapter}</p>
-                <p>TIMESTAMP: {new Date(receipt.created_at).toLocaleString()}</p>
+                <p>CLASS: {receipt.class_year}</p>
+                <p>STAMP: {new Date(receipt.created_at).toLocaleString()}</p>
             </div>
             <button onClick={() => setReceipt(null)} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl uppercase tracking-widest">Close Receipt</button>
           </div>
@@ -177,28 +188,48 @@ export default function BWIAAElection2026() {
         ))}
       </main>
 
-      {/* NATIONAL AUDIT INTELLIGENCE */}
+      {/* CHAIRPERSON'S AUDIT DASHBOARD */}
       <footer className="max-w-4xl mx-auto mt-24 mx-4 p-12 bg-slate-900 rounded-[3.5rem] text-white shadow-3xl relative overflow-hidden">
         <Fingerprint size={200} className="absolute -right-10 -bottom-10 opacity-5" />
         <div className="relative z-10">
             <div className="flex flex-col md:flex-row justify-between items-center border-b border-white/10 pb-8 mb-10 gap-4">
-                <h3 className="text-2xl font-black italic uppercase text-blue-400 tracking-tighter flex items-center gap-2"><Activity /> Audit Intelligence</h3>
-                <span className="bg-blue-600 px-6 py-2 rounded-full font-black text-2xl shadow-xl">{votes.length} TOTAL NATIONAL BALLOTS</span>
+                <h3 className="text-2xl font-black italic uppercase text-blue-400 tracking-tighter flex items-center gap-2"><BarChart3 /> Chairperson Intelligence</h3>
+                <div className="flex gap-4">
+                    <div className="bg-blue-600 px-6 py-2 rounded-full font-black text-xl shadow-xl">{votes.length} BALLOTS CAST</div>
+                </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-10">
+                {/* DECADE STATS */}
+                <div className="bg-white/5 p-6 rounded-3xl border border-white/5">
+                    <h4 className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest">Turnout by Decade</h4>
+                    <div className="space-y-3">
+                        {Object.entries(getTurnoutByDecade()).map(([decade, count]: any) => (
+                            <div key={decade} className="flex justify-between items-center border-b border-white/5 pb-2">
+                                <span className="text-xs font-bold text-blue-200">The {decade}</span>
+                                <span className="text-sm font-black text-white">{count} Votes</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* LIVE AUDIT LOG */}
+                <div className="bg-black/20 p-6 rounded-3xl border border-white/5">
+                    <h4 className="text-[10px] font-black uppercase text-slate-400 mb-4 tracking-widest">Verified Activity Feed</h4>
+                    <div className="space-y-3 max-h-48 overflow-y-auto pr-2 scrollbar-hide">
+                        {votes.slice(0, 5).map((v, i) => (
+                            <div key={i} className="text-[10px] border-b border-white/5 pb-2 flex justify-between items-center italic">
+                                <span className="text-slate-400 truncate w-32">{v.voter_name}</span>
+                                <span className="text-red-500 font-bold">CLASS OF {v.class_year}</span>
+                                <span className="text-blue-400 font-black">→ {v.candidate_name}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             </div>
             
-            <div className="space-y-4 max-h-64 overflow-y-auto pr-4 scrollbar-hide">
-              {votes.slice().reverse().map((v, i) => (
-                <div key={i} className="flex flex-col md:flex-row md:justify-between items-start md:items-center py-4 border-b border-white/5 last:border-0 gap-2">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase text-blue-400">Voter Verified • Chapter: {v.chapter}</span>
-                    <span className="text-xs font-bold text-slate-300 italic">{v.voter_name}</span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-[10px] bg-slate-800 px-3 py-1 rounded-lg text-slate-400 font-bold uppercase tracking-widest">CLASS OF {v.class_year}</span>
-                    <span className="text-xs font-black text-white italic">→ {v.candidate_name}</span>
-                  </div>
-                </div>
-              ))}
+            <div className="mt-10 pt-8 border-t border-white/5 text-center">
+                <p className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.3em]">Official BWIAA Audit System • Secure & Transparent</p>
             </div>
         </div>
       </footer>
