@@ -30,16 +30,21 @@ export default function BWIAAElection2026() {
 
   useEffect(() => {
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setUser(user);
-        const { data: profile } = await supabase.from('voter_profiles').select('home_chapter, class_year').eq('id', user.id).maybeSingle();
-        if (profile) {
-          setMyChapter(profile.home_chapter);
-          setMyClass(profile.class_year);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setUser(user);
+          const { data: profile } = await supabase.from('voter_profiles').select('home_chapter, class_year').eq('id', user.id).maybeSingle();
+          if (profile) {
+            setMyChapter(profile.home_chapter);
+            setMyClass(profile.class_year);
+          }
         }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     init();
     refreshVotes();
@@ -64,7 +69,7 @@ export default function BWIAAElection2026() {
     localStorage.setItem('pending_voter_data', JSON.stringify({ chapter, classYear }));
     await supabase.auth.signInWithOAuth({ 
       provider: 'google', 
-      options: { redirectTo: `${window.location.origin}/?chapter=${encodeURIComponent(chapter)}` } 
+      options: { redirectTo: window.location.origin } 
     });
   }
 
@@ -95,24 +100,24 @@ export default function BWIAAElection2026() {
       class_year: myClass
     }]).select().single();
 
-    if (error) setErrorMessage(`INTEGRITY ALERT: Our records show you have already cast a ballot for ${pos}.`);
+    if (error) setErrorMessage(`INTEGRITY ALERT: Record shows you have already cast a ballot for ${pos}.`);
     else setReceipt(data);
   }
 
   if (loading) return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
       <Loader2 className="animate-spin text-red-600 mb-4" size={48} />
-      <p className="font-black animate-pulse italic uppercase tracking-widest">Verifying Identity...</p>
+      <p className="font-black animate-pulse uppercase">Verifying National Identity...</p>
     </div>
   );
 
   if (!myChapter) {
     return (
       <div className="min-h-screen bg-slate-950 p-6 flex flex-col items-center justify-center">
-        <h1 className="text-white text-5xl md:text-7xl font-black mb-4 uppercase italic">BWIAA 2026</h1>
+        <h1 className="text-white text-5xl md:text-7xl font-black mb-12 tracking-tighter uppercase italic text-center underline decoration-red-600">BWIAA 2026</h1>
         <div className="bg-white p-6 rounded-3xl mb-8 shadow-2xl w-full max-w-sm border-t-8 border-red-600">
             <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest text-center italic">Class Year</label>
-            <input id="class-input" type="number" placeholder="e.g. 1995" className="p-4 rounded-2xl text-slate-900 font-black w-full text-center border-2 border-slate-100 focus:border-red-600 outline-none text-2xl""")/>>
+            <input id="class-input" type="number" placeholder="e.g. 1995" className="p-4 rounded-2xl text-slate-900 font-black w-full text-center border-2 border-slate-100 focus:border-red-600 outline-none text-2xl" />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-6xl">
           {chapters.map(c => (
@@ -154,7 +159,7 @@ export default function BWIAAElection2026() {
           <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-red-600">
             <AlertCircle size={64} className="text-red-600 mx-auto mb-6" />
             <h2 className="text-3xl font-black uppercase italic mb-4">Access Denied</h2>
-            <p className="text-slate-500 mb-8 font-medium">{errorMessage}</p>
+            <p className="text-slate-500 mb-8 font-medium leading-relaxed italic">{errorMessage}</p>
             <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 text-white font-black py-5 rounded-2xl uppercase tracking-widest">Understood</button>
           </div>
         </div>
@@ -164,7 +169,12 @@ export default function BWIAAElection2026() {
         <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
           <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-green-500">
             <CheckCircle2 size={64} className="text-green-500 mx-auto mb-6" />
-            <h2 className="text-3xl font-black uppercase italic mb-4 text-green-600">Vote Verified</h2>
+            <h2 className="text-3xl font-black uppercase italic mb-4 text-green-600 tracking-tighter">Vote Verified</h2>
+            <div className="bg-slate-50 p-6 rounded-3xl text-left font-mono text-[10px] mb-8 space-y-1">
+                <p>CERTIFICATE: {receipt.id}</p>
+                <p>CHAPTER: {receipt.chapter}</p>
+                <p>STAMP: {new Date(receipt.created_at).toLocaleString()}</p>
+            </div>
             <button onClick={() => setReceipt(null)} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl uppercase tracking-widest">Close Receipt</button>
           </div>
         </div>
@@ -186,10 +196,10 @@ export default function BWIAAElection2026() {
                         <span className="text-xl group-hover:text-red-700 tracking-tight">{cand}</span>
                         <div className="text-right">
                             <span className="text-4xl text-red-600 block">{count}</span>
-                            <span className="text-[9px] text-slate-400 uppercase tracking-widest mt-1 block">Branch Tally</span>
+                            <span className="text-[9px] text-slate-400 uppercase tracking-widest mt-1 block font-bold">Local Tally</span>
                         </div>
                     </div>
-                    <div className="absolute left-0 top-0 h-full bg-red-100/40 border-r-4 border-red-200/50 -z-10 transition-all duration-1000" style={{ width: `${percent}%` }} />
+                    <div className="absolute left-0 top-0 h-full bg-red-100/40 border-r-4 border-red-200/50 -z-10 transition-all duration-1000 ease-out" style={{ width: `${percent}%` }} />
                   </button>
                 );
               })}
@@ -202,11 +212,11 @@ export default function BWIAAElection2026() {
         <Fingerprint size={200} className="absolute -right-10 -bottom-10 opacity-5" />
         <div className="relative z-10">
             <div className="flex flex-col md:flex-row justify-between items-center border-b border-white/10 pb-8 mb-10 gap-4">
-                <h3 className="text-2xl font-black italic uppercase text-blue-400 tracking-tighter flex items-center gap-2"><Activity /> National Audit Intelligence</h3>
+                <h3 className="text-2xl font-black italic uppercase text-blue-400 tracking-tighter flex items-center gap-2"><Activity /> Audit Intelligence</h3>
                 <span className="bg-blue-600 px-6 py-2 rounded-full font-black text-2xl shadow-xl">{votes.length} NATIONAL BALLOTS</span>
             </div>
             
-            <div className="space-y-4 max-h-80 overflow-y-auto pr-4 scrollbar-hide">
+            <div className="space-y-4 max-h-80 overflow-y-auto pr-4 scrollbar-hide opacity-80">
               {votes.map((v, i) => (
                 <div key={i} className="flex flex-col md:flex-row md:justify-between items-start md:items-center py-4 border-b border-white/5 last:border-0 gap-2 italic">
                   <div className="flex flex-col">
@@ -214,8 +224,8 @@ export default function BWIAAElection2026() {
                     <span className="text-xs font-bold text-slate-300 italic">{v.voter_name}</span>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="text-[10px] bg-slate-800 px-3 py-1 rounded-lg text-red-500 font-black uppercase tracking-widest">CLASS OF {v.class_year}</span>
-                    <span className="text-xs font-black text-white uppercase tracking-tighter italic">→ Choice: {v.candidate_name}</span>
+                    <span className="text-[10px] bg-slate-800 px-3 py-1 rounded-lg text-red-500 font-black uppercase tracking-widest italic">CLASS OF {v.class_year}</span>
+                    <span className="text-xs font-black text-white uppercase tracking-tighter italic">→ {v.candidate_name}</span>
                   </div>
                 </div>
               ))}
