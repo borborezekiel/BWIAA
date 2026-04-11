@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Vote, ShieldCheck, User, LogOut, Loader2, Award, CheckCircle2, TrendingUp, AlertCircle, Fingerprint } from 'lucide-react';
+import { Vote, ShieldCheck, User, LogOut, Loader2, Award, CheckCircle2, TrendingUp, AlertCircle, Fingerprint, Activity } from 'lucide-react';
 
-export default function BWIAAElection2026() {
+export default function BWIAAMasterBallot2026() {
   const [user, setUser] = useState<any>(null);
   const [myChapter, setMyChapter] = useState<string | null>(null);
   const [votes, setVotes] = useState<any[]>([]);
@@ -16,69 +16,54 @@ export default function BWIAAElection2026() {
   
   const positions = [
     { title: "President", candidates: ["Candidate 1", "Candidate 2"] },
-    { title: "Vice President (Administration)", candidates: ["Candidate 3", "Candidate 4"] },
-    { title: "Secretary General", candidates: ["Candidate 5", "Candidate 6"] },
-    { title: "Financial Secretary", candidates: ["Candidate 7", "Candidate 8"] },
-    { title: "Treasurer", candidates: ["Candidate 9", "Candidate 10"] },
-    { title: "Media & Publicity CHAIRMAN", candidates: ["Candidate 11", "Candidate 12"] },
-    { title: "CHAPLAIN", candidates: ["Candidate 13", "Candidate 14"] }
+    { title: "Vice President (Administration)", candidates: ["Candidate A", "Candidate B"] },
+    { title: "Secretary General", candidates: ["Candidate C", "Candidate D"] },
+    { title: "Financial Secretary", candidates: ["Candidate E", "Candidate F"] },
+    { title: "Treasurer", candidates: ["Candidate G", "Candidate H"] },
+    { title: "Media & Publicity CHAIRMAN", candidates: ["Candidate I", "Candidate J"] },
+    { title: "CHAPLAIN", candidates: ["Candidate K", "Candidate L"] }
   ];
 
-  // --- FIXED: SECURE USER CHECK ---
-  async function checkUser() {
-    try {
+  useEffect(() => {
+    const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUser(user);
         const { data: profile } = await supabase.from('voter_profiles').select('home_chapter').eq('id', user.id).maybeSingle();
         if (profile) setMyChapter(profile.home_chapter);
-      } else {
-        setUser(null);
-        setMyChapter(null);
       }
-    } finally {
       setLoading(false);
-    }
-  }
-
-  // --- FIXED: TOTAL MEMORY WIPE SIGN OUT ---
-  async function handleSignOut() {
-    await supabase.auth.signOut();
-    localStorage.clear();
-    sessionStorage.clear();
-    setUser(null);
-    setMyChapter(null);
-    window.location.href = window.location.origin;
-  }
-
-  useEffect(() => {
-    checkUser();
+    };
+    init();
     refreshVotes();
     const live = supabase.channel('national-election').on('postgres_changes', { event: '*', schema: 'public', table: 'votes' }, () => refreshVotes()).subscribe();
     return () => { supabase.removeChannel(live); };
   }, []);
 
   async function refreshVotes() {
-    const { data } = await supabase.from('votes').select('*');
+    const { data } = await supabase.from('votes').select('*').order('created_at', { ascending: false });
     if (data) setVotes(data);
   }
 
+  // FIXED: Chapter is now passed in the URL so it is never lost!
   async function enterBranch(chapter: string) {
-    localStorage.setItem('target_chapter', chapter);
+    const currentUrl = window.location.origin;
     await supabase.auth.signInWithOAuth({ 
       provider: 'google',
-      options: { redirectTo: window.location.origin }
+      options: { redirectTo: `${currentUrl}?chapter=${encodeURIComponent(chapter)}` }
     });
   }
 
   useEffect(() => {
     if (user && !myChapter) {
-      const target = localStorage.getItem('target_chapter');
+      const params = new URLSearchParams(window.location.search);
+      const target = params.get('chapter');
       if (target) {
         supabase.from('voter_profiles').insert([{ id: user.id, home_chapter: target }])
           .then(() => {
             setMyChapter(target);
-            localStorage.removeItem('target_chapter');
+            // Clean the URL
+            window.history.replaceState({}, '', window.location.origin);
           });
       }
     }
@@ -89,26 +74,24 @@ export default function BWIAAElection2026() {
       position_name: pos, candidate_name: cand, voter_name: user.email, voter_id: user.id, chapter: myChapter
     }]).select().single();
 
-    if (error) setErrorMessage(`INTEGRITY ALERT: Our records show you have already submitted a ballot for ${pos}. Only one vote is allowed per office.`);
+    if (error) setErrorMessage(`INTEGRITY ALERT: You have already voted for ${pos}.`);
     else setReceipt(data);
   }
 
-  if (loading) return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
-      <Loader2 className="animate-spin text-red-600 mb-4" size={48} />
-      <p className="font-bold tracking-widest animate-pulse">VERIFYING VOTER IDENTITY...</p>
-    </div>
-  );
+  if (loading) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-black animate-pulse uppercase">Syncing National Database...</div>;
 
   if (!myChapter) {
     return (
       <div className="min-h-screen bg-slate-950 p-6 flex flex-col items-center justify-center">
-        <h1 className="text-white text-5xl md:text-7xl font-black mb-12 tracking-tighter uppercase italic text-center">BWIAA 2026</h1>
+        <header className="text-center mb-16">
+          <h1 className="text-white text-6xl font-black mb-2 tracking-tighter uppercase italic">BWIAA 2026</h1>
+          <p className="text-red-600 font-bold tracking-[0.4em] uppercase text-sm">Select Your Branch To Authenticate</p>
+        </header>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-6xl w-full">
           {chapters.map(c => (
-            <button key={c} onClick={() => enterBranch(c)} className="group bg-slate-900 border border-white/5 hover:border-red-600 p-8 rounded-[2.5rem] text-white font-bold transition-all flex flex-col items-center gap-4">
-              <Vote size={32} className="text-red-600" />
-              <span>{c}</span>
+            <button key={c} onClick={() => enterBranch(c)} className="group bg-slate-900 border border-white/5 hover:border-red-600 p-8 rounded-[2.5rem] text-white font-bold transition-all flex flex-col items-center gap-4 active:scale-95">
+              <Vote size={32} className="text-red-600 group-hover:text-white" />
+              <span className="text-lg">{c}</span>
             </button>
           ))}
         </div>
@@ -118,33 +101,38 @@ export default function BWIAAElection2026() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20">
+      {/* HEADER */}
       <header className="bg-white border-b-2 p-6 mb-10 sticky top-0 z-40 shadow-sm flex justify-between items-center max-w-5xl mx-auto rounded-b-[2rem]">
-        <div className="flex items-center gap-3 font-black text-slate-900 uppercase">
+        <div className="flex items-center gap-3">
             <div className="bg-red-600 text-white p-2 rounded-xl"><ShieldCheck size={20}/></div>
-            <span>{myChapter} <span className="text-red-600 text-[10px] block font-bold tracking-widest">Official Branch</span></span>
+            <div className="font-black text-slate-900 uppercase leading-none">BWIAA<br/><span className="text-[10px] text-red-600">{myChapter} Branch</span></div>
         </div>
-        <button onClick={handleSignOut} className="bg-slate-100 p-3 rounded-xl text-slate-400 hover:text-red-600 transition-all">
-          <LogOut size={20}/>
-        </button>
+        <button onClick={() => supabase.auth.signOut().then(() => { localStorage.clear(); window.location.href = window.location.origin; })} className="bg-slate-100 p-3 rounded-xl text-slate-400 hover:text-red-600 transition-all"><LogOut size={20}/></button>
       </header>
 
+      {/* ERROR MODAL */}
       {errorMessage && (
-        <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+        <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4">
           <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-red-600">
             <AlertCircle size={64} className="text-red-600 mx-auto mb-6" />
             <h2 className="text-3xl font-black text-slate-900 uppercase italic mb-4">Ballot Denied</h2>
-            <p className="text-slate-500 mb-8 font-medium">{errorMessage}</p>
-            <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 text-white font-black py-5 rounded-2xl">UNDERSTOOD</button>
+            <p className="text-slate-500 mb-8 font-medium leading-relaxed">{errorMessage}</p>
+            <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 text-white font-black py-5 rounded-2xl">I UNDERSTAND</button>
           </div>
         </div>
       )}
 
+      {/* RECEIPT MODAL */}
       {receipt && (
-        <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+        <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4">
           <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-green-500">
             <CheckCircle2 size={64} className="text-green-500 mx-auto mb-6" />
-            <h2 className="text-3xl font-black text-slate-900 uppercase italic mb-4">Vote Secured</h2>
-            <button onClick={() => setReceipt(null)} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl uppercase tracking-widest">Close Receipt</button>
+            <h2 className="text-3xl font-black text-slate-900 uppercase italic mb-4">Vote Verified</h2>
+            <div className="bg-slate-50 p-6 rounded-3xl text-left font-mono text-[10px] mb-8 space-y-1">
+                <p>CERTIFICATE: {receipt.id}</p>
+                <p>STAMP: {new Date(receipt.created_at).toLocaleString()}</p>
+            </div>
+            <button onClick={() => setReceipt(null)} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl">CONTINUE</button>
           </div>
         </div>
       )}
@@ -176,6 +164,59 @@ export default function BWIAAElection2026() {
           </section>
         ))}
       </main>
+
+      {/* NATIONAL AUDIT LOG & PARTICIPATION MONITOR */}
+      <footer className="max-w-4xl mx-auto mt-24 mx-4 p-12 bg-slate-900 rounded-[3.5rem] text-white relative overflow-hidden shadow-3xl">
+        <Fingerprint size={180} className="absolute -right-10 -bottom-10 opacity-5" />
+        <div className="relative z-10">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 border-b border-white/10 pb-8 gap-4">
+                <h3 className="text-2xl font-black italic uppercase text-blue-400 tracking-tighter flex items-center gap-2">
+                    <Activity size={24}/> National Audit Intelligence
+                </h3>
+                <div className="bg-blue-600 px-6 py-2 rounded-full font-black text-xl shadow-lg">
+                    {votes.length} TOTAL BALLOTS CAST
+                </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-12">
+                {/* BRANCH MONITOR */}
+                <div>
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 italic">Branch Turnout Monitor</h4>
+                    <div className="space-y-6">
+                        {chapters.sort((a,b) => votes.filter(v => v.chapter === b).length - votes.filter(v => v.chapter === a).length).slice(0, 5).map(c => {
+                            const total = votes.filter(v => v.chapter === c).length;
+                            const nationalPercent = votes.length > 0 ? (total / votes.length) * 100 : 0;
+                            return (
+                                <div key={c} className="space-y-2">
+                                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        <span>{c}</span>
+                                        <span className="text-white">{total} Ballots</span>
+                                    </div>
+                                    <div className="w-full bg-white/5 h-3 rounded-full overflow-hidden border border-white/5 p-0.5">
+                                        <div className="bg-blue-500 h-full transition-all duration-1000 rounded-full" style={{ width: `${nationalPercent}%` }} />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* LIVE ACTIVITY FEED */}
+                <div>
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 italic">Live Activity (National)</h4>
+                    <div className="space-y-3 font-mono text-[10px] opacity-80 h-48 overflow-y-auto pr-2 scrollbar-hide">
+                        {votes.slice(0, 10).map((v, i) => (
+                            <div key={i} className="flex gap-3 py-2 border-b border-white/5 last:border-0 truncate">
+                                <span className="text-red-500 font-bold italic shrink-0">[{v.chapter.toUpperCase()}]</span>
+                                <span className="text-slate-400 italic">Voter Verified • Choice Recorded</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+            <p className="mt-12 text-center text-[10px] font-bold text-slate-600 uppercase tracking-[0.3em]">Official BWIAA Electoral Infrastructure • 2026</p>
+        </div>
+      </footer>
     </div>
   );
 }
