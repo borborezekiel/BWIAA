@@ -1,139 +1,454 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { ShieldCheck, FileSpreadsheet, Users, Edit3, Lock, Loader2, BarChart3, Fingerprint, ArrowLeft, Globe } from 'lucide-react';
+import {
+  ShieldCheck, Users, Edit3, Loader2, UserPlus,
+  Trash2, ArrowLeft, Download, Save, X, RefreshCw,
+  CheckCircle2, AlertCircle, PlusCircle, Award
+} from 'lucide-react';
 import Link from 'next/link';
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface VoteRow        { id: number; voter_name: string; voter_id: string; position_name: string; candidate_name: string; chapter: string; class_year: string; created_at: string; }
+interface VoterProfile   { id: string; home_chapter: string; class_year: string; created_at: string; }
+interface Candidate      { id: number; full_name: string; position_name: string; chapter: string; }
+interface AdminInfo      { email: string; branch: string; isHead: boolean; }
+
+const HEAD_ADMIN = "ezekielborbor17@gmail.com";
+const CHAPTERS   = ["Harbel and RIA","Monrovia","Buchanan","Gbarnga","Kakata","Voinjama","Zwedru","Robertsport","Greenville","Harper","Sanniquellie","Cestos City"];
+const POSITIONS  = ["President","Vice President (Administration)","Secretary General","Financial Secretary","Treasurer","Media & Publicity CHAIRMAN","CHAPLAIN"];
+
 export default function AdminDashboard() {
-  const [votes, setVotes] = useState<any[]>([]);
-  const [voters, setVoters] = useState<any[]>([]);
-  const [adminInfo, setAdminInfo] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [authError, setAuthError] = useState(false);
-  const [exportFilter, setExportFilter] = useState("All");
+  const [votes, setVotes]                     = useState<VoteRow[]>([]);
+  const [voters, setVoters]                   = useState<VoterProfile[]>([]);
+  const [roster, setRoster]                   = useState<{ email: string }[]>([]);
+  const [candidates, setCandidates]           = useState<Candidate[]>([]);
+  const [adminInfo, setAdminInfo]             = useState<AdminInfo | null>(null);
+  const [loading, setLoading]                 = useState(true);
+  const [newEmail, setNewEmail]               = useState('');
+  const [toast, setToast]                     = useState<{ msg: string; ok: boolean } | null>(null);
+  const [editingVoter, setEditingVoter]       = useState<VoterProfile | null>(null);
+  const [editClass, setEditClass]             = useState('');
+  const [filterChapter, setFilterChapter]     = useState('All');
+  const [newCandName, setNewCandName]         = useState('');
+  const [newCandPosition, setNewCandPosition] = useState(POSITIONS[0]);
 
-  const YOUR_EMAIL = "ezekielborbor17@gmail.com";
-
+  // ── Auth gate ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    const secureSetup = async () => {
+    const setup = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: admin } = await supabase.from('election_admins').select('*').eq('email', user.email).maybeSingle();
-        if (admin || user.email === YOUR_EMAIL) {
-          const info = admin || { email: YOUR_EMAIL, branch: 'National' };
-          setAdminInfo(info);
-          fetchData(info);
-        } else {
-          setAuthError(true);
-        }
+      if (!user) { setLoading(false); return; }
+
+      if (user.email === HEAD_ADMIN) {
+        setAdminInfo({ email: user.email, branch: 'National', isHead: true });
+        await fetchData('National', true);
       } else {
-        setAuthError(true);
+        const { data: adminRow } = await supabase
+          .from('election_admins').select('branch').eq('email', user.email).maybeSingle();
+        if (adminRow) {
+          setAdminInfo({ email: user.email, branch: adminRow.branch, isHead: false });
+          await fetchData(adminRow.branch, false);
+        }
       }
       setLoading(false);
     };
-    secureSetup();
+    setup();
   }, []);
 
-  async function fetchData(admin: any) {
-    let voteQuery = supabase.from('votes').select('*').order('created_at', { ascending: false });
-    let voterQuery = supabase.from('voter_profiles').select('*');
-
-    if (admin.branch !== 'National') {
-      voteQuery = voteQuery.eq('chapter', admin.branch);
-      voterQuery = voterQuery.eq('home_chapter', admin.branch);
-    }
-
-    const { data: vData } = await voteQuery;
-    const { data: pData } = await voterQuery;
+  async function fetchData(branch: string, isHead: boolean) {
+    const vq = supabase.from('votes').select('*').order('created_at', { ascending: false });
+    if (!isHead) vq.eq('chapter', branch);
+    const { data: vData } = await vq;
     setVotes(vData || []);
+
+    const pq = supabase.from('voter_profiles').select('*');
+    if (!isHead) pq.eq('home_chapter', branch);
+    const { data: pData } = await pq;
     setVoters(pData || []);
+
+    // Head sees all candidates; branch admin sees their chapter + national ones
+    const cq = supabase.from('candidates').select('*').order('position_name');
+    if (!isHead) cq.in('chapter', [branch, 'All']);
+    const { data: cData } = await cq;
+    setCandidates(cData || []);
+
+    if (isHead) {
+      const { data: rData } = await supabase.from('eligible_voters').select('*');
+      setRoster(rData || []);
+    }
   }
 
-  // --- FIXED: Export now filters strictly by branch ---
-  const exportExcel = () => {
-    let dataToExport = votes;
-    
-    // If you are National Lead, you can choose to export only one branch
-    if (adminInfo.branch === 'National' && exportFilter !== "All") {
-      dataToExport = votes.filter(v => v.chapter === exportFilter);
+  function showToast(msg: string, ok: boolean) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 3500);
+  }
+
+  // ── Candidate management ───────────────────────────────────────────────────
+  async function addCandidate() {
+    if (!newCandName.trim()) return showToast('Please enter a candidate name.', false);
+    if (!adminInfo) return;
+    const chapter = adminInfo.isHead ? 'All' : adminInfo.branch;
+    const { error } = await supabase.from('candidates').insert([{
+      full_name: newCandName.trim(),
+      position_name: newCandPosition,
+      chapter,
+    }]);
+    if (error) showToast('Failed to add. Check for duplicates.', false);
+    else {
+      showToast(`${newCandName.trim()} added to ${newCandPosition}.`, true);
+      setNewCandName('');
+      fetchData(adminInfo.branch, adminInfo.isHead);
     }
+  }
 
-    const headers = "Voter Identity,Class,Branch,Position,Candidate,Date\n";
-    const csvContent = "data:text/csv;charset=utf-8," + headers + 
-      dataToExport.map(v => `${v.voter_name},${v.class_year},${v.chapter},${v.position_name},${v.candidate_name},${v.created_at}`).join("\n");
-    
-    const link = document.createElement("a");
-    link.setAttribute("href", encodeURI(csvContent));
-    link.setAttribute("download", `BWIAA_${exportFilter}_Report.csv`);
-    link.click();
-  };
+  async function removeCandidate(cand: Candidate) {
+    const hasVotes = votes.some(v => v.candidate_name === cand.full_name && v.position_name === cand.position_name);
+    if (hasVotes) return showToast(`Cannot remove — votes have already been cast for ${cand.full_name}.`, false);
+    if (!confirm(`Remove "${cand.full_name}" from ${cand.position_name}?`)) return;
+    await supabase.from('candidates').delete().eq('id', cand.id);
+    showToast(`${cand.full_name} removed.`, true);
+    fetchData(adminInfo!.branch, adminInfo!.isHead);
+  }
 
-  if (loading) return <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white font-black italic animate-pulse">VERIFYING CHAIRPERSON...</div>;
-  if (authError) return <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-10 text-center"><Lock size={80} className="text-red-600 mb-6" /><h1 className="text-4xl font-black italic">ACCESS DENIED</h1></div>;
+  // ── Roster management ──────────────────────────────────────────────────────
+  async function addToRoster() {
+    if (!newEmail.includes('@')) return showToast('Invalid email address.', false);
+    const { error } = await supabase.from('eligible_voters').insert([{ email: newEmail.toLowerCase().trim() }]);
+    if (error) showToast('Email already on roster!', false);
+    else { setNewEmail(''); showToast('Added to official roster.', true); fetchData('National', true); }
+  }
+
+  async function removeFromRoster(email: string) {
+    if (!confirm(`Remove ${email} from official roster?`)) return;
+    await supabase.from('eligible_voters').delete().eq('email', email);
+    showToast(`${email} removed.`, true);
+    fetchData('National', true);
+  }
+
+  // ── Class year editor ──────────────────────────────────────────────────────
+  async function saveClassYear() {
+    if (!editingVoter) return;
+    if (!editClass || editClass.length < 4) return showToast('Please enter a valid 4-digit year.', false);
+    const { error } = await supabase.from('voter_profiles').update({ class_year: editClass }).eq('id', editingVoter.id);
+    if (error) showToast('Failed to update. Please try again.', false);
+    else {
+      showToast(`Class year updated to ${editClass}.`, true);
+      setVoters(prev => prev.map(v => v.id === editingVoter.id ? { ...v, class_year: editClass } : v));
+      setEditingVoter(null);
+    }
+  }
+
+  // ── CSV Export ─────────────────────────────────────────────────────────────
+  function exportToCSV() {
+    const isHead = adminInfo?.isHead;
+    const branch = adminInfo?.branch;
+    const filtered = (filterChapter === 'All' && isHead) ? votes : votes.filter(v => v.chapter === (isHead ? filterChapter : branch));
+    const headers  = ['ID','Voter Email','Chapter','Class Year','Position','Candidate','Timestamp'];
+    const rows     = filtered.map(v => [v.id, v.voter_name, v.chapter, v.class_year, v.position_name, v.candidate_name, new Date(v.created_at).toLocaleString()]);
+    const csv      = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const blob     = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url      = URL.createObjectURL(blob);
+    const a        = document.createElement('a');
+    a.href         = url;
+    a.download     = `BWIAA_Election_2026_${branch}_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Guards ─────────────────────────────────────────────────────────────────
+  if (loading) return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white gap-3">
+      <Loader2 className="animate-spin text-red-600" size={32}/>
+      <span className="font-black uppercase tracking-widest text-sm">Verifying Admin Identity...</span>
+    </div>
+  );
+
+  if (!adminInfo) return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-8">
+      <div className="text-center">
+        <AlertCircle size={64} className="text-red-600 mx-auto mb-4"/>
+        <h1 className="text-3xl font-black uppercase text-slate-900 mb-2">Access Denied</h1>
+        <p className="text-slate-500 mb-6">You are not authorized to access this page.</p>
+        <Link href="/" className="bg-red-600 text-white px-8 py-3 rounded-2xl font-black uppercase">Return to Ballot</Link>
+      </div>
+    </div>
+  );
+
+  const displayVotes  = adminInfo.isHead && filterChapter !== 'All' ? votes.filter(v => v.chapter === filterChapter) : votes;
+  const displayVoters = adminInfo.isHead && filterChapter !== 'All' ? voters.filter(v => v.home_chapter === filterChapter) : voters;
+
+  const candByPosition = POSITIONS.reduce((acc, pos) => {
+    acc[pos] = candidates.filter(c => c.position_name === pos);
+    return acc;
+  }, {} as Record<string, Candidate[]>);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-12 font-sans">
-      <header className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6 bg-white p-8 rounded-[2.5rem] shadow-xl border-b-8 border-red-600">
-        <div className="flex flex-col gap-2">
-          {/* BACK TO VOTER PAGE BUTTON */}
-          <Link href="/" className="flex items-center gap-2 text-slate-400 hover:text-blue-600 font-bold text-xs uppercase transition-all mb-2">
-            <ArrowLeft size={16}/> Back to Voter Ballot
-          </Link>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Command Center</h1>
-          <span className="bg-red-600 text-white text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest w-fit">{adminInfo.branch} LEAD</span>
-        </div>
+    <div className="min-h-screen bg-slate-50 p-4 md:p-10 font-sans">
 
-        <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
-          {/* BRANCH FILTER FOR EXCEL */}
-          {adminInfo.branch === 'National' && (
-            <select 
-              onChange={(e) => setExportFilter(e.target.value)}
-              className="bg-slate-100 border-2 border-slate-200 p-3 rounded-2xl font-bold text-xs outline-none focus:border-blue-500"
-            >
-              <option value="All">All Branches</option>
-              <option value="Harbel and RIA">Harbel & RIA</option>
-              <option value="Monrovia">Monrovia</option>
-              <option value="Buchanan">Buchanan</option>
-              {/* Add others as needed */}
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-6 right-6 z-50 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-widest shadow-2xl flex items-center gap-3
+          ${toast.ok ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+          {toast.ok ? <CheckCircle2 size={18}/> : <AlertCircle size={18}/>}
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Class Year Edit Modal */}
+      {editingVoter && (
+        <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm shadow-2xl border-t-8 border-blue-600">
+            <h3 className="text-xl font-black uppercase italic mb-2">Edit Class Year</h3>
+            <p className="text-slate-400 text-xs font-mono mb-6">{editingVoter.id}</p>
+            <input type="number" value={editClass} onChange={e => setEditClass(e.target.value)} placeholder="e.g. 1998"
+              className="w-full p-4 rounded-2xl bg-slate-100 font-black text-2xl text-center outline-none focus:ring-2 ring-blue-500 mb-6"/>
+            <div className="flex gap-3">
+              <button onClick={saveClassYear} className="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl uppercase flex items-center justify-center gap-2">
+                <Save size={16}/> Save
+              </button>
+              <button onClick={() => setEditingVoter(null)} className="flex-1 bg-slate-100 text-slate-600 font-black py-4 rounded-2xl uppercase flex items-center justify-center gap-2">
+                <X size={16}/> Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <header className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4 bg-white p-8 rounded-[2.5rem] shadow-xl border-b-8 border-red-600">
+        <div>
+          <Link href="/" className="text-slate-400 text-xs font-bold uppercase flex items-center gap-2 mb-2 hover:text-red-600 transition-all">
+            <ArrowLeft size={12}/> Voter Page
+          </Link>
+          <h1 className="text-3xl font-black text-slate-900 uppercase italic">Command Center</h1>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+            {adminInfo.isHead ? '🔴 Head Admin — National View' : `Branch Admin — ${adminInfo.branch}`}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          {adminInfo.isHead && (
+            <select value={filterChapter} onChange={e => setFilterChapter(e.target.value)}
+              className="bg-slate-100 text-slate-700 font-black text-sm px-4 py-3 rounded-2xl outline-none focus:ring-2 ring-red-500">
+              <option>All</option>
+              {CHAPTERS.map(c => <option key={c}>{c}</option>)}
             </select>
           )}
-          <button onClick={exportExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 px-8 rounded-2xl flex items-center justify-center gap-3 shadow-lg transition-all active:scale-95">
-            <FileSpreadsheet /> EXPORT {exportFilter.toUpperCase()} REPORT
+          <button onClick={() => fetchData(adminInfo.branch, adminInfo.isHead)}
+            className="bg-slate-100 p-3 rounded-2xl text-slate-500 hover:text-slate-900 transition-all" title="Refresh">
+            <RefreshCw size={18}/>
+          </button>
+          <button onClick={exportToCSV}
+            className="bg-green-600 text-white px-6 py-3 rounded-2xl font-black text-sm uppercase flex items-center gap-2 hover:bg-green-700 transition-all shadow-lg">
+            <Download size={16}/> Export CSV
           </button>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10">
-        {/* VOTER LIST */}
-        <section className="bg-white p-8 rounded-[3rem] shadow-2xl border-t-8 border-blue-600">
-          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2 mb-8 italic uppercase"><Users className="text-blue-600" /> Verified Voters</h2>
-          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 scrollbar-hide">
-            {voters.map((v) => (
-              <div key={v.id} className="flex justify-between items-center p-5 bg-slate-50 rounded-2xl border-2 border-slate-100 italic">
-                <div className="truncate w-2/3">
-                  <p className="font-black text-slate-700 text-sm truncate uppercase tracking-tighter">{v.id}</p>
-                  <span className="text-red-500 text-[10px] font-black uppercase">Class of {v.class_year}</span>
+      <div className="max-w-6xl mx-auto space-y-10">
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Votes',       value: displayVotes.length,  color: 'text-red-500'    },
+            { label: 'Voters Registered', value: displayVoters.length, color: 'text-blue-500'   },
+            { label: 'Roster Size',       value: roster.length,        color: 'text-purple-500' },
+            { label: 'Turnout', value: displayVoters.length > 0 ? `${Math.round((new Set(displayVotes.map(v=>v.voter_id)).size / displayVoters.length)*100)}%` : '—', color: 'text-green-500' },
+          ].map(s => (
+            <div key={s.label} className="bg-white p-6 rounded-[2rem] shadow-md border border-slate-100">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{s.label}</p>
+              <p className={`text-4xl font-black mt-1 ${s.color}`}>{s.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* ── CANDIDATE MANAGEMENT ──────────────────────────────────────── */}
+        <section className="bg-white p-8 rounded-[3rem] shadow-xl border-t-8 border-orange-500">
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2 mb-2 uppercase italic">
+            <Award className="text-orange-500"/> Candidate Management
+          </h2>
+          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-8">
+            {adminInfo.isHead
+              ? 'Candidates added here are visible to ALL chapters nationwide.'
+              : `Candidates added here appear only under the ${adminInfo.branch} chapter.`}
+          </p>
+
+          {/* Add form */}
+          <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 mb-8">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Add New Candidate</p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="text"
+                placeholder="Full name of candidate"
+                value={newCandName}
+                onChange={e => setNewCandName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addCandidate()}
+                className="flex-1 p-4 bg-white rounded-2xl font-bold text-sm outline-none focus:ring-2 ring-orange-400 border border-slate-200"
+              />
+              <select value={newCandPosition} onChange={e => setNewCandPosition(e.target.value)}
+                className="p-4 bg-white rounded-2xl font-bold text-sm outline-none focus:ring-2 ring-orange-400 border border-slate-200 min-w-[220px]">
+                {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <button onClick={addCandidate}
+                className="bg-orange-500 text-white px-6 py-4 rounded-2xl font-black uppercase text-sm hover:bg-orange-600 transition-all flex items-center gap-2 whitespace-nowrap shadow-lg">
+                <PlusCircle size={16}/> Add
+              </button>
+            </div>
+          </div>
+
+          {/* Candidates list by position */}
+          <div className="space-y-8">
+            {POSITIONS.map(pos => {
+              const list = candByPosition[pos] || [];
+              return (
+                <div key={pos}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-l-4 border-orange-400 pl-3">{pos}</h3>
+                    <span className="text-[10px] bg-orange-50 text-orange-500 font-black px-3 py-1 rounded-full uppercase border border-orange-100">
+                      {list.length} candidate{list.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  {list.length === 0 ? (
+                    <p className="text-slate-300 text-sm italic px-4 py-3 bg-slate-50 rounded-2xl font-bold">No candidates yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {list.map(c => {
+                        const voteCount = votes.filter(v => v.candidate_name === c.full_name && v.position_name === c.position_name).length;
+                        const locked = voteCount > 0;
+                        return (
+                          <div key={c.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div className="flex items-center gap-3">
+                              <span className="font-black text-slate-800">{c.full_name}</span>
+                              {c.chapter !== 'All' && (
+                                <span className="text-[10px] bg-blue-100 text-blue-600 font-black px-2 py-0.5 rounded-full uppercase">{c.chapter}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4">
+                              {voteCount > 0 && (
+                                <span className="text-[10px] font-black text-slate-400 uppercase">{voteCount} vote{voteCount !== 1 ? 's' : ''}</span>
+                              )}
+                              <button
+                                onClick={() => removeCandidate(c)}
+                                disabled={locked}
+                                title={locked ? 'Cannot remove — votes already cast' : 'Remove candidate'}
+                                className={`flex items-center gap-1 px-3 py-2 rounded-xl font-black text-xs uppercase transition-all
+                                  ${locked ? 'text-slate-200 cursor-not-allowed' : 'text-red-400 hover:text-white hover:bg-red-500'}`}>
+                                <Trash2 size={14}/>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
-        {/* AUDIT LOG */}
-        <section className="bg-slate-900 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden text-white">
-          <Fingerprint size={160} className="absolute -right-10 -bottom-10 opacity-5" />
-          <h2 className="text-2xl font-black mb-8 flex items-center gap-2 italic uppercase tracking-tighter"><ShieldCheck className="text-red-600" /> Audit Intelligence</h2>
-          <div className="space-y-4 font-mono text-[10px] h-[520px] overflow-y-auto pr-2 scrollbar-hide opacity-80">
-            {votes.map((v, i) => (
-              <div key={i} className="border-b border-white/5 pb-4">
-                <p className="text-red-500 font-bold italic uppercase tracking-widest">Entry Recorded • {v.chapter}</p>
-                <p className="text-slate-400 italic">{v.voter_name} • Class of {v.class_year}</p>
-                <p className="text-blue-400 font-black">Choice: {v.candidate_name}</p>
-              </div>
-            ))}
+        {/* ── OFFICIAL ROSTER ───────────────────────────────────────────── */}
+        {adminInfo.isHead && (
+          <section className="bg-white p-8 rounded-[3rem] shadow-xl border-t-8 border-blue-600">
+            <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2 mb-2 uppercase italic">
+              <UserPlus className="text-blue-600"/> Official Roster
+            </h2>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-6">
+              Only emails on this list can vote. Leave empty to allow all Gmail users (open mode).
+            </p>
+            <div className="flex gap-3 mb-6">
+              <input type="email" placeholder="voter@gmail.com" value={newEmail}
+                onChange={e => setNewEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && addToRoster()}
+                className="flex-1 p-4 bg-slate-100 rounded-2xl font-bold text-sm outline-none focus:ring-2 ring-blue-500"/>
+              <button onClick={addToRoster} className="bg-blue-600 text-white px-6 rounded-2xl font-black hover:bg-blue-700 transition-all uppercase text-sm">ADD</button>
+            </div>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {roster.length === 0 && <p className="text-slate-400 text-sm font-bold text-center py-6">No emails — open election mode active.</p>}
+              {roster.map(m => (
+                <div key={m.email} className="flex justify-between items-center p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-sm font-bold text-slate-700">{m.email}</span>
+                  <button onClick={() => removeFromRoster(m.email)} className="text-red-400 hover:text-red-600 transition-all"><Trash2 size={16}/></button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── REGISTERED VOTERS ─────────────────────────────────────────── */}
+        <section className="bg-white p-8 rounded-[3rem] shadow-xl border-t-8 border-purple-600">
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2 mb-6 uppercase italic">
+            <Users className="text-purple-600"/> Registered Voters
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b-2 border-slate-100">
+                  {['Voter ID (partial)','Chapter','Class Year','Registered','Edit'].map(h => (
+                    <th key={h} className="text-left py-3 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {displayVoters.length === 0 && (
+                  <tr><td colSpan={5} className="text-center py-10 text-slate-400 font-bold">No voters registered yet.</td></tr>
+                )}
+                {displayVoters.map(v => (
+                  <tr key={v.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
+                    <td className="py-3 px-4 font-mono text-slate-500 text-xs">{v.id.slice(0,12)}…</td>
+                    <td className="py-3 px-4 font-bold text-slate-700">{v.home_chapter}</td>
+                    <td className="py-3 px-4 font-black text-slate-900">{v.class_year}</td>
+                    <td className="py-3 px-4 text-slate-400 text-xs">{new Date(v.created_at).toLocaleDateString()}</td>
+                    <td className="py-3 px-4">
+                      <button onClick={() => { setEditingVoter(v); setEditClass(v.class_year); }}
+                        className="bg-purple-100 text-purple-700 hover:bg-purple-600 hover:text-white px-3 py-2 rounded-xl font-black text-xs uppercase transition-all flex items-center gap-1">
+                        <Edit3 size={12}/> Edit
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
-      </main>
+
+        {/* ── AUDIT LOG ─────────────────────────────────────────────────── */}
+        <section className="bg-slate-900 p-8 rounded-[3rem] shadow-xl text-white">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <h2 className="text-2xl font-black uppercase italic flex items-center gap-2 text-blue-400">
+              <ShieldCheck/> Audit Log
+            </h2>
+            <span className="bg-blue-600/20 border border-blue-600/30 text-blue-400 px-4 py-2 rounded-full font-black text-sm">
+              {displayVotes.length} RECORDS
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-white/10">
+                  {['Time','Voter','Chapter','Class','Position','Candidate'].map(h => (
+                    <th key={h} className="text-left py-3 px-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {displayVotes.length === 0 && (
+                  <tr><td colSpan={6} className="text-center py-10 text-slate-500 font-bold">No votes recorded yet.</td></tr>
+                )}
+                {displayVotes.map((v, i) => (
+                  <tr key={v.id ?? i} className="border-b border-white/5 hover:bg-white/5 transition-all">
+                    <td className="py-3 px-3 text-slate-500">{new Date(v.created_at).toLocaleString()}</td>
+                    <td className="py-3 px-3 text-slate-300 font-bold truncate max-w-[140px]">{v.voter_name}</td>
+                    <td className="py-3 px-3 text-slate-400">{v.chapter}</td>
+                    <td className="py-3 px-3 text-red-400 font-black">{v.class_year}</td>
+                    <td className="py-3 px-3 text-slate-300 italic">{v.position_name}</td>
+                    <td className="py-3 px-3 text-white font-black">{v.candidate_name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+      </div>
     </div>
   );
 }
