@@ -12,9 +12,9 @@ import Link from 'next/link';
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Candidate      { id: number; full_name: string; position_name: string; chapter: string; }
 interface VoteRow        { id: number; voter_name: string; voter_id: string; position_name: string; candidate_name: string; chapter: string; class_year: string; created_at: string; }
-interface EligibleVoter  { id: number; email: string; chapter: string; }
+interface EligibleVoter  { id: number; email: string; chapter: string; created_at: string; }
 interface BlacklistedVoter { id: number; email: string; reason: string; created_at: string; }
-interface ElectionAdmin  { id: number; email: string; chapter: string; }
+interface ElectionAdmin  { id: number; email: string; branch: string; }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const HEAD_ADMIN_EMAIL = "ezekielborbor17@gmail.com";
@@ -71,8 +71,8 @@ export default function AdminPage() {
         setIsHeadAdmin(true); setIsAuthorized(true);
       } else {
         const { data } = await supabase
-          .from('election_admins').select('email, chapter').eq('email', lowerEmail).maybeSingle();
-        if (data) { setIsAuthorized(true); setMyAdminChapter(data.chapter); }
+          .from('election_admins').select('email, branch').eq('email', lowerEmail).maybeSingle();
+        if (data) { setIsAuthorized(true); setMyAdminChapter(data.branch); }
       }
       setLoading(false);
     };
@@ -822,7 +822,7 @@ function AdminsTab({ admins, setAdmins, showToast }: {
   showToast: (m: string, ok?: boolean) => void;
 }) {
   const [email, setEmail]     = useState('');
-  const [chapter, setChapter] = useState(CHAPTERS[0]);
+  const [branch, setBranch] = useState(CHAPTERS[0]);
   const [saving, setSaving]   = useState(false);
 
   async function addAdmin() {
@@ -830,11 +830,11 @@ function AdminsTab({ admins, setAdmins, showToast }: {
     if (!lowerEmail) { showToast("Email required.", false); return; }
     if (lowerEmail === HEAD_ADMIN_EMAIL.toLowerCase()) { showToast("That's the head admin — no need to add.", false); return; }
     setSaving(true);
-    const { data, error } = await supabase.from('election_admins').insert([{ email: lowerEmail, chapter }]).select().single();
+    const { data, error } = await supabase.from('election_admins').insert([{ email: lowerEmail, branch }]).select().single();
     setSaving(false);
-    if (error) { showToast(error.message.includes('unique') ? "Already an admin." : "Failed.", false); return; }
+    if (error) { showToast(error.message.includes('unique') ? "Already an admin." : `Failed: ${error.message}`, false); return; }
     setAdmins(prev => [...prev, data]); setEmail('');
-    showToast(`${lowerEmail} is now ${chapter} chapter admin.`);
+    showToast(`${lowerEmail} is now ${branch} chapter admin.`);
   }
 
   async function removeAdmin(id: number, adminEmail: string) {
@@ -864,7 +864,7 @@ function AdminsTab({ admins, setAdmins, showToast }: {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder="chairperson@gmail.com"
             className="border-2 border-slate-200 focus:border-slate-700 rounded-2xl px-5 py-4 font-bold outline-none md:col-span-2"/>
-          <select value={chapter} onChange={e => setChapter(e.target.value)}
+          <select value={branch} onChange={e => setBranch(e.target.value)}
             className="border-2 border-slate-200 focus:border-slate-700 rounded-2xl px-5 py-4 font-bold outline-none">
             {CHAPTERS.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -883,7 +883,7 @@ function AdminsTab({ admins, setAdmins, showToast }: {
             <div key={a.id} className="flex justify-between items-center p-5 bg-slate-50 rounded-2xl">
               <div>
                 <p className="font-black text-slate-800">{a.email}</p>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{a.chapter} Chapter Admin</p>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{a.branch} Chapter Admin</p>
               </div>
               <button onClick={() => removeAdmin(a.id, a.email)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-xl transition-all">
                 <Trash2 size={16}/>
