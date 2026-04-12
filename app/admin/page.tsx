@@ -12,7 +12,7 @@ import Link from 'next/link';
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Candidate      { id: number; full_name: string; position_name: string; chapter: string; }
 interface VoteRow        { id: number; voter_name: string; voter_id: string; position_name: string; candidate_name: string; chapter: string; class_year: string; created_at: string; }
-interface EligibleVoter  { id: number; email: string; chapter: string; created_at: string; }
+interface EligibleVoter  { email: string; chapter: string; created_at: string; }
 interface BlacklistedVoter { id: number; email: string; reason: string; created_at: string; }
 interface ElectionAdmin  { id: number; email: string; branch: string; }
 
@@ -701,11 +701,11 @@ function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHe
     showToast(`${email} added to roster.`);
   }
 
-  async function removeFromRoster(id: number, email: string) {
+  async function removeFromRoster(email: string) {
     if (!confirm(`Remove ${email} from roster?`)) return;
-    const { error } = await supabase.from('eligible_voters').delete().eq('id', id);
+    const { error } = await supabase.from('eligible_voters').delete().eq('email', email);
     if (error) { showToast(`Failed to remove: ${error.message}`, false); return; }
-    setRoster(prev => prev.filter(r => r.id !== id));
+    setRoster(prev => prev.filter(r => r.email !== email));
     showToast(`${email} removed from roster.`);
   }
 
@@ -756,12 +756,12 @@ function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHe
         <SectionTitle>Eligible Voters ({visibleRoster.length})</SectionTitle>
         <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
           {visibleRoster.map(r => (
-            <div key={r.id} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
+            <div key={r.email} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
               <div>
                 <p className="font-bold text-slate-800 text-sm">{r.email}</p>
                 <p className="text-xs text-slate-400 font-bold uppercase">{r.chapter}</p>
               </div>
-              <button onClick={() => removeFromRoster(r.id, r.email)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-xl transition-all">
+              <button onClick={() => removeFromRoster(r.email)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-xl transition-all">
                 <Trash2 size={14}/>
               </button>
             </div>
