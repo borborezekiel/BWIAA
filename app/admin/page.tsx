@@ -40,14 +40,14 @@ export default function AdminDashboard() {
       if (!user) { setLoading(false); return; }
 
       if (user.email === HEAD_ADMIN) {
-        setAdminInfo({ email: user.email, branch: 'National', isHead: true });
+        setAdminInfo({ email: user.email ?? '', branch: 'National', isHead: true });
         await fetchData('National', true);
       } else {
         const { data: adminRow } = await supabase
           .from('election_admins').select('branch').eq('email', user.email).maybeSingle();
         if (adminRow) {
-          setAdminInfo({ email: user.email, branch: adminRow.branch, isHead: false });
-          await fetchData(adminRow.branch, false);
+          setAdminInfo({ email: user.email ?? '', branch: adminRow.branch ?? '', isHead: false });
+          await fetchData(adminRow.branch ?? '', false);
         }
       }
       setLoading(false);
