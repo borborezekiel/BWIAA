@@ -20,18 +20,27 @@ interface ElectionAdmin  { id: number; email: string; branch: string; }
 const HEAD_ADMIN_EMAIL = "ezekielborbor17@gmail.com";
 
 const CHAPTERS = [
-  "Harbel and RIA","Monrovia","Buchanan","Gbarnga","Kakata",
-  "Voinjama","Zwedru","Robertsport","Greenville","Harper","Sanniquellie","Cestos City",
+  "Harbel Chapter",
+  "Montserrado Chapter",
+  "Grand Bassa Chapter",
+  "Nimba Chapter",
+  "Weala Branch",
+  "Robertsport Branch",
+  "LAC Branch",
+  "Bong Chapter",
+  "Paynesville Branch",
+  "Mother Chapter",
 ];
 
-// Predefined BWIAA positions — exactly as in the database
+// Official BWIAA positions
 const POSITIONS = [
   "President",
-  "Vice President (Administration)",
+  "Vice President for Administration",
+  "Vice President for Operations",
   "Secretary General",
   "Financial Secretary",
   "Treasurer",
-  "Media & Publicity Chairman",
+  "Parliamentarian",
   "Chaplain",
 ];
 
@@ -48,11 +57,12 @@ export default function AdminPage() {
   const [loading, setLoading]               = useState(true);
   const [activeTab, setActiveTab]           = useState<Tab>("overview");
 
-  const [votes, setVotes]         = useState<VoteRow[]>([]);
+  const [votes, setVotes]           = useState<VoteRow[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [roster, setRoster]       = useState<EligibleVoter[]>([]);
-  const [blacklist, setBlacklist] = useState<BlacklistedVoter[]>([]);
-  const [admins, setAdmins]       = useState<ElectionAdmin[]>([]);
+  const [roster, setRoster]         = useState<EligibleVoter[]>([]);
+  const [blacklist, setBlacklist]   = useState<BlacklistedVoter[]>([]);
+  const [admins, setAdmins]         = useState<ElectionAdmin[]>([]);
+  const [deadline, setDeadline]     = useState<string | null>(null);
 
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const showToast = useCallback((msg: string, ok = true) => {
@@ -90,18 +100,20 @@ export default function AdminPage() {
   }, [isAuthorized]);
 
   async function fetchAll() {
-    const [v, c, r, b, a] = await Promise.all([
+    const [v, c, r, b, a, s] = await Promise.all([
       supabase.from('votes').select('*').order('created_at', { ascending: false }),
       supabase.from('candidates').select('*').order('position_name'),
       supabase.from('eligible_voters').select('*').order('email'),
       supabase.from('blacklisted_voters').select('*').order('created_at', { ascending: false }),
       supabase.from('election_admins').select('*').order('email'),
+      supabase.from('election_settings').select('*').eq('key', 'voting_deadline').maybeSingle(),
     ]);
     if (v.data) setVotes(v.data);
     if (c.data) setCandidates(c.data);
     if (r.data) setRoster(r.data);
     if (b.data) setBlacklist(b.data);
     if (a.data) setAdmins(a.data);
+    if (s.data) setDeadline(s.data.value);
   }
 
   async function handleSignOut() {
@@ -195,12 +207,12 @@ export default function AdminPage() {
 
       {/* Content */}
       <div className="max-w-6xl mx-auto px-4 pt-10">
-        {activeTab === "overview"   && <OverviewTab   votes={votes} candidates={candidates} roster={roster} admins={admins} blacklist={blacklist} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
+        {activeTab === "overview"   && <OverviewTab   votes={votes} candidates={candidates} roster={roster} admins={admins} blacklist={blacklist} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} deadline={deadline}/>}
         {activeTab === "results"    && <ResultsTab    votes={votes} candidates={candidates} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "candidates" && <CandidatesTab candidates={candidates} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin}/>}
         {activeTab === "voters"     && <VotersTab     votes={votes} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "roster"     && <RosterTab     roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
-        {activeTab === "admins" && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast}/>}
+        {activeTab === "admins" && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
       </div>
     </div>
   );
@@ -220,13 +232,33 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: OVERVIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin, myChapter }: {
+function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin, myChapter, deadline }: {
   votes: VoteRow[]; candidates: Candidate[]; roster: EligibleVoter[];
   admins: ElectionAdmin[]; blacklist: BlacklistedVoter[];
-  isHeadAdmin: boolean; myChapter: string | null;
+  isHeadAdmin: boolean; myChapter: string | null; deadline: string | null;
 }) {
   const scopedVotes  = isHeadAdmin ? votes : votes.filter(v => v.chapter === myChapter);
   const uniqueVoters = new Set(scopedVotes.map(v => v.voter_id)).size;
+
+  // Live countdown
+  const [timeLeft, setTimeLeft] = useState<string>('');
+  const [votingClosed, setVotingClosed] = useState(false);
+  useEffect(() => {
+    if (!deadline) { setTimeLeft(''); return; }
+    const tick = () => {
+      const diff = new Date(deadline).getTime() - Date.now();
+      if (diff <= 0) { setTimeLeft('VOTING CLOSED'); setVotingClosed(true); return; }
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${d > 0 ? d + 'd ' : ''}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`);
+      setVotingClosed(false);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [deadline]);
 
   const stats = isHeadAdmin
     ? [
@@ -250,6 +282,22 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
   return (
     <div className="space-y-10">
       <h2 className="text-3xl font-black uppercase italic text-slate-800">{isHeadAdmin ? 'National Overview' : `${myChapter} Overview`}</h2>
+
+      {/* Countdown Banner */}
+      {deadline && (
+        <div className={`rounded-[2.5rem] p-8 text-white text-center shadow-2xl ${votingClosed ? 'bg-slate-800' : 'bg-slate-900'}`}>
+          <p className="text-xs font-black uppercase tracking-widest mb-2 opacity-60">
+            {votingClosed ? 'Election Ended' : 'Voting Closes In'}
+          </p>
+          <p className={`text-5xl md:text-7xl font-black tracking-tight tabular-nums ${votingClosed ? 'text-red-500' : 'text-red-500'}`}>
+            {timeLeft}
+          </p>
+          <p className="text-xs font-bold uppercase tracking-widest mt-3 opacity-40">
+            Deadline: {new Date(deadline).toLocaleString()}
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {stats.map(s => (
           <div key={s.label} className={`${s.color} text-white rounded-3xl p-8 shadow-lg`}>
@@ -849,14 +897,57 @@ function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHe
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: ADMINS
 // ─────────────────────────────────────────────────────────────────────────────
-function AdminsTab({ admins, setAdmins, showToast }: {
+function AdminsTab({ admins, setAdmins, showToast, deadline, setDeadline }: {
   admins: ElectionAdmin[];
   setAdmins: React.Dispatch<React.SetStateAction<ElectionAdmin[]>>;
   showToast: (m: string, ok?: boolean) => void;
+  deadline: string | null;
+  setDeadline: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
-  const [email, setEmail]     = useState('');
-  const [branch, setBranch] = useState(CHAPTERS[0]);
-  const [saving, setSaving]   = useState(false);
+  const [email, setEmail]       = useState('');
+  const [branch, setBranch]     = useState(CHAPTERS[0]);
+  const [saving, setSaving]     = useState(false);
+  const [dlInput, setDlInput]   = useState('');
+  const [dlSaving, setDlSaving] = useState(false);
+
+  // Live countdown in admins tab too
+  const [timeLeft, setTimeLeft]     = useState('');
+  const [votingClosed, setVotingClosed] = useState(false);
+  useEffect(() => {
+    if (!deadline) { setTimeLeft(''); return; }
+    const tick = () => {
+      const diff = new Date(deadline).getTime() - Date.now();
+      if (diff <= 0) { setTimeLeft('VOTING CLOSED'); setVotingClosed(true); return; }
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${d > 0 ? d + 'd ' : ''}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`);
+      setVotingClosed(false);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [deadline]);
+
+  async function saveDeadline() {
+    if (!dlInput) { showToast("Please select a date and time.", false); return; }
+    setDlSaving(true);
+    const { error } = await supabase.from('election_settings')
+      .upsert([{ key: 'voting_deadline', value: new Date(dlInput).toISOString() }], { onConflict: 'key' });
+    setDlSaving(false);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    setDeadline(new Date(dlInput).toISOString());
+    showToast('Voting deadline set successfully.');
+  }
+
+  async function clearDeadline() {
+    if (!confirm('Remove the voting deadline? Voting will be open indefinitely.')) return;
+    const { error } = await supabase.from('election_settings').delete().eq('key', 'voting_deadline');
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    setDeadline(null); setDlInput('');
+    showToast('Deadline removed. Voting is now open indefinitely.');
+  }
 
   async function addAdmin() {
     const lowerEmail = email.trim().toLowerCase();
@@ -867,7 +958,7 @@ function AdminsTab({ admins, setAdmins, showToast }: {
     setSaving(false);
     if (error) { showToast(error.message.includes('unique') ? "Already an admin." : `Failed: ${error.message}`, false); return; }
     setAdmins(prev => [...prev, data]); setEmail('');
-    showToast(`${lowerEmail} is now ${branch} chapter admin.`);
+    showToast(`${lowerEmail} is now ${branch} admin.`);
   }
 
   async function removeAdmin(id: number, adminEmail: string) {
@@ -884,6 +975,56 @@ function AdminsTab({ admins, setAdmins, showToast }: {
         <h2 className="text-3xl font-black uppercase italic text-slate-800">Admins</h2>
         <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Add branch chairpersons — they manage their chapter's roster and view results.</p>
       </div>
+
+      {/* ── Voting Deadline ── */}
+      <Card accent="red">
+        <SectionTitle>Voting Deadline & Countdown</SectionTitle>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6">
+          Once the deadline passes, the ballot is automatically locked — no one can vote.
+        </p>
+
+        {/* Current countdown display */}
+        {deadline ? (
+          <div className={`rounded-3xl p-8 mb-6 text-center ${votingClosed ? 'bg-slate-800' : 'bg-slate-900'}`}>
+            <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-2">
+              {votingClosed ? 'Voting Has Ended' : 'Time Remaining'}
+            </p>
+            <p className="text-5xl font-black text-red-500 tabular-nums tracking-tight">{timeLeft}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase mt-3">
+              Deadline: {new Date(deadline).toLocaleString()}
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-3xl p-6 mb-6 bg-slate-50 border-2 border-dashed border-slate-200 text-center">
+            <p className="text-slate-400 font-black uppercase text-sm tracking-widest">No deadline set — voting is open indefinitely</p>
+          </div>
+        )}
+
+        {/* Deadline picker */}
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-end">
+          <div className="flex-1">
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+              Set New Deadline (Date & Time)
+            </label>
+            <input type="datetime-local" value={dlInput} onChange={e => setDlInput(e.target.value)}
+              min={new Date().toISOString().slice(0,16)}
+              className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none text-slate-800"/>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={saveDeadline} disabled={dlSaving}
+              className="bg-red-600 text-white font-black uppercase px-6 py-4 rounded-2xl flex items-center gap-2 hover:bg-red-700 transition-all disabled:opacity-50 whitespace-nowrap">
+              {dlSaving ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
+              {deadline ? 'Update Deadline' : 'Set Deadline'}
+            </button>
+            {deadline && (
+              <button onClick={clearDeadline}
+                className="bg-slate-100 text-slate-600 font-black uppercase px-6 py-4 rounded-2xl hover:bg-slate-200 transition-all whitespace-nowrap">
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+      </Card>
 
       <Card>
         <SectionTitle>Add Branch Chairperson</SectionTitle>

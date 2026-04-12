@@ -15,8 +15,16 @@ interface VoteRow   { id: number; voter_name: string; voter_id: string; position
 // ─── Constants ────────────────────────────────────────────────────────────────
 const HEAD_ADMIN_EMAIL = "ezekielborbor17@gmail.com";
 const CHAPTERS = [
-  "Harbel and RIA","Monrovia","Buchanan","Gbarnga","Kakata",
-  "Voinjama","Zwedru","Robertsport","Greenville","Harper","Sanniquellie","Cestos City"
+  "Harbel Chapter",
+  "Montserrado Chapter",
+  "Grand Bassa Chapter",
+  "Nimba Chapter",
+  "Weala Branch",
+  "Robertsport Branch",
+  "LAC Branch",
+  "Bong Chapter",
+  "Paynesville Branch",
+  "Mother Chapter",
 ];
 
 export default function BWIAAElection2026() {
@@ -31,6 +39,9 @@ export default function BWIAAElection2026() {
   const [classInput, setClassInput]   = useState('');
   const [confirm, setConfirm]         = useState<{ pos: string; cand: string } | null>(null);
   const [casting, setCasting]         = useState(false);
+  const [deadline, setDeadline]       = useState<string | null>(null);
+  const [timeLeft, setTimeLeft]       = useState('');
+  const [votingClosed, setVotingClosed] = useState(false);
 
   // ── Init ────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -38,6 +49,10 @@ export default function BWIAAElection2026() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) { setUser(user); await loadVoterProfile(user); }
+        // Fetch deadline
+        const { data: dl } = await supabase.from('election_settings')
+          .select('value').eq('key', 'voting_deadline').maybeSingle();
+        if (dl) setDeadline(dl.value);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     };
@@ -67,6 +82,24 @@ export default function BWIAAElection2026() {
     if (!user) return;
     checkAccess(user.email);
   }, [user]);
+
+  // Deadline countdown
+  useEffect(() => {
+    if (!deadline) return;
+    const tick = () => {
+      const diff = new Date(deadline).getTime() - Date.now();
+      if (diff <= 0) { setTimeLeft('VOTING CLOSED'); setVotingClosed(true); return; }
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${d > 0 ? d + 'd ' : ''}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`);
+      setVotingClosed(false);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [deadline]);
 
   async function loadVoterProfile(u: any) {
     const { data: profile } = await supabase
@@ -159,6 +192,10 @@ export default function BWIAAElection2026() {
   }
 
   function selectCandidate(pos: string, cand: string) {
+    if (votingClosed) {
+      setErrorMessage('VOTING HAS CLOSED. The election deadline has passed. No further ballots can be cast.');
+      return;
+    }
     const alreadyVoted = votes.some(v => v.voter_id === user?.id && v.position_name === pos);
     if (alreadyVoted) {
       setErrorMessage(`INTEGRITY ALERT: You have already cast a ballot for ${pos}.`);
@@ -325,7 +362,7 @@ export default function BWIAAElection2026() {
         </div>
       )}
 
-      <header className="bg-white border-b-2 border-slate-100 p-5 mb-10 sticky top-0 z-40 shadow-sm">
+      <header className="bg-white border-b-2 border-slate-100 p-5 mb-0 sticky top-0 z-40 shadow-sm">
         <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-red-600 text-white p-2 rounded-xl shadow"><ShieldCheck size={18}/></div>
@@ -335,6 +372,12 @@ export default function BWIAAElection2026() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {deadline && (
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${votingClosed ? 'bg-red-600 text-white' : 'bg-slate-900 text-white'}`}>
+                <Activity size={12}/>
+                {votingClosed ? 'VOTING CLOSED' : timeLeft}
+              </div>
+            )}
             <span className="text-[11px] text-slate-400 font-bold hidden md:block">{user?.email}</span>
             <AdminLink userEmail={user?.email} headAdminEmail={HEAD_ADMIN_EMAIL} />
             <button onClick={handleSignOut} className="bg-slate-100 p-2.5 rounded-xl text-slate-400 hover:text-red-600 transition-all border border-slate-200" title="Sign Out">
@@ -344,7 +387,14 @@ export default function BWIAAElection2026() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 space-y-12">
+      {/* Voting closed full banner */}
+      {votingClosed && (
+        <div className="bg-red-600 text-white text-center py-4 px-6 font-black uppercase tracking-widest text-sm">
+          ⛔ Voting has closed — The election deadline has passed. No further ballots can be accepted.
+        </div>
+      )}
+
+      <main className="max-w-4xl mx-auto px-4 space-y-12 mt-10">
         {Object.entries(positionMap).map(([posTitle, candList]) => {
           const hasVoted = votedPositions.has(posTitle);
           return (
