@@ -95,6 +95,7 @@ export default function BWIAAElection2026() {
     if (lowerEmail === HEAD_ADMIN_EMAIL.toLowerCase()) return; // ★ head admin bypass
 
     try {
+      // 1. Blacklist check first
       const { data: blocked } = await supabase
         .from('blacklisted_voters').select('email, reason').eq('email', lowerEmail).maybeSingle();
       if (blocked) {
@@ -103,15 +104,29 @@ export default function BWIAAElection2026() {
         return;
       }
 
+      // 2. Whitelist check — if roster has entries, voter must be on it
       const { count, error: countError } = await supabase
         .from('eligible_voters').select('*', { count: 'exact', head: true });
-      if (countError) return; // if we can't read the roster, fail open (don't lock out)
+      if (countError) return; // fail open if we can't read roster
       if (count && count > 0) {
         const { data: found } = await supabase
-          .from('eligible_voters').select('email').eq('email', lowerEmail).maybeSingle();
+          .from('eligible_voters').select('email, chapter').eq('email', lowerEmail).maybeSingle();
         if (!found) {
           await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
           setErrorMessage(`ACCESS DENIED: ${email} is not on the official BWIAA voter roster. Contact your chapter administrator.`);
+          return;
+        }
+        // 3. ★ Auto-assign chapter from roster if voter profile has no chapter yet
+        if (found.chapter && !myChapter) {
+          setMyChapter(found.chapter);
+          // persist to voter_profiles so it survives refresh
+          const { data: { user: u } } = await supabase.auth.getUser();
+          if (u) {
+            await supabase.from('voter_profiles').upsert(
+              [{ id: u.id, home_chapter: found.chapter }],
+              { onConflict: 'id' }
+            );
+          }
         }
       }
     } catch (e) {
@@ -124,6 +139,18 @@ export default function BWIAAElection2026() {
     if (!classInput || classInput.length !== 4 || isNaN(year) || year < 1950 || year > new Date().getFullYear()) {
       setErrorMessage("Please enter a valid 4-digit Graduating Class Year (e.g. 1995) before selecting your chapter.");
       return;
+    }
+    // Check if this voter is on the roster — if so, use THEIR assigned chapter, not what they clicked
+    const lowerEmail = (await supabase.auth.getUser()).data.user?.email?.toLowerCase();
+    if (lowerEmail) {
+      const { data: found } = await supabase
+        .from('eligible_voters').select('chapter').eq('email', lowerEmail).maybeSingle();
+      if (found?.chapter) {
+        // Voter is on roster — use their assigned chapter, ignore what they clicked
+        localStorage.setItem('pending_voter_data', JSON.stringify({ chapter: found.chapter, classYear: classInput }));
+        await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
+        return;
+      }
     }
     localStorage.setItem('pending_voter_data', JSON.stringify({ chapter, classYear: classInput }));
     await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });

@@ -702,11 +702,11 @@ function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHe
   }
 
   async function removeFromRoster(id: number, email: string) {
-    if (!confirm(`Remove ${email}?`)) return;
+    if (!confirm(`Remove ${email} from roster?`)) return;
     const { error } = await supabase.from('eligible_voters').delete().eq('id', id);
-    if (error) { showToast("Failed.", false); return; }
+    if (error) { showToast(`Failed to remove: ${error.message}`, false); return; }
     setRoster(prev => prev.filter(r => r.id !== id));
-    showToast(`${email} removed.`);
+    showToast(`${email} removed from roster.`);
   }
 
   async function addToBlacklist() {
@@ -727,7 +727,7 @@ function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHe
   async function removeFromBlacklist(id: number, email: string) {
     if (!confirm(`Unblock ${email}?`)) return;
     const { error } = await supabase.from('blacklisted_voters').delete().eq('id', id);
-    if (error) { showToast("Failed.", false); return; }
+    if (error) { showToast(`Failed to unblock: ${error.message}`, false); return; }
     setBlacklist(prev => prev.filter(b => b.id !== id));
     showToast(`${email} unblocked.`);
   }
