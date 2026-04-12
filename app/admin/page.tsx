@@ -501,14 +501,22 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
     showToast("Candidate removed.");
   }
 
-  const byPosition = useMemo(() => {
-    const map: Record<string, Candidate[]> = {};
+  const [filterChapter, setFilterChapter] = useState<string>(CHAPTERS[0]);
+
+  // Group by chapter first, then position within each chapter
+  const byChapter = useMemo(() => {
+    const map: Record<string, Record<string, Candidate[]>> = {};
     candidates.forEach(c => {
-      if (!map[c.position_name]) map[c.position_name] = [];
-      map[c.position_name].push(c);
+      if (!map[c.chapter]) map[c.chapter] = {};
+      if (!map[c.chapter][c.position_name]) map[c.chapter][c.position_name] = [];
+      map[c.chapter][c.position_name].push(c);
     });
     return map;
   }, [candidates]);
+
+  const filteredByPosition = byChapter[filterChapter] ?? {};
+  const positionsCovered = Object.keys(filteredByPosition).length;
+  const positionsTotal = POSITIONS.length;
 
   return (
     <div className="space-y-10">
@@ -518,31 +526,23 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
         <Card accent="red">
           <SectionTitle>Add New Candidate</SectionTitle>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            {/* Candidate name */}
             <input value={name} onChange={e => setName(e.target.value)} placeholder="Full Name"
               className="border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
-
-            {/* Position — dropdown with predefined BWIAA positions */}
             <select value={position} onChange={e => setPosition(e.target.value)}
               className="border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none">
               {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
               <option value="__custom__">➕ Other (type custom position)</option>
             </select>
-
-            {/* Chapter */}
             <select value={chapter} onChange={e => setChapter(e.target.value)}
               className="border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none">
               {CHAPTERS.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
-
-          {/* Custom position input (shown only when "Other" is selected) */}
           {isCustom && (
             <input value={customPos} onChange={e => setCustomPos(e.target.value)}
               placeholder="Type custom position name..."
               className="w-full border-2 border-dashed border-red-300 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none mb-4"/>
           )}
-
           <button onClick={addCandidate} disabled={saving}
             className="bg-red-600 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-3 hover:bg-red-700 transition-all disabled:opacity-50">
             {saving ? <Loader2 size={16} className="animate-spin"/> : <PlusCircle size={16}/>}
@@ -551,7 +551,39 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
         </Card>
       )}
 
-      {Object.entries(byPosition).map(([pos, cands]) => (
+      {/* Chapter Progress Overview */}
+      <Card>
+        <SectionTitle>Chapter Setup Progress</SectionTitle>
+        <div className="space-y-3">
+          {CHAPTERS.map(ch => {
+            const chPositions = Object.keys(byChapter[ch] ?? {}).length;
+            const complete = chPositions === positionsTotal;
+            return (
+              <div key={ch} className="flex items-center gap-4">
+                <div className="w-36 text-xs font-bold uppercase text-slate-500 text-right shrink-0">{ch}</div>
+                <div className="flex-1 bg-slate-100 rounded-full h-4 overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-700 ${complete ? 'bg-green-500' : 'bg-red-500'}`}
+                    style={{ width: `${Math.round((chPositions / positionsTotal) * 100)}%` }}/>
+                </div>
+                <div className="w-16 text-right font-black text-xs text-slate-700">{chPositions}/{positionsTotal}</div>
+                {complete && <CheckCircle2 size={14} className="text-green-500 shrink-0"/>}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* Chapter filter + candidate list */}
+      <div className="flex items-center gap-4">
+        <label className="text-xs font-black uppercase tracking-widest text-slate-500 shrink-0">View Chapter:</label>
+        <select value={filterChapter} onChange={e => setFilterChapter(e.target.value)}
+          className="border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-3 font-bold outline-none text-sm bg-white">
+          {CHAPTERS.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <span className="text-xs font-bold text-slate-400 uppercase">{positionsCovered}/{positionsTotal} positions filled</span>
+      </div>
+
+      {Object.entries(filteredByPosition).map(([pos, cands]) => (
         <Card key={pos}>
           <SectionTitle>{pos}</SectionTitle>
           <div className="space-y-3">
@@ -572,10 +604,11 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
         </Card>
       ))}
 
-      {candidates.length === 0 && (
+      {positionsCovered === 0 && (
         <div className="text-center py-20 text-slate-400">
           <List className="mx-auto mb-4 opacity-30" size={48}/>
-          <p className="font-bold uppercase tracking-widest text-sm">No candidates yet. Add your first one above.</p>
+          <p className="font-bold uppercase tracking-widest text-sm">No candidates yet for {filterChapter}.</p>
+          <p className="text-xs mt-2 font-bold uppercase tracking-widest">Use the form above to add all {positionsTotal} positions.</p>
         </div>
       )}
     </div>

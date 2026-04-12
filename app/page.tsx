@@ -29,6 +29,8 @@ export default function BWIAAElection2026() {
   const [receipt, setReceipt]         = useState<VoteRow | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [classInput, setClassInput]   = useState('');
+  const [confirm, setConfirm]         = useState<{ pos: string; cand: string } | null>(null);
+  const [casting, setCasting]         = useState(false);
 
   // ── Init ────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -156,19 +158,26 @@ export default function BWIAAElection2026() {
     await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
   }
 
-  async function castBallot(pos: string, cand: string) {
-    if (!user || !myChapter) return;
-    const alreadyVoted = votes.some(v => v.voter_id === user.id && v.position_name === pos);
+  function selectCandidate(pos: string, cand: string) {
+    const alreadyVoted = votes.some(v => v.voter_id === user?.id && v.position_name === pos);
     if (alreadyVoted) {
       setErrorMessage(`INTEGRITY ALERT: You have already cast a ballot for ${pos}.`);
       return;
     }
+    setConfirm({ pos, cand });
+  }
+
+  async function castBallot() {
+    if (!confirm || !user || !myChapter) return;
+    setCasting(true);
     const { data, error } = await supabase
       .from('votes')
-      .insert([{ position_name: pos, candidate_name: cand, voter_name: user.email, voter_id: user.id, chapter: myChapter, class_year: myClass }])
+      .insert([{ position_name: confirm.pos, candidate_name: confirm.cand, voter_name: user.email, voter_id: user.id, chapter: myChapter, class_year: myClass }])
       .select().single();
+    setCasting(false);
+    setConfirm(null);
     if (error) {
-      setErrorMessage(`INTEGRITY ALERT: Our records show you have already cast a ballot for ${pos}.`);
+      setErrorMessage(`INTEGRITY ALERT: Our records show you have already cast a ballot for ${confirm.pos}.`);
     } else {
       setReceipt(data);
     }
@@ -183,12 +192,15 @@ export default function BWIAAElection2026() {
   // ── Derived ──────────────────────────────────────────────────────────────────
   const positionMap = useMemo(() => {
     const map: Record<string, string[]> = {};
-    candidates.forEach(c => {
-      if (!map[c.position_name]) map[c.position_name] = [];
-      map[c.position_name].push(c.full_name);
-    });
+    // Only show candidates assigned to the voter's own chapter
+    candidates
+      .filter(c => c.chapter === myChapter)
+      .forEach(c => {
+        if (!map[c.position_name]) map[c.position_name] = [];
+        map[c.position_name].push(c.full_name);
+      });
     return map;
-  }, [candidates]);
+  }, [candidates, myChapter]);
 
   const votedPositions = useMemo(() =>
     new Set(votes.filter(v => v.voter_id === user?.id).map(v => v.position_name)),
@@ -262,7 +274,37 @@ export default function BWIAAElection2026() {
         </div>
       )}
 
-      {receipt && (
+      {confirm && (
+        <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+          <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-red-600">
+            <Vote size={56} className="text-red-600 mx-auto mb-6"/>
+            <h2 className="text-2xl font-black uppercase italic mb-2">Confirm Your Vote</h2>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-8">This cannot be undone</p>
+            <div className="bg-slate-50 rounded-3xl p-6 mb-8 text-left space-y-3 border border-slate-100">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Position</span>
+                <span className="font-black text-slate-800 text-sm uppercase">{confirm.pos}</span>
+              </div>
+              <div className="w-full h-px bg-slate-200"/>
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Candidate</span>
+                <span className="font-black text-red-600 text-sm uppercase">{confirm.cand}</span>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirm(null)} disabled={casting}
+                className="flex-1 bg-slate-100 text-slate-700 font-black py-4 rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50">
+                Go Back
+              </button>
+              <button onClick={castBallot} disabled={casting}
+                className="flex-1 bg-red-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                {casting ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
+                {casting ? 'Submitting...' : 'Cast Vote'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
         <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
           <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-green-500">
             <CheckCircle2 size={64} className="text-green-500 mx-auto mb-6" />
@@ -320,7 +362,7 @@ export default function BWIAAElection2026() {
                   const total    = posVotes.length;
                   const percent  = total > 0 ? (count / total) * 100 : 0;
                   return (
-                    <button key={cand} onClick={() => castBallot(posTitle, cand)} disabled={hasVoted}
+                    <button key={cand} onClick={() => selectCandidate(posTitle, cand)} disabled={hasVoted}
                       className={`relative w-full text-left p-8 rounded-[2.5rem] border-2 transition-all overflow-hidden
                         ${hasVoted ? 'border-slate-100 cursor-not-allowed bg-slate-50/30' : 'border-slate-100 hover:border-red-600 bg-slate-50/50 active:scale-95 hover:shadow-lg'}`}>
                       <div className="relative z-10 flex justify-between items-center font-black uppercase">
@@ -340,8 +382,9 @@ export default function BWIAAElection2026() {
         })}
         {Object.keys(positionMap).length === 0 && (
           <div className="text-center py-20 text-slate-400">
-            <Loader2 className="animate-spin mx-auto mb-4" size={32}/>
-            <p className="font-bold uppercase tracking-widest text-sm">Loading ballot positions...</p>
+            <Loader2 className="mx-auto mb-4 opacity-30" size={48}/>
+            <p className="font-bold uppercase tracking-widest text-sm">No candidates have been added for the {myChapter} chapter yet.</p>
+            <p className="text-xs mt-2 font-bold uppercase tracking-widest">Contact your election administrator.</p>
           </div>
         )}
       </main>
