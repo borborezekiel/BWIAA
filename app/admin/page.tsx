@@ -24,22 +24,15 @@ const CHAPTERS = [
   "Voinjama","Zwedru","Robertsport","Greenville","Harper","Sanniquellie","Cestos City",
 ];
 
-// Predefined BWIAA positions — no more free-text, prevents typos/mismatches
+// Predefined BWIAA positions — exactly as in the database
 const POSITIONS = [
-  "National President",
-  "National Vice President",
+  "President",
   "Vice President (Administration)",
-  "Vice President (Finance)",
-  "National Secretary General",
-  "Assistant Secretary General",
-  "National Treasurer",
+  "Secretary General",
   "Financial Secretary",
-  "Auditor General",
-  "Public Relations Officer",
+  "Treasurer",
+  "Media & Publicity Chairman",
   "Chaplain",
-  "Sergeant-at-Arms",
-  "Women's Representative",
-  "Youth Representative",
 ];
 
 type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins";
@@ -479,7 +472,7 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
   const [name, setName]         = useState('');
   const [position, setPosition] = useState(POSITIONS[0]);
   const [customPos, setCustomPos] = useState('');
-  const [chapter, setChapter]   = useState('National');
+  const [chapter, setChapter]   = useState(CHAPTERS[0]);
   const [saving, setSaving]     = useState(false);
 
   const isCustom = position === "__custom__";
@@ -494,7 +487,7 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
       .insert([{ full_name: name.trim(), position_name: finalPosition, chapter }])
       .select().single();
     setSaving(false);
-    if (error) { showToast("Failed to add candidate.", false); return; }
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
     setCandidates(prev => [...prev, data]);
     setName('');
     showToast(`${data.full_name} added to ${data.position_name}`);
@@ -539,7 +532,6 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
             {/* Chapter */}
             <select value={chapter} onChange={e => setChapter(e.target.value)}
               className="border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none">
-              <option value="National">National</option>
               {CHAPTERS.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
@@ -700,7 +692,11 @@ function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHe
     setRSaving(true);
     const { data, error } = await supabase.from('eligible_voters').insert([{ email, chapter: rChapter }]).select().single();
     setRSaving(false);
-    if (error) { showToast(error.message.includes('unique') ? "Already on roster." : "Failed.", false); return; }
+    if (error) {
+      const isDupe = error.code === '23505' || error.message.toLowerCase().includes('unique') || error.message.toLowerCase().includes('duplicate');
+      showToast(isDupe ? "Already on roster." : `Failed: ${error.message}`, false);
+      return;
+    }
     setRoster(prev => [...prev, data]); setREmail('');
     showToast(`${email} added to roster.`);
   }
@@ -719,7 +715,11 @@ function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHe
     setBSaving(true);
     const { data, error } = await supabase.from('blacklisted_voters').insert([{ email, reason: bReason.trim() }]).select().single();
     setBSaving(false);
-    if (error) { showToast(error.message.includes('unique') ? "Already blacklisted." : "Failed.", false); return; }
+    if (error) {
+      const isDupe = error.code === '23505' || error.message.toLowerCase().includes('unique') || error.message.toLowerCase().includes('duplicate');
+      showToast(isDupe ? "Already blacklisted." : `Failed: ${error.message}`, false);
+      return;
+    }
     setBlacklist(prev => [data, ...prev]); setBEmail(''); setBReason('');
     showToast(`${email} blocked.`);
   }

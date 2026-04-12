@@ -85,7 +85,7 @@ export default function BWIAAElection2026() {
   async function completeRegistration(u: any, chapter: string, classYear: string) {
     const { error } = await supabase.from('voter_profiles').upsert(
       [{ id: u.id, home_chapter: chapter, class_year: classYear }],
-      { onConflict: 'id', ignoreDuplicates: true }
+      { onConflict: 'id' }
     );
     if (!error) { setMyChapter(chapter); setMyClass(classYear); localStorage.removeItem('pending_voter_data'); }
   }
@@ -94,28 +94,35 @@ export default function BWIAAElection2026() {
     const lowerEmail = email.toLowerCase();
     if (lowerEmail === HEAD_ADMIN_EMAIL.toLowerCase()) return; // ★ head admin bypass
 
-    const { data: blocked } = await supabase
-      .from('blacklisted_voters').select('email, reason').eq('email', lowerEmail).maybeSingle();
-    if (blocked) {
-      await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
-      setErrorMessage(`ACCESS DENIED: This email has been blocked. Reason: ${blocked.reason}. Contact the Election Committee.`);
-      return;
-    }
-
-    const { count } = await supabase.from('eligible_voters').select('*', { count: 'exact', head: true });
-    if (count && count > 0) {
-      const { data: found } = await supabase
-        .from('eligible_voters').select('email').eq('email', lowerEmail).maybeSingle();
-      if (!found) {
+    try {
+      const { data: blocked } = await supabase
+        .from('blacklisted_voters').select('email, reason').eq('email', lowerEmail).maybeSingle();
+      if (blocked) {
         await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
-        setErrorMessage(`ACCESS DENIED: ${email} is not on the official BWIAA voter roster. Contact your chapter administrator.`);
+        setErrorMessage(`ACCESS DENIED: This email has been blocked. Reason: ${blocked.reason}. Contact the Election Committee.`);
+        return;
       }
+
+      const { count, error: countError } = await supabase
+        .from('eligible_voters').select('*', { count: 'exact', head: true });
+      if (countError) return; // if we can't read the roster, fail open (don't lock out)
+      if (count && count > 0) {
+        const { data: found } = await supabase
+          .from('eligible_voters').select('email').eq('email', lowerEmail).maybeSingle();
+        if (!found) {
+          await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
+          setErrorMessage(`ACCESS DENIED: ${email} is not on the official BWIAA voter roster. Contact your chapter administrator.`);
+        }
+      }
+    } catch (e) {
+      console.error("Access check error:", e);
     }
   }
 
   async function handleChapterSelect(chapter: string) {
-    if (!classInput || classInput.length < 4) {
-      setErrorMessage("Please enter a valid 4-digit Graduating Class Year before selecting your chapter.");
+    const year = parseInt(classInput, 10);
+    if (!classInput || classInput.length !== 4 || isNaN(year) || year < 1950 || year > new Date().getFullYear()) {
+      setErrorMessage("Please enter a valid 4-digit Graduating Class Year (e.g. 1995) before selecting your chapter.");
       return;
     }
     localStorage.setItem('pending_voter_data', JSON.stringify({ chapter, classYear: classInput }));
@@ -253,7 +260,7 @@ export default function BWIAAElection2026() {
             <div className="bg-red-600 text-white p-2 rounded-xl shadow"><ShieldCheck size={18}/></div>
             <div className="font-black text-slate-900 uppercase leading-tight italic text-sm">
               BWIAA Ballot 2026<br/>
-              <span className="text-[10px] text-red-600 font-bold">{myChapter} • CLASS OF {myClass}</span>
+              <span className="text-[10px] text-red-600 font-bold">{myChapter ?? '—'} • CLASS OF {myClass ?? '—'}</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
