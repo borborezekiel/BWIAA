@@ -10,7 +10,7 @@ import {
 import Link from 'next/link';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface Candidate      { id: number; full_name: string; position_name: string; chapter: string; }
+interface Candidate      { id: number; full_name: string; position_name: string; chapter: string; photo_url?: string; }
 interface VoteRow        { id: number; voter_name: string; voter_id: string; position_name: string; candidate_name: string; chapter: string; class_year: string; created_at: string; }
 interface EligibleVoter  { email: string; chapter: string; created_at: string; }
 interface BlacklistedVoter { id: number; email: string; reason: string; created_at: string; }
@@ -521,23 +521,24 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
   const [position, setPosition] = useState(POSITIONS[0]);
   const [customPos, setCustomPos] = useState('');
   const [chapter, setChapter]   = useState(CHAPTERS[0]);
+  const [photoUrl, setPhotoUrl] = useState('');
   const [saving, setSaving]     = useState(false);
 
   const isCustom = position === "__custom__";
   const finalPosition = isCustom ? customPos.trim() : position;
 
   async function addCandidate() {
-    if (!name.trim())           { showToast("Candidate name required.", false); return; }
-    if (!finalPosition)         { showToast("Position required.", false); return; }
+    if (!name.trim())   { showToast("Candidate name required.", false); return; }
+    if (!finalPosition) { showToast("Position required.", false); return; }
     setSaving(true);
+    const payload: any = { full_name: name.trim(), position_name: finalPosition, chapter };
+    if (photoUrl.trim()) payload.photo_url = photoUrl.trim();
     const { data, error } = await supabase
-      .from('candidates')
-      .insert([{ full_name: name.trim(), position_name: finalPosition, chapter }])
-      .select().single();
+      .from('candidates').insert([payload]).select().single();
     setSaving(false);
     if (error) { showToast(`Failed: ${error.message}`, false); return; }
     setCandidates(prev => [...prev, data]);
-    setName('');
+    setName(''); setPhotoUrl('');
     showToast(`${data.full_name} added to ${data.position_name}`);
   }
 
@@ -551,7 +552,6 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
 
   const [filterChapter, setFilterChapter] = useState<string>(CHAPTERS[0]);
 
-  // Group by chapter first, then position within each chapter
   const byChapter = useMemo(() => {
     const map: Record<string, Record<string, Candidate[]>> = {};
     candidates.forEach(c => {
@@ -591,6 +591,17 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
               placeholder="Type custom position name..."
               className="w-full border-2 border-dashed border-red-300 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none mb-4"/>
           )}
+          <input value={photoUrl} onChange={e => setPhotoUrl(e.target.value)}
+            placeholder="Photo URL (optional) — paste a direct image link"
+            className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none mb-4 text-sm"/>
+          {/* Photo preview */}
+          {photoUrl.trim() && (
+            <div className="flex items-center gap-4 mb-4 p-4 bg-slate-50 rounded-2xl">
+              <img src={photoUrl.trim()} alt="Preview" onError={e => (e.currentTarget.style.display='none')}
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-slate-200"/>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Photo preview</p>
+            </div>
+          )}
           <button onClick={addCandidate} disabled={saving}
             className="bg-red-600 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-3 hover:bg-red-700 transition-all disabled:opacity-50">
             {saving ? <Loader2 size={16} className="animate-spin"/> : <PlusCircle size={16}/>}
@@ -599,7 +610,7 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
         </Card>
       )}
 
-      {/* Chapter Progress Overview */}
+      {/* Chapter Progress */}
       <Card>
         <SectionTitle>Chapter Setup Progress</SectionTitle>
         <div className="space-y-3">
@@ -607,13 +618,13 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
             const chPositions = Object.keys(byChapter[ch] ?? {}).length;
             const complete = chPositions === positionsTotal;
             return (
-              <div key={ch} className="flex items-center gap-4">
+              <div key={ch} className="flex items-center gap-3 cursor-pointer" onClick={() => setFilterChapter(ch)}>
                 <div className="w-36 text-xs font-bold uppercase text-slate-500 text-right shrink-0">{ch}</div>
                 <div className="flex-1 bg-slate-100 rounded-full h-4 overflow-hidden">
-                  <div className={`h-full rounded-full transition-all duration-700 ${complete ? 'bg-green-500' : 'bg-red-500'}`}
+                  <div className={`h-full rounded-full transition-all duration-700 ${complete ? 'bg-green-500' : chPositions > 0 ? 'bg-red-500' : 'bg-slate-200'}`}
                     style={{ width: `${Math.round((chPositions / positionsTotal) * 100)}%` }}/>
                 </div>
-                <div className="w-16 text-right font-black text-xs text-slate-700">{chPositions}/{positionsTotal}</div>
+                <div className="w-14 text-right font-black text-xs text-slate-700">{chPositions}/{positionsTotal}</div>
                 {complete && <CheckCircle2 size={14} className="text-green-500 shrink-0"/>}
               </div>
             );
@@ -621,9 +632,9 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
         </div>
       </Card>
 
-      {/* Chapter filter + candidate list */}
-      <div className="flex items-center gap-4">
-        <label className="text-xs font-black uppercase tracking-widest text-slate-500 shrink-0">View Chapter:</label>
+      {/* Chapter filter */}
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="text-xs font-black uppercase tracking-widest text-slate-500 shrink-0">Viewing:</label>
         <select value={filterChapter} onChange={e => setFilterChapter(e.target.value)}
           className="border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-3 font-bold outline-none text-sm bg-white">
           {CHAPTERS.map(c => <option key={c} value={c}>{c}</option>)}
@@ -631,19 +642,28 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
         <span className="text-xs font-bold text-slate-400 uppercase">{positionsCovered}/{positionsTotal} positions filled</span>
       </div>
 
+      {/* Candidate photo cards per position */}
       {Object.entries(filteredByPosition).map(([pos, cands]) => (
         <Card key={pos}>
           <SectionTitle>{pos}</SectionTitle>
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {cands.map(c => (
-              <div key={c.id} className="flex justify-between items-center p-5 bg-slate-50 rounded-2xl">
-                <div>
-                  <p className="font-black text-slate-800">{c.full_name}</p>
-                  <p className="text-xs text-slate-400 font-bold uppercase">{c.chapter}</p>
+              <div key={c.id} className="relative group flex flex-col items-center bg-slate-50 rounded-3xl p-4 border-2 border-slate-100 hover:border-red-200 transition-all">
+                {/* Photo */}
+                <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl overflow-hidden bg-slate-200 mb-3 shrink-0 border-2 border-slate-200">
+                  {c.photo_url
+                    ? <img src={c.photo_url} alt={c.full_name} className="w-full h-full object-cover"/>
+                    : <div className="w-full h-full flex items-center justify-center bg-slate-100">
+                        <span className="text-2xl font-black text-slate-400">{c.full_name.charAt(0)}</span>
+                      </div>
+                  }
                 </div>
+                <p className="font-black text-slate-800 text-xs text-center uppercase leading-tight">{c.full_name}</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 text-center">{c.chapter}</p>
                 {isHeadAdmin && (
-                  <button onClick={() => removeCandidate(c.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-xl transition-all">
-                    <Trash2 size={16}/>
+                  <button onClick={() => removeCandidate(c.id)}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 bg-red-50 text-red-400 hover:text-red-600 p-1.5 rounded-xl transition-all">
+                    <Trash2 size={12}/>
                   </button>
                 )}
               </div>

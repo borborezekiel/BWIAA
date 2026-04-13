@@ -9,7 +9,7 @@ import {
 import Link from 'next/link';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface Candidate { id: number; full_name: string; position_name: string; chapter: string; }
+interface Candidate { id: number; full_name: string; position_name: string; chapter: string; photo_url?: string; }
 interface VoteRow   { id: number; voter_name: string; voter_id: string; position_name: string; candidate_name: string; chapter: string; class_year: string; created_at: string; }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -228,13 +228,12 @@ export default function BWIAAElection2026() {
 
   // ── Derived ──────────────────────────────────────────────────────────────────
   const positionMap = useMemo(() => {
-    const map: Record<string, string[]> = {};
-    // Only show candidates assigned to the voter's own chapter
+    const map: Record<string, Candidate[]> = {};
     candidates
       .filter(c => c.chapter === myChapter)
       .forEach(c => {
         if (!map[c.position_name]) map[c.position_name] = [];
-        map[c.position_name].push(c.full_name);
+        map[c.position_name].push(c);
       });
     return map;
   }, [candidates, myChapter]);
@@ -395,36 +394,52 @@ export default function BWIAAElection2026() {
       )}
 
       <main className="max-w-4xl mx-auto px-4 space-y-12 mt-10">
-        {Object.entries(positionMap).map(([posTitle, candList]) => {
+        {Object.entries(positionMap).map(([posTitle, candObjs]) => {
           const hasVoted = votedPositions.has(posTitle);
           return (
-            <section key={posTitle} className={`bg-white p-8 md:p-12 rounded-[4rem] shadow-xl border-b-[18px] transition-all ${hasVoted ? 'border-green-400 opacity-80' : 'border-slate-200'}`}>
-              <div className="flex items-center justify-between mb-10">
-                <h2 className="text-2xl font-black text-slate-800 uppercase italic border-l-8 border-red-600 pl-6">{posTitle}</h2>
+            <section key={posTitle} className={`bg-white p-6 md:p-12 rounded-[3rem] shadow-xl border-b-[12px] transition-all ${hasVoted ? 'border-green-400' : 'border-slate-200'}`}>
+              <div className="flex items-center justify-between mb-8 gap-3">
+                <h2 className="text-lg md:text-2xl font-black text-slate-800 uppercase italic border-l-8 border-red-600 pl-5 leading-tight">{posTitle}</h2>
                 {hasVoted && (
-                  <span className="flex items-center gap-2 text-green-600 font-black text-xs uppercase tracking-widest bg-green-50 px-4 py-2 rounded-full border border-green-200">
+                  <span className="flex items-center gap-2 text-green-600 font-black text-xs uppercase tracking-widest bg-green-50 px-4 py-2 rounded-full border border-green-200 shrink-0">
                     <CheckCircle2 size={14}/> Voted
                   </span>
                 )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {candList.map(cand => {
+              {/* Responsive grid: 2 cols on mobile, 3+ on larger screens */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 md:gap-5">
+                {candObjs.map(cand => {
                   const posVotes = tallyVotes.filter(v => v.position_name === posTitle);
-                  const count    = posVotes.filter(v => v.candidate_name === cand).length;
+                  const count    = posVotes.filter(v => v.candidate_name === cand.full_name).length;
                   const total    = posVotes.length;
                   const percent  = total > 0 ? (count / total) * 100 : 0;
                   return (
-                    <button key={cand} onClick={() => selectCandidate(posTitle, cand)} disabled={hasVoted}
-                      className={`relative w-full text-left p-8 rounded-[2.5rem] border-2 transition-all overflow-hidden
-                        ${hasVoted ? 'border-slate-100 cursor-not-allowed bg-slate-50/30' : 'border-slate-100 hover:border-red-600 bg-slate-50/50 active:scale-95 hover:shadow-lg'}`}>
-                      <div className="relative z-10 flex justify-between items-center font-black uppercase">
-                        <span className="text-lg tracking-tight text-slate-800">{cand}</span>
-                        <div className="text-right">
-                          <span className="text-4xl text-red-600 block">{count}</span>
-                          <span className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">National Tally</span>
-                        </div>
+                    <button key={cand.id} onClick={() => selectCandidate(posTitle, cand.full_name)}
+                      disabled={hasVoted || votingClosed}
+                      className={`relative flex flex-col items-center p-4 md:p-6 rounded-3xl border-2 transition-all overflow-hidden text-center
+                        ${hasVoted || votingClosed
+                          ? 'border-slate-100 cursor-not-allowed bg-slate-50/50 opacity-70'
+                          : 'border-slate-100 hover:border-red-600 bg-white active:scale-95 hover:shadow-xl'}`}>
+                      {/* Photo */}
+                      <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl overflow-hidden bg-slate-100 mb-3 border-2 border-slate-200 shrink-0">
+                        {cand.photo_url
+                          ? <img src={cand.photo_url} alt={cand.full_name} className="w-full h-full object-cover"/>
+                          : <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-200 to-slate-300">
+                              <span className="text-xl md:text-3xl font-black text-slate-500">{cand.full_name.charAt(0)}</span>
+                            </div>
+                        }
                       </div>
-                      <div className="absolute left-0 top-0 h-full bg-red-100/40 border-r-4 border-red-200/50 -z-10 transition-all duration-1000 ease-out" style={{ width: `${percent}%` }} />
+                      {/* Name */}
+                      <p className="font-black text-slate-800 text-xs md:text-sm uppercase leading-tight mb-2">{cand.full_name}</p>
+                      {/* Live tally */}
+                      <div className="flex items-center gap-1">
+                        <span className="text-xl md:text-3xl font-black text-red-600">{count}</span>
+                        <span className="text-[9px] text-slate-400 uppercase tracking-widest font-bold leading-tight text-left">National<br/>Tally</span>
+                      </div>
+                      {/* Progress bar */}
+                      <div className="absolute bottom-0 left-0 w-full h-1 bg-slate-100">
+                        <div className="h-full bg-red-400 transition-all duration-1000" style={{ width: `${percent}%` }}/>
+                      </div>
                     </button>
                   );
                 })}
