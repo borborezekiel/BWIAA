@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import {
   ShieldCheck, LogOut, Loader2, BarChart2, Users, UserCheck,
   UserX, List, Settings, PlusCircle, Trash2, Trophy, Activity,
-  CheckCircle2, XCircle, Terminal, Crown, Download, Printer,
+  CheckCircle2, XCircle, Terminal, Crown, Download, Printer, FileText,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -15,6 +15,14 @@ interface VoteRow        { id: number; voter_name: string; voter_id: string; pos
 interface EligibleVoter  { email: string; chapter: string; created_at: string; }
 interface BlacklistedVoter { id: number; email: string; reason: string; created_at: string; }
 interface ElectionAdmin  { id: number; email: string; branch: string; }
+interface Application    {
+  id: string; full_name: string; dob: string; class_name: string; year_graduated: number;
+  sponsor_name: string; principal_name: string; id_number: string; applicant_email: string;
+  chapter: string; position_name: string; payment_method: string; photo_url: string;
+  payment_screenshot_1: string | null; payment_screenshot_2: string | null; payment_screenshot_3: string | null;
+  status: 'pending' | 'approved' | 'rejected'; rejection_reason: string | null;
+  created_at: string; reviewed_at: string | null; reviewed_by: string | null;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const HEAD_ADMIN_EMAIL = "ezekielborbor17@gmail.com";
@@ -44,7 +52,7 @@ const POSITIONS = [
   "Chaplain",
 ];
 
-type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins";
+type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ADMIN COMPONENT
@@ -63,6 +71,7 @@ export default function AdminPage() {
   const [blacklist, setBlacklist]   = useState<BlacklistedVoter[]>([]);
   const [admins, setAdmins]         = useState<ElectionAdmin[]>([]);
   const [deadline, setDeadline]     = useState<string | null>(null);
+  const [applications, setApplications] = useState<Application[]>([]);
 
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const showToast = useCallback((msg: string, ok = true) => {
@@ -100,13 +109,14 @@ export default function AdminPage() {
   }, [isAuthorized]);
 
   async function fetchAll() {
-    const [v, c, r, b, a, s] = await Promise.all([
+    const [v, c, r, b, a, s, ap] = await Promise.all([
       supabase.from('votes').select('*').order('created_at', { ascending: false }),
       supabase.from('candidates').select('*').order('position_name'),
       supabase.from('eligible_voters').select('*').order('email'),
       supabase.from('blacklisted_voters').select('*').order('created_at', { ascending: false }),
       supabase.from('election_admins').select('*').order('email'),
       supabase.from('election_settings').select('*').eq('key', 'voting_deadline').maybeSingle(),
+      supabase.from('candidate_applications').select('*').order('created_at', { ascending: false }),
     ]);
     if (v.data) setVotes(v.data);
     if (c.data) setCandidates(c.data);
@@ -114,6 +124,7 @@ export default function AdminPage() {
     if (b.data) setBlacklist(b.data);
     if (a.data) setAdmins(a.data);
     if (s.data) setDeadline(s.data.value);
+    if (ap.data) setApplications(ap.data);
   }
 
   async function handleSignOut() {
@@ -147,12 +158,13 @@ export default function AdminPage() {
   );
 
   const allTabs: { id: Tab; label: string; icon: any; headOnly?: boolean }[] = [
-    { id: "overview",   label: "Overview",   icon: Activity },
-    { id: "results",    label: "Results",    icon: BarChart2 },
-    { id: "candidates", label: "Candidates", icon: List },
-    { id: "voters",     label: "Voters",     icon: Users },
-    { id: "roster",     label: "Roster",     icon: UserCheck },
-    { id: "admins",     label: "Admins",     icon: Settings, headOnly: true },
+    { id: "overview",      label: "Overview",     icon: Activity },
+    { id: "results",       label: "Results",      icon: BarChart2 },
+    { id: "candidates",    label: "Candidates",   icon: List },
+    { id: "voters",        label: "Voters",       icon: Users },
+    { id: "roster",        label: "Roster",       icon: UserCheck },
+    { id: "applications",  label: `Applications${applications.filter(a=>a.status==='pending').length > 0 ? ` (${applications.filter(a=>a.status==='pending').length})` : ''}`, icon: FileText },
+    { id: "admins",        label: "Admins",       icon: Settings, headOnly: true },
   ];
   const tabs = allTabs.filter(t => !t.headOnly || isHeadAdmin);
 
@@ -207,11 +219,12 @@ export default function AdminPage() {
 
       {/* Content */}
       <div className="max-w-6xl mx-auto px-4 pt-10">
-        {activeTab === "overview"   && <OverviewTab   votes={votes} candidates={candidates} roster={roster} admins={admins} blacklist={blacklist} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} deadline={deadline}/>}
-        {activeTab === "results"    && <ResultsTab    votes={votes} candidates={candidates} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
-        {activeTab === "candidates" && <CandidatesTab candidates={candidates} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin}/>}
-        {activeTab === "voters"     && <VotersTab     votes={votes} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
-        {activeTab === "roster"     && <RosterTab     roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
+        {activeTab === "overview"      && <OverviewTab   votes={votes} candidates={candidates} roster={roster} admins={admins} blacklist={blacklist} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} deadline={deadline}/>}
+        {activeTab === "results"       && <ResultsTab    votes={votes} candidates={candidates} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
+        {activeTab === "candidates"    && <CandidatesTab candidates={candidates} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin}/>}
+        {activeTab === "voters"        && <VotersTab     votes={votes} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
+        {activeTab === "roster"        && <RosterTab     roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
+        {activeTab === "applications"  && <ApplicationsTab applications={applications} setApplications={setApplications} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "admins" && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
       </div>
     </div>
@@ -1188,6 +1201,248 @@ function AdminsTab({ admins, setAdmins, showToast, deadline, setDeadline }: {
               </ul>
             </div>
           ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: APPLICATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+function ApplicationsTab({ applications, setApplications, setCandidates, showToast, isHeadAdmin, myChapter, adminEmail }: {
+  applications: Application[];
+  setApplications: React.Dispatch<React.SetStateAction<Application[]>>;
+  setCandidates: React.Dispatch<React.SetStateAction<Candidate[]>>;
+  showToast: (m: string, ok?: boolean) => void;
+  isHeadAdmin: boolean; myChapter: string | null; adminEmail: string;
+}) {
+  const [filter, setFilter]           = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [selected, setSelected]       = useState<Application | null>(null);
+  const [rejReason, setRejReason]     = useState('');
+  const [processing, setProcessing]   = useState(false);
+  const [viewScreenshot, setViewScreenshot] = useState<string | null>(null);
+
+  const visible = applications.filter(a => {
+    const chapterMatch = isHeadAdmin || a.chapter === myChapter;
+    const statusMatch  = filter === 'all' || a.status === filter;
+    return chapterMatch && statusMatch;
+  });
+
+  const pending  = applications.filter(a => a.status === 'pending'  && (isHeadAdmin || a.chapter === myChapter)).length;
+  const approved = applications.filter(a => a.status === 'approved' && (isHeadAdmin || a.chapter === myChapter)).length;
+  const rejected = applications.filter(a => a.status === 'rejected' && (isHeadAdmin || a.chapter === myChapter)).length;
+
+  async function approve(app: Application) {
+    setProcessing(true);
+    // Add to candidates table automatically
+    const { data: cand, error: candErr } = await supabase.from('candidates').insert([{
+      full_name: app.full_name, position_name: app.position_name,
+      chapter: app.chapter, photo_url: app.photo_url || null,
+    }]).select().single();
+    if (candErr) { showToast(`Failed to add candidate: ${candErr.message}`, false); setProcessing(false); return; }
+
+    // Update application status
+    const { error } = await supabase.from('candidate_applications').update({
+      status: 'approved', reviewed_at: new Date().toISOString(), reviewed_by: adminEmail,
+    }).eq('id', app.id);
+    setProcessing(false);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+
+    setApplications(prev => prev.map(a => a.id === app.id ? { ...a, status: 'approved' } : a));
+    setCandidates(prev => [...prev, cand]);
+    setSelected(null);
+    showToast(`✓ ${app.full_name} approved and added as ${app.position_name} candidate for ${app.chapter}.`);
+  }
+
+  async function reject(app: Application) {
+    if (!rejReason.trim()) { showToast('Please provide a rejection reason.', false); return; }
+    setProcessing(true);
+    const { error } = await supabase.from('candidate_applications').update({
+      status: 'rejected', rejection_reason: rejReason.trim(),
+      reviewed_at: new Date().toISOString(), reviewed_by: adminEmail,
+    }).eq('id', app.id);
+    setProcessing(false);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    setApplications(prev => prev.map(a => a.id === app.id ? { ...a, status: 'rejected', rejection_reason: rejReason } : a));
+    setSelected(null); setRejReason('');
+    showToast(`${app.full_name}'s application rejected.`);
+  }
+
+  const statusBadge = (s: string) => ({
+    pending:  'bg-yellow-100 text-yellow-700 border-yellow-200',
+    approved: 'bg-green-100 text-green-700 border-green-200',
+    rejected: 'bg-red-100 text-red-700 border-red-200',
+  }[s] ?? 'bg-slate-100 text-slate-700');
+
+  return (
+    <div className="space-y-8">
+      {/* Screenshot lightbox */}
+      {viewScreenshot && (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setViewScreenshot(null)}>
+          <img src={viewScreenshot} alt="Payment screenshot" className="max-w-full max-h-full rounded-2xl shadow-2xl"/>
+          <button className="absolute top-4 right-4 bg-white/10 text-white p-2 rounded-full" onClick={() => setViewScreenshot(null)}>
+            <XCircle size={24}/>
+          </button>
+        </div>
+      )}
+
+      {/* Application detail modal */}
+      {selected && (
+        <div className="fixed inset-0 bg-slate-900/95 z-40 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white rounded-[3rem] p-8 max-w-lg w-full my-4 shadow-2xl">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 shrink-0">
+                {selected.photo_url
+                  ? <img src={selected.photo_url} className="w-full h-full object-cover" alt={selected.full_name}/>
+                  : <div className="w-full h-full flex items-center justify-center bg-slate-200">
+                      <span className="text-2xl font-black text-slate-400">{selected.full_name.charAt(0)}</span>
+                    </div>
+                }
+              </div>
+              <div className="flex-1">
+                <h3 className="text-xl font-black uppercase text-slate-900">{selected.full_name}</h3>
+                <p className="text-xs text-red-600 font-bold uppercase mt-1">{selected.position_name}</p>
+                <p className="text-xs text-slate-400 font-bold">{selected.chapter}</p>
+                <span className={`inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border mt-2 ${statusBadge(selected.status)}`}>
+                  {selected.status}
+                </span>
+              </div>
+              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 p-1"><XCircle size={20}/></button>
+            </div>
+
+            {/* Details */}
+            <div className="space-y-1.5 bg-slate-50 rounded-2xl p-5 mb-5 text-xs">
+              {[
+                ['Email', selected.applicant_email],
+                ['Date of Birth', selected.dob],
+                ['ID Number', selected.id_number],
+                ['Class Name', selected.class_name],
+                ['Year Graduated', String(selected.year_graduated)],
+                ['Class Sponsor', selected.sponsor_name],
+                ['Principal', selected.principal_name],
+                ['Payment Method', selected.payment_method === 'in_person' ? 'In Person' : 'Screenshot'],
+                ['Applied', new Date(selected.created_at).toLocaleString()],
+              ].map(([l, v]) => (
+                <div key={l} className="flex justify-between py-1 border-b border-slate-100 last:border-0">
+                  <span className="font-black text-slate-400 uppercase tracking-widest">{l}</span>
+                  <span className="font-black text-slate-800 text-right max-w-[55%]">{v}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Payment screenshots */}
+            {selected.payment_method === 'screenshot' && (
+              <div className="mb-5">
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Payment Screenshots</p>
+                <div className="flex gap-2">
+                  {[selected.payment_screenshot_1, selected.payment_screenshot_2, selected.payment_screenshot_3]
+                    .filter(Boolean).map((url, i) => (
+                    <button key={i} onClick={() => setViewScreenshot(url!)}
+                      className="w-20 h-20 rounded-xl overflow-hidden border-2 border-slate-200 hover:border-red-400 transition-all">
+                      <img src={url!} className="w-full h-full object-cover" alt={`Screenshot ${i+1}`}/>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-400 font-bold mt-1">Click to enlarge</p>
+              </div>
+            )}
+
+            {/* Actions */}
+            {selected.status === 'pending' && (
+              <div className="space-y-3">
+                <button onClick={() => approve(selected)} disabled={processing}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50">
+                  {processing ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
+                  Approve & Add as Candidate
+                </button>
+                <div className="flex gap-2">
+                  <input value={rejReason} onChange={e => setRejReason(e.target.value)}
+                    placeholder="Rejection reason (required)..."
+                    className="flex-1 border-2 border-slate-200 focus:border-red-600 rounded-2xl px-4 py-3 font-bold outline-none text-sm"/>
+                  <button onClick={() => reject(selected)} disabled={processing || !rejReason.trim()}
+                    className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-5 py-3 rounded-2xl flex items-center gap-2 transition-all disabled:opacity-50 text-sm">
+                    <XCircle size={14}/> Reject
+                  </button>
+                </div>
+              </div>
+            )}
+            {selected.status !== 'pending' && (
+              <div className={`rounded-2xl p-4 text-sm font-bold ${selected.status === 'approved' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {selected.status === 'approved' ? '✓ This application was approved and the candidate was added.' : `✗ Rejected: ${selected.rejection_reason}`}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <h2 className="text-3xl font-black uppercase italic text-slate-800">Candidate Applications</h2>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+          Review, approve or reject candidate registrations
+        </p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-yellow-500 text-white rounded-3xl p-6 text-center shadow-lg">
+          <p className="text-4xl font-black">{pending}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Pending</p>
+        </div>
+        <div className="bg-green-600 text-white rounded-3xl p-6 text-center shadow-lg">
+          <p className="text-4xl font-black">{approved}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Approved</p>
+        </div>
+        <div className="bg-red-600 text-white rounded-3xl p-6 text-center shadow-lg">
+          <p className="text-4xl font-black">{rejected}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Rejected</p>
+        </div>
+      </div>
+
+      {/* Filter */}
+      <div className="flex gap-2 flex-wrap">
+        {(['pending','approved','rejected','all'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all border
+              ${filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {/* Application list */}
+      <Card>
+        <SectionTitle>Applications ({visible.length})</SectionTitle>
+        <div className="space-y-3">
+          {visible.map(app => (
+            <div key={app.id} onClick={() => { setSelected(app); setRejReason(''); }}
+              className="flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl cursor-pointer transition-all border-2 border-transparent hover:border-slate-200">
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-200 shrink-0">
+                {app.photo_url
+                  ? <img src={app.photo_url} className="w-full h-full object-cover" alt={app.full_name}/>
+                  : <div className="w-full h-full flex items-center justify-center">
+                      <span className="font-black text-slate-400">{app.full_name.charAt(0)}</span>
+                    </div>
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-black text-slate-800 truncate">{app.full_name}</p>
+                <p className="text-xs text-slate-400 font-bold uppercase truncate">{app.position_name} — {app.chapter}</p>
+                <p className="text-[10px] text-slate-400 font-bold">{new Date(app.created_at).toLocaleDateString()}</p>
+              </div>
+              <div className="shrink-0 text-right">
+                <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border ${statusBadge(app.status)}`}>
+                  {app.status}
+                </span>
+                <p className="text-[10px] text-slate-400 font-bold mt-1">
+                  {app.payment_method === 'in_person' ? 'In Person' : `${[app.payment_screenshot_1, app.payment_screenshot_2, app.payment_screenshot_3].filter(Boolean).length} screenshot(s)`}
+                </p>
+              </div>
+            </div>
+          ))}
+          {visible.length === 0 && (
+            <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter} applications.</p>
+          )}
         </div>
       </Card>
     </div>

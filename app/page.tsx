@@ -12,6 +12,17 @@ import Link from 'next/link';
 interface Candidate { id: number; full_name: string; position_name: string; chapter: string; photo_url?: string; }
 interface VoteRow   { id: number; voter_name: string; voter_id: string; position_name: string; candidate_name: string; chapter: string; class_year: string; created_at: string; }
 
+const REGISTRATION_FEES: Record<string, number> = {
+  "President": 2000,
+  "Vice President for Administration": 1500,
+  "Vice President for Operations": 1500,
+  "Secretary General": 1000,
+  "Financial Secretary": 1000,
+  "Treasurer": 500,
+  "Parliamentarian": 500,
+  "Chaplain": 500,
+};
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const HEAD_ADMIN_EMAIL = "ezekielborbor17@gmail.com";
 const CHAPTERS = [
@@ -290,6 +301,66 @@ export default function BWIAAElection2026() {
               <span className="text-xs uppercase tracking-widest text-center leading-relaxed">{c}</span>
             </button>
           ))}
+        </div>
+
+        {/* ── Candidate Registration Section ── */}
+        <div className="w-full max-w-5xl mt-16">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="flex-1 h-px bg-white/10"/>
+            <p className="text-white/40 text-xs font-black uppercase tracking-widest">Or</p>
+            <div className="flex-1 h-px bg-white/10"/>
+          </div>
+          <div className="bg-white/5 border border-white/10 rounded-[3rem] p-8 md:p-12">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+              <div>
+                <h2 className="text-white text-2xl font-black uppercase italic">Run for Office</h2>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">BWIAA 2026 Candidate Registration</p>
+              </div>
+              <Link href="/register" className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-8 py-4 rounded-2xl text-sm transition-all flex items-center gap-2 shrink-0">
+                <Vote size={16}/> Apply to Run
+              </Link>
+            </div>
+
+            {/* Fee schedule */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+              {Object.entries(REGISTRATION_FEES).map(([pos, fee]) => (
+                <div key={pos} className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
+                  <p className="text-red-400 font-black text-lg">${fee.toLocaleString()}</p>
+                  <p className="text-white/50 text-[10px] font-bold uppercase tracking-widest leading-tight mt-1">{pos}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* EC Guidelines summary */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+              <p className="text-white/60 text-[10px] font-black uppercase tracking-widest mb-4">EC Guidelines</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[
+                  "Registration of Candidates (Timeline Required)",
+                  "Accreditation of Voters",
+                  "Certification of Qualified Candidates",
+                  "Screening via Class Name, Year Graduated, Sponsor & Principal",
+                  "Voting shall be by secret ballot",
+                  "Results announced same day",
+                ].map(g => (
+                  <div key={g} className="flex items-start gap-2">
+                    <CheckCircle2 size={12} className="text-green-400 shrink-0 mt-0.5"/>
+                    <p className="text-white/50 text-xs font-bold leading-tight">{g}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Check application status */}
+            <div className="mt-6 flex flex-col sm:flex-row gap-3">
+              <Link href="/register/status" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">
+                Check Application Status
+              </Link>
+              <Link href="/history" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">
+                View Election History
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     );
