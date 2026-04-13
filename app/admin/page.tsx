@@ -517,28 +517,78 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
   showToast: (m: string, ok?: boolean) => void;
   isHeadAdmin: boolean;
 }) {
-  const [name, setName]         = useState('');
-  const [position, setPosition] = useState(POSITIONS[0]);
+  const [name, setName]           = useState('');
+  const [position, setPosition]   = useState(POSITIONS[0]);
   const [customPos, setCustomPos] = useState('');
-  const [chapter, setChapter]   = useState(CHAPTERS[0]);
-  const [photoUrl, setPhotoUrl] = useState('');
-  const [saving, setSaving]     = useState(false);
+  const [chapter, setChapter]     = useState(CHAPTERS[0]);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoSize, setPhotoSize] = useState<number>(0);
+  const [saving, setSaving]       = useState(false);
 
   const isCustom = position === "__custom__";
   const finalPosition = isCustom ? customPos.trim() : position;
+  const MAX_KB = 200; // enforce 200KB max after compression
+
+  // Client-side image compression using Canvas
+  async function compressImage(file: File): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        // Resize to max 400×400 to keep files tiny
+        const MAX = 400;
+        let { width, height } = img;
+        if (width > height) { if (width > MAX) { height = Math.round(height * MAX / width); width = MAX; } }
+        else { if (height > MAX) { width = Math.round(width * MAX / height); height = MAX; } }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Compression failed')), 'image/jpeg', 0.82);
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+  }
+
+  async function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { showToast('Please select an image file.', false); return; }
+    try {
+      const compressed = await compressImage(file);
+      const kb = Math.round(compressed.size / 1024);
+      setPhotoSize(kb);
+      if (kb > MAX_KB) { showToast(`Image too large after compression (${kb}KB). Please use a smaller photo.`, false); return; }
+      const asFile = new File([compressed], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+      setPhotoFile(asFile);
+      setPhotoPreview(URL.createObjectURL(compressed));
+    } catch { showToast('Failed to process image.', false); }
+  }
 
   async function addCandidate() {
     if (!name.trim())   { showToast("Candidate name required.", false); return; }
     if (!finalPosition) { showToast("Position required.", false); return; }
     setSaving(true);
+    let photo_url: string | undefined;
+
+    if (photoFile) {
+      const fileName = `${Date.now()}_${name.trim().replace(/\s+/g, '_')}.jpg`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('candidate-photos').upload(fileName, photoFile, { contentType: 'image/jpeg', upsert: true });
+      if (uploadError) { showToast(`Photo upload failed: ${uploadError.message}`, false); setSaving(false); return; }
+      const { data: { publicUrl } } = supabase.storage.from('candidate-photos').getPublicUrl(uploadData.path);
+      photo_url = publicUrl;
+    }
+
     const payload: any = { full_name: name.trim(), position_name: finalPosition, chapter };
-    if (photoUrl.trim()) payload.photo_url = photoUrl.trim();
-    const { data, error } = await supabase
-      .from('candidates').insert([payload]).select().single();
+    if (photo_url) payload.photo_url = photo_url;
+    const { data, error } = await supabase.from('candidates').insert([payload]).select().single();
     setSaving(false);
     if (error) { showToast(`Failed: ${error.message}`, false); return; }
     setCandidates(prev => [...prev, data]);
-    setName(''); setPhotoUrl('');
+    setName(''); setPhotoFile(null); setPhotoPreview(null); setPhotoSize(0);
     showToast(`${data.full_name} added to ${data.position_name}`);
   }
 
@@ -591,21 +641,47 @@ function CandidatesTab({ candidates, setCandidates, showToast, isHeadAdmin }: {
               placeholder="Type custom position name..."
               className="w-full border-2 border-dashed border-red-300 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none mb-4"/>
           )}
-          <input value={photoUrl} onChange={e => setPhotoUrl(e.target.value)}
-            placeholder="Photo URL (optional) — paste a direct image link"
-            className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none mb-4 text-sm"/>
-          {/* Photo preview */}
-          {photoUrl.trim() && (
-            <div className="flex items-center gap-4 mb-4 p-4 bg-slate-50 rounded-2xl">
-              <img src={photoUrl.trim()} alt="Preview" onError={e => (e.currentTarget.style.display='none')}
-                className="w-16 h-16 rounded-2xl object-cover border-2 border-slate-200"/>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Photo preview</p>
+
+          {/* Photo upload */}
+          <div className="mb-4">
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+              Candidate Photo <span className="text-slate-300 normal-case font-bold">(optional · max {MAX_KB}KB · auto-compressed)</span>
+            </label>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              {/* Preview */}
+              <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 border-2 border-dashed border-slate-200 shrink-0 flex items-center justify-center">
+                {photoPreview
+                  ? <img src={photoPreview} alt="Preview" className="w-full h-full object-cover"/>
+                  : <span className="text-xs text-slate-400 font-bold text-center px-1">No photo</span>
+                }
+              </div>
+              <div className="flex-1 w-full">
+                <label className="cursor-pointer flex items-center gap-3 bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-200 hover:border-red-400 rounded-2xl px-5 py-4 transition-all">
+                  <PlusCircle size={18} className="text-slate-400 shrink-0"/>
+                  <span className="text-sm font-bold text-slate-500">
+                    {photoFile ? photoFile.name : 'Click to choose a photo from your device'}
+                  </span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect}/>
+                </label>
+                {photoSize > 0 && (
+                  <p className={`text-xs font-bold mt-2 ${photoSize > MAX_KB ? 'text-red-500' : 'text-green-600'}`}>
+                    {photoSize > MAX_KB ? `⚠ ${photoSize}KB — too large` : `✓ ${photoSize}KB — ready to upload`}
+                  </p>
+                )}
+                {photoFile && (
+                  <button onClick={() => { setPhotoFile(null); setPhotoPreview(null); setPhotoSize(0); }}
+                    className="text-xs text-red-400 font-bold mt-1 hover:text-red-600">
+                    ✕ Remove photo
+                  </button>
+                )}
+              </div>
             </div>
-          )}
-          <button onClick={addCandidate} disabled={saving}
+          </div>
+
+          <button onClick={addCandidate} disabled={saving || photoSize > MAX_KB}
             className="bg-red-600 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-3 hover:bg-red-700 transition-all disabled:opacity-50">
             {saving ? <Loader2 size={16} className="animate-spin"/> : <PlusCircle size={16}/>}
-            Add Candidate
+            {saving ? 'Uploading...' : 'Add Candidate'}
           </button>
         </Card>
       )}
