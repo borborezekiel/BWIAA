@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   ChevronRight, ChevronLeft, CheckCircle2, Upload, Loader2,
@@ -8,55 +8,91 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
-const CHAPTERS = [
-  "Harbel Chapter", "Montserrado Chapter", "Grand Bassa Chapter",
-  "Nimba Chapter", "Weala Branch", "Robertsport Branch",
-  "LAC Branch", "Bong Chapter", "Paynesville Branch", "Mother Chapter",
-];
+// ── Dynamic config loaded from Supabase election_settings ─────────────────────
+interface PositionFee { position: string; fee: number; }
+interface ElectionConfig {
+  org_name: string; election_title: string; election_year: string;
+  currency: string; currency_symbol: string;
+  chapters: string[]; positions_fees: PositionFee[];
+}
 
-const POSITIONS = [
-  "President", "Vice President for Administration", "Vice President for Operations",
-  "Secretary General", "Financial Secretary", "Treasurer", "Parliamentarian", "Chaplain",
-];
-
-const REGISTRATION_FEES: Record<string, number> = {
-  "President": 2000, "Vice President for Administration": 1500,
-  "Vice President for Operations": 1500, "Secretary General": 1000,
-  "Financial Secretary": 1000, "Treasurer": 500, "Parliamentarian": 500, "Chaplain": 500,
+const DEFAULT_CONFIG: ElectionConfig = {
+  org_name: "BWIAA", election_title: "National Alumni Election", election_year: "2026",
+  currency: "USD", currency_symbol: "$",
+  chapters: [
+    "Harbel Chapter","Montserrado Chapter","Grand Bassa Chapter","Nimba Chapter",
+    "Weala Branch","Robertsport Branch","LAC Branch","Bong Chapter",
+    "Paynesville Branch","Mother Chapter",
+  ],
+  positions_fees: [
+    { position: "President", fee: 2000 },
+    { position: "Vice President for Administration", fee: 1500 },
+    { position: "Vice President for Operations", fee: 1500 },
+    { position: "Secretary General", fee: 1000 },
+    { position: "Financial Secretary", fee: 1000 },
+    { position: "Treasurer", fee: 500 },
+    { position: "Parliamentarian", fee: 500 },
+    { position: "Chaplain", fee: 500 },
+  ],
 };
+
+async function loadConfig(): Promise<ElectionConfig> {
+  const { data } = await supabase.from('election_settings').select('*');
+  if (!data) return DEFAULT_CONFIG;
+  const get = (k: string) => data.find((r: any) => r.key === k)?.value;
+  const merged = { ...DEFAULT_CONFIG };
+  if (get('org_name'))        merged.org_name        = get('org_name');
+  if (get('election_title'))  merged.election_title  = get('election_title');
+  if (get('election_year'))   merged.election_year   = get('election_year');
+  if (get('currency'))        merged.currency        = get('currency');
+  if (get('currency_symbol')) merged.currency_symbol = get('currency_symbol');
+  if (get('chapters'))        { try { merged.chapters = JSON.parse(get('chapters')); } catch {} }
+  if (get('positions_fees'))  { try { merged.positions_fees = JSON.parse(get('positions_fees')); } catch {} }
+  return merged;
+}
 
 type Step = 1 | 2 | 3 | 4;
 
 interface FormData {
-  // Personal
   full_name: string; dob: string; class_name: string;
   year_graduated: string; sponsor_name: string; principal_name: string;
   id_number: string; applicant_email: string;
-  // Chapter & Position
   chapter: string; position_name: string;
-  // Files
   photoFile: File | null; photoPreview: string | null;
-  // Payment
   payment_method: 'screenshot' | 'in_person' | '';
   screenshotFiles: (File | null)[]; screenshotPreviews: (string | null)[];
 }
 
-const EMPTY_FORM: FormData = {
-  full_name: '', dob: '', class_name: '', year_graduated: '',
-  sponsor_name: '', principal_name: '', id_number: '', applicant_email: '',
-  chapter: CHAPTERS[0], position_name: POSITIONS[0],
-  photoFile: null, photoPreview: null,
-  payment_method: '', screenshotFiles: [null, null, null],
-  screenshotPreviews: [null, null, null],
-};
-
 export default function RegisterPage() {
+  const [config, setConfig]   = useState<ElectionConfig>(DEFAULT_CONFIG);
+  const [cfgLoaded, setCfgLoaded] = useState(false);
   const [step, setStep]       = useState<Step>(1);
-  const [form, setForm]       = useState<FormData>(EMPTY_FORM);
+  const [form, setForm]       = useState<FormData>({
+    full_name: '', dob: '', class_name: '', year_graduated: '',
+    sponsor_name: '', principal_name: '', id_number: '', applicant_email: '',
+    chapter: DEFAULT_CONFIG.chapters[0], position_name: DEFAULT_CONFIG.positions_fees[0].position,
+    photoFile: null, photoPreview: null,
+    payment_method: '', screenshotFiles: [null, null, null], screenshotPreviews: [null, null, null],
+  });
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted]   = useState(false);
   const [appId, setAppId]           = useState('');
   const [error, setError]           = useState('');
+
+  // Load dynamic config on mount
+  useEffect(() => {
+    loadConfig().then(cfg => {
+      setConfig(cfg);
+      setForm(prev => ({
+        ...prev,
+        chapter: cfg.chapters[0] ?? prev.chapter,
+        position_name: cfg.positions_fees[0]?.position ?? prev.position_name,
+      }));
+      setCfgLoaded(true);
+    });
+  }, []);
+
+  const fee = config.positions_fees.find(p => p.position === form.position_name)?.fee ?? 0;
 
   function set(field: keyof FormData, value: any) {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -203,6 +239,14 @@ export default function RegisterPage() {
     }
   }
 
+  // ── Loading config ────────────────────────────────────────────────────────────
+  if (!cfgLoaded) return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center gap-4 text-white">
+      <Loader2 className="animate-spin text-red-600" size={36}/>
+      <span className="font-black uppercase tracking-widest text-sm">Loading Registration Form...</span>
+    </div>
+  );
+
   // ── Success screen ───────────────────────────────────────────────────────────
   if (submitted) return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
@@ -239,14 +283,12 @@ export default function RegisterPage() {
     </div>
   );
 
-  const fee = REGISTRATION_FEES[form.position_name] ?? 0;
-
   return (
     <div className="min-h-screen bg-slate-950 p-4 md:p-8 pb-20">
       {/* Header */}
       <div className="max-w-2xl mx-auto mb-8 flex items-center justify-between">
         <Link href="/" className="text-white/40 hover:text-white text-xs font-black uppercase tracking-widest transition-all">← Back</Link>
-        <h1 className="text-white font-black uppercase italic text-sm">BWIAA 2026 — Candidate Registration</h1>
+        <h1 className="text-white font-black uppercase italic text-sm">{config.org_name} {config.election_year} — Candidate Registration</h1>
       </div>
 
       {/* Step indicator */}
@@ -318,17 +360,17 @@ export default function RegisterPage() {
               <Label>Your Chapter *</Label>
               <select value={form.chapter} onChange={e => set('chapter', e.target.value)}
                 className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none">
-                {CHAPTERS.map(c => <option key={c} value={c}>{c}</option>)}
+                {config.chapters.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
               <Label>Position You Are Running For *</Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {POSITIONS.map(p => (
-                  <button key={p} onClick={() => set('position_name', p)}
-                    className={`text-left p-4 rounded-2xl border-2 transition-all ${form.position_name === p ? 'border-red-600 bg-red-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                    <p className="font-black text-slate-800 text-sm">{p}</p>
-                    <p className="text-red-600 font-black text-xs mt-1">${REGISTRATION_FEES[p]?.toLocaleString()} registration fee</p>
+                {config.positions_fees.map(pf => (
+                  <button key={pf.position} onClick={() => set('position_name', pf.position)}
+                    className={`text-left p-4 rounded-2xl border-2 transition-all ${form.position_name === pf.position ? 'border-red-600 bg-red-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                    <p className="font-black text-slate-800 text-sm">{pf.position}</p>
+                    <p className="text-red-600 font-black text-xs mt-1">{config.currency_symbol}{pf.fee.toLocaleString()} registration fee</p>
                   </button>
                 ))}
               </div>
@@ -339,16 +381,12 @@ export default function RegisterPage() {
         {/* ── STEP 3: Payment ── */}
         {step === 3 && (
           <div className="space-y-6">
-            <StepHeader icon={<CreditCard size={24}/>} title="Registration Payment" sub={`Fee for ${form.position_name}: $${fee.toLocaleString()} USD`}/>
-
-            {/* Fee callout */}
+            <StepHeader icon={<CreditCard size={24}/>} title="Registration Payment" sub={`Fee for ${form.position_name}: ${config.currency_symbol}${fee.toLocaleString()} ${config.currency}`}/>
             <div className="bg-slate-900 rounded-2xl p-6 text-center">
               <p className="text-white/50 text-xs font-black uppercase tracking-widest mb-1">Amount Due</p>
-              <p className="text-5xl font-black text-red-500">${fee.toLocaleString()}</p>
+              <p className="text-5xl font-black text-red-500">{config.currency_symbol}{fee.toLocaleString()}</p>
               <p className="text-white/40 text-xs font-bold mt-2">{form.position_name} — {form.chapter}</p>
             </div>
-
-            {/* Payment method selection */}
             <div>
               <Label>Choose Payment Method *</Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -437,7 +475,7 @@ export default function RegisterPage() {
               <Row label="Principal" value={form.principal_name}/>
               <Row label="Chapter" value={form.chapter}/>
               <Row label="Position" value={form.position_name}/>
-              <Row label="Registration Fee" value={`$${fee.toLocaleString()}`}/>
+              <Row label="Registration Fee" value={`${config.currency_symbol}${fee.toLocaleString()} ${config.currency}`}/>
               <Row label="Payment Method" value={form.payment_method === 'in_person' ? 'In Person' : `${form.screenshotFiles.filter(Boolean).length} screenshot(s) uploaded`}/>
             </div>
 

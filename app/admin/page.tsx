@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import {
   ShieldCheck, LogOut, Loader2, BarChart2, Users, UserCheck,
   UserX, List, Settings, PlusCircle, Trash2, Trophy, Activity,
-  CheckCircle2, XCircle, Terminal, Crown, Download, Printer, FileText,
+  CheckCircle2, XCircle, Terminal, Crown, Download, Printer, FileText, Sliders,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -24,35 +24,37 @@ interface Application    {
   created_at: string; reviewed_at: string | null; reviewed_by: string | null;
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const HEAD_ADMIN_EMAIL = "ezekielborbor17@gmail.com";
+// ─── Dynamic Config (loaded from election_settings, overrides these defaults) ──
+const DEFAULT_CONFIG = {
+  org_name:       "BWIAA",
+  election_title: "National Alumni Election",
+  election_year:  "2026",
+  currency:       "USD",
+  currency_symbol:"$",
+  chapters: [
+    "Harbel Chapter","Montserrado Chapter","Grand Bassa Chapter","Nimba Chapter",
+    "Weala Branch","Robertsport Branch","LAC Branch","Bong Chapter",
+    "Paynesville Branch","Mother Chapter",
+  ],
+  positions_fees: [
+    { position: "President",                        fee: 2000 },
+    { position: "Vice President for Administration",fee: 1500 },
+    { position: "Vice President for Operations",    fee: 1500 },
+    { position: "Secretary General",               fee: 1000 },
+    { position: "Financial Secretary",             fee: 1000 },
+    { position: "Treasurer",                       fee: 500  },
+    { position: "Parliamentarian",                 fee: 500  },
+    { position: "Chaplain",                        fee: 500  },
+  ],
+};
 
-const CHAPTERS = [
-  "Harbel Chapter",
-  "Montserrado Chapter",
-  "Grand Bassa Chapter",
-  "Nimba Chapter",
-  "Weala Branch",
-  "Robertsport Branch",
-  "LAC Branch",
-  "Bong Chapter",
-  "Paynesville Branch",
-  "Mother Chapter",
-];
+type ElectionConfig = typeof DEFAULT_CONFIG;
 
-// Official BWIAA positions
-const POSITIONS = [
-  "President",
-  "Vice President for Administration",
-  "Vice President for Operations",
-  "Secretary General",
-  "Financial Secretary",
-  "Treasurer",
-  "Parliamentarian",
-  "Chaplain",
-];
+// Fallback constants (replaced at runtime from DB)
+let CHAPTERS  = DEFAULT_CONFIG.chapters;
+let POSITIONS = DEFAULT_CONFIG.positions_fees.map(p => p.position);
 
-type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications";
+type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications" | "settings";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ADMIN COMPONENT
@@ -72,6 +74,7 @@ export default function AdminPage() {
   const [admins, setAdmins]         = useState<ElectionAdmin[]>([]);
   const [deadline, setDeadline]     = useState<string | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [config, setConfig]         = useState<ElectionConfig>(DEFAULT_CONFIG);
 
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const showToast = useCallback((msg: string, ok = true) => {
@@ -109,13 +112,13 @@ export default function AdminPage() {
   }, [isAuthorized]);
 
   async function fetchAll() {
-    const [v, c, r, b, a, s, ap] = await Promise.all([
+    const [v, c, r, b, a, settingsRes, ap] = await Promise.all([
       supabase.from('votes').select('*').order('created_at', { ascending: false }),
       supabase.from('candidates').select('*').order('position_name'),
       supabase.from('eligible_voters').select('*').order('email'),
       supabase.from('blacklisted_voters').select('*').order('created_at', { ascending: false }),
       supabase.from('election_admins').select('*').order('email'),
-      supabase.from('election_settings').select('*').eq('key', 'voting_deadline').maybeSingle(),
+      supabase.from('election_settings').select('*'),
       supabase.from('candidate_applications').select('*').order('created_at', { ascending: false }),
     ]);
     if (v.data) setVotes(v.data);
@@ -123,8 +126,36 @@ export default function AdminPage() {
     if (r.data) setRoster(r.data);
     if (b.data) setBlacklist(b.data);
     if (a.data) setAdmins(a.data);
-    if (s.data) setDeadline(s.data.value);
     if (ap.data) setApplications(ap.data);
+
+    // Merge all settings keys into config
+    if (settingsRes.data) {
+      const rows = settingsRes.data as { key: string; value: string }[];
+      const get = (k: string) => rows.find(r => r.key === k)?.value;
+      const dl = get('voting_deadline');
+      if (dl) setDeadline(dl);
+      const merged: ElectionConfig = { ...DEFAULT_CONFIG };
+      if (get('org_name'))        merged.org_name        = get('org_name')!;
+      if (get('election_title'))  merged.election_title  = get('election_title')!;
+      if (get('election_year'))   merged.election_year   = get('election_year')!;
+      if (get('currency'))        merged.currency        = get('currency')!;
+      if (get('currency_symbol')) merged.currency_symbol = get('currency_symbol')!;
+      if (get('chapters')) {
+        try {
+          const parsed = JSON.parse(get('chapters')!);
+          merged.chapters = parsed;
+          CHAPTERS  = parsed;
+        } catch {}
+      }
+      if (get('positions_fees')) {
+        try {
+          const parsed = JSON.parse(get('positions_fees')!);
+          merged.positions_fees = parsed;
+          POSITIONS = parsed.map((p: any) => p.position);
+        } catch {}
+      }
+      setConfig(merged);
+    }
   }
 
   async function handleSignOut() {
@@ -158,13 +189,14 @@ export default function AdminPage() {
   );
 
   const allTabs: { id: Tab; label: string; icon: any; headOnly?: boolean }[] = [
-    { id: "overview",      label: "Overview",     icon: Activity },
-    { id: "results",       label: "Results",      icon: BarChart2 },
-    { id: "candidates",    label: "Candidates",   icon: List },
-    { id: "voters",        label: "Voters",       icon: Users },
-    { id: "roster",        label: "Roster",       icon: UserCheck },
-    { id: "applications",  label: `Applications${applications.filter(a=>a.status==='pending').length > 0 ? ` (${applications.filter(a=>a.status==='pending').length})` : ''}`, icon: FileText },
-    { id: "admins",        label: "Admins",       icon: Settings, headOnly: true },
+    { id: "overview",     label: "Overview",     icon: Activity },
+    { id: "results",      label: "Results",      icon: BarChart2 },
+    { id: "candidates",   label: "Candidates",   icon: List },
+    { id: "voters",       label: "Voters",       icon: Users },
+    { id: "roster",       label: "Roster",       icon: UserCheck },
+    { id: "applications", label: `Applications${applications.filter(a=>a.status==='pending').length > 0 ? ` (${applications.filter(a=>a.status==='pending').length})` : ''}`, icon: FileText },
+    { id: "admins",       label: "Admins",       icon: Settings, headOnly: true },
+    { id: "settings",     label: "Settings",     icon: Settings, headOnly: true },
   ];
   const tabs = allTabs.filter(t => !t.headOnly || isHeadAdmin);
 
@@ -219,13 +251,14 @@ export default function AdminPage() {
 
       {/* Content */}
       <div className="max-w-6xl mx-auto px-4 pt-10">
-        {activeTab === "overview"      && <OverviewTab   votes={votes} candidates={candidates} roster={roster} admins={admins} blacklist={blacklist} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} deadline={deadline}/>}
+        {activeTab === "overview"      && <OverviewTab   votes={votes} candidates={candidates} roster={roster} admins={admins} blacklist={blacklist} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} deadline={deadline} config={config}/>}
         {activeTab === "results"       && <ResultsTab    votes={votes} candidates={candidates} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "candidates"    && <CandidatesTab candidates={candidates} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin}/>}
         {activeTab === "voters"        && <VotersTab     votes={votes} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "roster"        && <RosterTab     roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "applications"  && <ApplicationsTab applications={applications} setApplications={setApplications} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
-        {activeTab === "admins" && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
+        {activeTab === "admins"   && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
+        {activeTab === "settings" && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast}/>}
       </div>
     </div>
   );
@@ -245,10 +278,11 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: OVERVIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin, myChapter, deadline }: {
+function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin, myChapter, deadline, config }: {
   votes: VoteRow[]; candidates: Candidate[]; roster: EligibleVoter[];
   admins: ElectionAdmin[]; blacklist: BlacklistedVoter[];
   isHeadAdmin: boolean; myChapter: string | null; deadline: string | null;
+  config: ElectionConfig;
 }) {
   const scopedVotes  = isHeadAdmin ? votes : votes.filter(v => v.chapter === myChapter);
   const uniqueVoters = new Set(scopedVotes.map(v => v.voter_id)).size;
@@ -1445,6 +1479,210 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
           )}
         </div>
       </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: SETTINGS — full dynamic config for any org to customise
+// ─────────────────────────────────────────────────────────────────────────────
+function SettingsTab({ config, setConfig, showToast }: {
+  config: ElectionConfig;
+  setConfig: React.Dispatch<React.SetStateAction<ElectionConfig>>;
+  showToast: (m: string, ok?: boolean) => void;
+}) {
+  const [local, setLocal]   = useState<ElectionConfig>(JSON.parse(JSON.stringify(config)));
+  const [saving, setSaving] = useState(false);
+  const [newChapter, setNewChapter] = useState('');
+
+  function setField(field: keyof ElectionConfig, value: any) {
+    setLocal(prev => ({ ...prev, [field]: value }));
+  }
+
+  function addChapter() {
+    if (!newChapter.trim()) return;
+    setLocal(prev => ({ ...prev, chapters: [...prev.chapters, newChapter.trim()] }));
+    setNewChapter('');
+  }
+
+  function removeChapter(i: number) {
+    setLocal(prev => ({ ...prev, chapters: prev.chapters.filter((_, idx) => idx !== i) }));
+  }
+
+  function addPosition() {
+    setLocal(prev => ({ ...prev, positions_fees: [...prev.positions_fees, { position: 'New Position', fee: 0 }] }));
+  }
+
+  function removePosition(i: number) {
+    setLocal(prev => ({ ...prev, positions_fees: prev.positions_fees.filter((_, idx) => idx !== i) }));
+  }
+
+  function updatePosition(i: number, field: 'position' | 'fee', value: string | number) {
+    setLocal(prev => {
+      const pf = [...prev.positions_fees];
+      pf[i] = { ...pf[i], [field]: field === 'fee' ? Number(value) : value };
+      return { ...prev, positions_fees: pf };
+    });
+  }
+
+  async function saveSettings() {
+    setSaving(true);
+    const rows = [
+      { key: 'org_name',        value: local.org_name },
+      { key: 'election_title',  value: local.election_title },
+      { key: 'election_year',   value: local.election_year },
+      { key: 'currency',        value: local.currency },
+      { key: 'currency_symbol', value: local.currency_symbol },
+      { key: 'chapters',        value: JSON.stringify(local.chapters) },
+      { key: 'positions_fees',  value: JSON.stringify(local.positions_fees) },
+    ];
+    const { error } = await supabase.from('election_settings')
+      .upsert(rows, { onConflict: 'key' });
+    setSaving(false);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    CHAPTERS  = local.chapters;
+    POSITIONS = local.positions_fees.map(p => p.position);
+    setConfig(local);
+    showToast('Settings saved! Changes are now live across the entire platform.');
+  }
+
+  return (
+    <div className="space-y-10">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-3xl font-black uppercase italic text-slate-800 flex items-center gap-3">
+            <Sliders size={28} className="text-red-600"/> Platform Settings
+          </h2>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+            Customise everything — positions, fees, chapters, branding. Works for any school, company, or organisation.
+          </p>
+        </div>
+        <button onClick={saveSettings} disabled={saving}
+          className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-2 transition-all disabled:opacity-50 shrink-0">
+          {saving ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
+          {saving ? 'Saving...' : 'Save All Settings'}
+        </button>
+      </div>
+
+      <Card>
+        <SectionTitle>Organisation & Branding</SectionTitle>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Organisation Name</label>
+            <input value={local.org_name} onChange={e => setField('org_name', e.target.value)}
+              placeholder="e.g. BWIAA, Student Council, Acme Corp"
+              className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Election Title</label>
+            <input value={local.election_title} onChange={e => setField('election_title', e.target.value)}
+              placeholder="e.g. National Alumni Election"
+              className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Election Year</label>
+            <input value={local.election_year} onChange={e => setField('election_year', e.target.value)}
+              placeholder="e.g. 2026"
+              className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Currency Code</label>
+              <input value={local.currency} onChange={e => setField('currency', e.target.value)}
+                placeholder="USD, LRD, GBP..."
+                className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+            </div>
+            <div>
+              <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Symbol</label>
+              <input value={local.currency_symbol} onChange={e => setField('currency_symbol', e.target.value)}
+                placeholder="$, £, ₵..."
+                className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+            </div>
+          </div>
+        </div>
+        <div className="mt-6 p-5 bg-slate-900 rounded-2xl text-white text-center">
+          <p className="text-[10px] text-white/40 font-black uppercase tracking-widest mb-1">Live Preview</p>
+          <p className="font-black uppercase italic text-lg">{local.org_name} <span className="text-red-500">{local.election_year}</span></p>
+          <p className="text-white/50 text-xs font-bold mt-1">{local.election_title}</p>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle>Chapters & Branches</SectionTitle>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-4 -mt-2">
+          Add, rename or remove chapters. These appear on the voter registration and candidate form.
+        </p>
+        <div className="space-y-2 mb-4">
+          {local.chapters.map((ch, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <span className="text-xs font-black text-slate-400 w-6 text-right shrink-0">{i+1}.</span>
+              <input value={ch} onChange={e => {
+                const c = [...local.chapters]; c[i] = e.target.value;
+                setLocal(prev => ({ ...prev, chapters: c }));
+              }} className="flex-1 border-2 border-slate-200 focus:border-red-600 rounded-xl px-4 py-3 font-bold outline-none text-sm"/>
+              <button onClick={() => removeChapter(i)} className="text-red-400 hover:text-red-600 p-2 rounded-xl hover:bg-red-50 transition-all">
+                <Trash2 size={14}/>
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-3">
+          <input value={newChapter} onChange={e => setNewChapter(e.target.value)}
+            placeholder="Add new chapter or branch..."
+            onKeyDown={e => e.key === 'Enter' && addChapter()}
+            className="flex-1 border-2 border-dashed border-slate-200 focus:border-red-600 rounded-xl px-4 py-3 font-bold outline-none text-sm"/>
+          <button onClick={addChapter} className="bg-slate-900 text-white font-black uppercase px-5 py-3 rounded-xl text-xs hover:bg-slate-700 transition-all flex items-center gap-2">
+            <PlusCircle size={14}/> Add
+          </button>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle>Positions & Registration Fees</SectionTitle>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-4 -mt-2">
+          Customise position titles and registration fees.
+        </p>
+        <div className="space-y-3 mb-4">
+          <div className="grid grid-cols-12 gap-2 px-1">
+            <span className="col-span-1 text-[10px] font-black text-slate-400 uppercase">#</span>
+            <span className="col-span-7 text-[10px] font-black text-slate-400 uppercase">Position Title</span>
+            <span className="col-span-3 text-[10px] font-black text-slate-400 uppercase">Fee ({local.currency_symbol})</span>
+            <span className="col-span-1"/>
+          </div>
+          {local.positions_fees.map((pf, i) => (
+            <div key={i} className="grid grid-cols-12 gap-2 items-center">
+              <span className="col-span-1 text-xs font-black text-slate-300 text-center">{i+1}</span>
+              <input value={pf.position} onChange={e => updatePosition(i, 'position', e.target.value)}
+                className="col-span-7 border-2 border-slate-200 focus:border-red-600 rounded-xl px-4 py-3 font-bold outline-none text-sm"/>
+              <input type="number" value={pf.fee} onChange={e => updatePosition(i, 'fee', e.target.value)}
+                className="col-span-3 border-2 border-slate-200 focus:border-red-600 rounded-xl px-4 py-3 font-bold outline-none text-sm"/>
+              <button onClick={() => removePosition(i)} className="col-span-1 text-red-400 hover:text-red-600 p-2 rounded-xl hover:bg-red-50 transition-all flex justify-center">
+                <Trash2 size={14}/>
+              </button>
+            </div>
+          ))}
+        </div>
+        <button onClick={addPosition}
+          className="border-2 border-dashed border-slate-200 hover:border-red-400 text-slate-500 hover:text-red-600 font-black uppercase px-5 py-3 rounded-xl text-xs w-full transition-all flex items-center justify-center gap-2">
+          <PlusCircle size={14}/> Add Position
+        </button>
+        <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {local.positions_fees.map((pf, i) => (
+            <div key={i} className="bg-slate-900 rounded-2xl p-4 text-center">
+              <p className="text-red-500 font-black text-lg">{local.currency_symbol}{pf.fee.toLocaleString()}</p>
+              <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest leading-tight mt-1">{pf.position}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <div className="flex justify-end">
+        <button onClick={saveSettings} disabled={saving}
+          className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-10 py-5 rounded-2xl flex items-center gap-2 transition-all disabled:opacity-50 text-sm">
+          {saving ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
+          {saving ? 'Saving...' : 'Save All Settings'}
+        </button>
+      </div>
     </div>
   );
 }
