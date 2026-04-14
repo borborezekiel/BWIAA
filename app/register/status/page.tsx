@@ -16,12 +16,32 @@ function StatusContent() {
 
   async function checkStatus() {
     if (!appId.trim() && !email.trim()) return;
-    setLoading(true); setSearched(false);
-    let query = supabase.from('candidate_applications').select('*');
-    if (appId.trim()) query = query.ilike('id', `${appId.trim()}%`);
-    else query = query.eq('applicant_email', email.trim().toLowerCase());
-    const { data } = await query.limit(1).maybeSingle();
-    setResult(data ?? null);
+    setLoading(true); setSearched(false); setResult(null);
+    try {
+      let data = null;
+      if (email.trim()) {
+        // Email search is most reliable
+        const { data: d } = await supabase
+          .from('candidate_applications')
+          .select('*')
+          .eq('applicant_email', email.trim().toLowerCase())
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        data = d;
+      } else if (appId.trim()) {
+        // Search all apps and filter client-side by UUID prefix (avoids cast issues)
+        const prefix = appId.trim().toLowerCase();
+        const { data: all } = await supabase
+          .from('candidate_applications')
+          .select('*')
+          .order('created_at', { ascending: false });
+        data = all?.find(r => r.id.toLowerCase().startsWith(prefix)) ?? null;
+      }
+      setResult(data);
+    } catch (e) {
+      setResult(null);
+    }
     setLoading(false); setSearched(true);
   }
 
@@ -87,6 +107,7 @@ function StatusContent() {
                 </div>
                 <div className="space-y-2 pt-4 border-t border-current/10">
                   {[
+                    ['Application ID', result.id.slice(0,8).toUpperCase()],
                     ['Name', result.full_name],
                     ['Position', result.position_name],
                     ['Chapter', result.chapter],

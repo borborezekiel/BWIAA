@@ -1349,6 +1349,7 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
             {/* Details */}
             <div className="space-y-1.5 bg-slate-50 rounded-2xl p-5 mb-5 text-xs">
               {[
+                ['Application ID', selected.id.slice(0,8).toUpperCase()],
                 ['Email', selected.applicant_email],
                 ['Date of Birth', selected.dob],
                 ['ID Number', selected.id_number],
@@ -1361,7 +1362,7 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
               ].map(([l, v]) => (
                 <div key={l} className="flex justify-between py-1 border-b border-slate-100 last:border-0">
                   <span className="font-black text-slate-400 uppercase tracking-widest">{l}</span>
-                  <span className="font-black text-slate-800 text-right max-w-[55%]">{v}</span>
+                  <span className={`font-black text-right max-w-[55%] ${l === 'Application ID' ? 'text-red-600 font-mono' : 'text-slate-800'}`}>{v}</span>
                 </div>
               ))}
             </div>
@@ -1463,7 +1464,7 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
               <div className="flex-1 min-w-0">
                 <p className="font-black text-slate-800 truncate">{app.full_name}</p>
                 <p className="text-xs text-slate-400 font-bold uppercase truncate">{app.position_name} — {app.chapter}</p>
-                <p className="text-[10px] text-slate-400 font-bold">{new Date(app.created_at).toLocaleDateString()}</p>
+                <p className="text-[10px] text-slate-400 font-bold">{new Date(app.created_at).toLocaleDateString()} • <span className="font-mono text-red-500">{app.id.slice(0,8).toUpperCase()}</span></p>
               </div>
               <div className="shrink-0 text-right">
                 <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border ${statusBadge(app.status)}`}>
