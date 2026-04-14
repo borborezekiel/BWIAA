@@ -190,46 +190,60 @@ export default function RegisterPage() {
     setSubmitting(true); setError('');
     try {
       // Upload profile photo
-      let photo_url = '';
+      let photo_url: string | null = null;
       if (form.photoFile) {
-        const { data, error: upErr } = await supabase.storage.from('candidate-photos')
-          .upload(`applicants/${Date.now()}_${form.full_name.replace(/\s+/g,'_')}.jpg`, form.photoFile, { upsert: true });
+        const fileName = `applicants/${Date.now()}_${form.full_name.replace(/\s+/g,'_')}.jpg`;
+        const { data: upData, error: upErr } = await supabase.storage
+          .from('candidate-photos').upload(fileName, form.photoFile, { upsert: true });
         if (upErr) throw new Error(`Photo upload failed: ${upErr.message}`);
-        photo_url = supabase.storage.from('candidate-photos').getPublicUrl(data.path).data.publicUrl;
+        photo_url = supabase.storage.from('candidate-photos').getPublicUrl(upData.path).data.publicUrl;
       }
 
       // Upload payment screenshots
-      const screenshotUrls: string[] = [];
+      let screenshot1: string | null = null;
+      let screenshot2: string | null = null;
+      let screenshot3: string | null = null;
+      const screenshotSlots = [form.screenshotFiles[0], form.screenshotFiles[1], form.screenshotFiles[2]];
+      const uploaded: (string | null)[] = [null, null, null];
       for (let i = 0; i < 3; i++) {
-        const file = form.screenshotFiles[i];
+        const file = screenshotSlots[i];
         if (!file) continue;
-        const { data, error: upErr } = await supabase.storage.from('payment-screenshots')
-          .upload(`${Date.now()}_${i}_${form.full_name.replace(/\s+/g,'_')}.jpg`, file, { upsert: true });
-        if (upErr) throw new Error(`Screenshot upload failed: ${upErr.message}`);
-        screenshotUrls.push(supabase.storage.from('payment-screenshots').getPublicUrl(data.path).data.publicUrl);
+        const fileName = `${Date.now()}_${i}_${form.full_name.replace(/\s+/g,'_')}.jpg`;
+        const { data: upData, error: upErr } = await supabase.storage
+          .from('payment-screenshots').upload(fileName, file, { upsert: true });
+        if (upErr) throw new Error(`Screenshot ${i+1} upload failed: ${upErr.message}`);
+        uploaded[i] = supabase.storage.from('payment-screenshots').getPublicUrl(upData.path).data.publicUrl;
       }
+      [screenshot1, screenshot2, screenshot3] = uploaded;
 
-      // Insert application
-      const { data, error: insertErr } = await supabase.from('candidate_applications').insert([{
-        full_name: form.full_name.trim(),
-        dob: form.dob,
-        class_name: form.class_name.trim(),
-        year_graduated: parseInt(form.year_graduated),
-        sponsor_name: form.sponsor_name.trim(),
-        principal_name: form.principal_name.trim(),
-        id_number: form.id_number.trim(),
-        applicant_email: form.applicant_email.trim().toLowerCase(),
-        chapter: form.chapter,
-        position_name: form.position_name,
-        payment_method: form.payment_method,
-        photo_url,
-        payment_screenshot_1: screenshotUrls[0] ?? null,
-        payment_screenshot_2: screenshotUrls[1] ?? null,
-        payment_screenshot_3: screenshotUrls[2] ?? null,
-        status: 'pending',
-      }]).select().single();
+      const yearVal = parseInt(form.year_graduated, 10);
+      if (isNaN(yearVal)) throw new Error('Invalid graduation year.');
 
-      if (insertErr) throw new Error(insertErr.message);
+      // Build payload — only include defined, non-empty values
+      const payload: Record<string, any> = {
+        full_name:        form.full_name.trim(),
+        dob:              form.dob,
+        class_name:       form.class_name.trim(),
+        year_graduated:   yearVal,
+        sponsor_name:     form.sponsor_name.trim(),
+        principal_name:   form.principal_name.trim(),
+        id_number:        form.id_number.trim(),
+        applicant_email:  form.applicant_email.trim().toLowerCase(),
+        chapter:          form.chapter,
+        position_name:    form.position_name,
+        payment_method:   form.payment_method,
+        status:           'pending',
+      };
+      // Only add nullable fields if they have a value
+      if (photo_url)   payload.photo_url             = photo_url;
+      if (screenshot1) payload.payment_screenshot_1  = screenshot1;
+      if (screenshot2) payload.payment_screenshot_2  = screenshot2;
+      if (screenshot3) payload.payment_screenshot_3  = screenshot3;
+
+      const { data, error: insertErr } = await supabase
+        .from('candidate_applications').insert([payload]).select().single();
+
+      if (insertErr) throw new Error(`Submission failed: ${insertErr.message} (code: ${insertErr.code})`);
       setAppId(data.id);
       setSubmitted(true);
     } catch (e: any) {
