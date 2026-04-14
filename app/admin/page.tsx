@@ -25,6 +25,7 @@ interface Application    {
 }
 
 // ─── Dynamic Config (loaded from election_settings, overrides these defaults) ──
+const HEAD_ADMIN_EMAIL = "ezekielborbor17@gmail.com";
 const DEFAULT_CONFIG = {
   org_name:       "BWIAA",
   election_title: "National Alumni Election",
