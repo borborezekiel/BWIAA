@@ -268,7 +268,7 @@ export default function AdminPage() {
         {activeTab === "roster"        && <RosterTab     roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "applications"  && <ApplicationsTab applications={applications} setApplications={setApplications} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "admins"   && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
-        {activeTab === "settings" && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast}/>}
+        {activeTab === "settings" && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline}/>}
       </div>
     </div>
   );
@@ -1590,10 +1590,11 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: SETTINGS — full dynamic config for any org to customise
 // ─────────────────────────────────────────────────────────────────────────────
-function SettingsTab({ config, setConfig, showToast }: {
+function SettingsTab({ config, setConfig, showToast, deadline }: {
   config: ElectionConfig;
   setConfig: React.Dispatch<React.SetStateAction<ElectionConfig>>;
   showToast: (m: string, ok?: boolean) => void;
+  deadline: string | null;
 }) {
   const [local, setLocal]           = useState<ElectionConfig>(JSON.parse(JSON.stringify(config)));
   const [saving, setSaving]         = useState(false);
@@ -1853,52 +1854,95 @@ function SettingsTab({ config, setConfig, showToast }: {
       </Card>
 
       {/* ── Danger Zone: Reset ── */}
-      <Card accent="red">
-        <SectionTitle>⚠ Danger Zone — Reset System</SectionTitle>
-        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6 -mt-2">
-          Use these to wipe test data before going live. Each action is irreversible — use with extreme caution.
-        </p>
-        <div className="space-y-3">
-          {[
-            { label: 'Reset All Votes', sub: 'Clears every ballot — vote counts go to zero', table: 'votes', col: 'id', color: 'border-orange-200 bg-orange-50', btn: 'bg-orange-500 hover:bg-orange-600' },
-            { label: 'Reset Voter Profiles', sub: 'Clears chapter/class assignments — voters must re-register on next login', table: 'voter_profiles', col: 'id', color: 'border-orange-200 bg-orange-50', btn: 'bg-orange-500 hover:bg-orange-600' },
-            { label: 'Reset All Candidates', sub: 'Removes all candidates from the ballot', table: 'candidates', col: 'id', color: 'border-red-200 bg-red-50', btn: 'bg-red-600 hover:bg-red-700' },
-            { label: 'Reset Applications', sub: 'Deletes all candidate registration applications', table: 'candidate_applications', col: 'id', color: 'border-red-200 bg-red-50', btn: 'bg-red-600 hover:bg-red-700' },
-            { label: 'Reset Voter Roster', sub: 'Clears the eligible voter whitelist — all voters must be re-added', table: 'eligible_voters', col: 'email', color: 'border-red-200 bg-red-50', btn: 'bg-red-600 hover:bg-red-700' },
-          ].map(({ label, sub, table, col, color, btn }) => (
-            <div key={table} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 border-2 rounded-2xl ${color}`}>
-              <div>
-                <p className="font-black text-slate-800 text-sm">{label}</p>
-                <p className="text-xs text-slate-500 font-bold mt-0.5">{sub}</p>
+      {(() => {
+        const countdownActive = deadline ? new Date(deadline).getTime() > Date.now() : false;
+        const electionOver    = deadline ? new Date(deadline).getTime() <= Date.now() : false;
+        const locked          = countdownActive || electionOver;
+
+        async function resetTable(table: string, showToast: (m: string, ok?: boolean) => void) {
+          // Use gt on created_at (all rows have it) or a dummy false filter workaround
+          // Most reliable: delete where created_at is not null (covers all real rows)
+          const { error } = await supabase.from(table).delete().gte('created_at', '1970-01-01');
+          if (error) {
+            // Fallback for tables without created_at (eligible_voters)
+            const { error: e2 } = await supabase.from(table).delete().neq('email', 'NOEMAIL_PLACEHOLDER_XYZ');
+            if (e2) { showToast(`Failed to reset ${table}: ${e2.message}`, false); return false; }
+          }
+          return true;
+        }
+
+        return (
+          <Card accent="red">
+            <SectionTitle>⚠ Danger Zone — Reset System</SectionTitle>
+
+            {locked && (
+              <div className={`flex items-start gap-3 p-5 rounded-2xl mb-6 border-2 ${countdownActive ? 'bg-yellow-50 border-yellow-300' : 'bg-red-50 border-red-300'}`}>
+                <span className="text-2xl shrink-0">{countdownActive ? '🔒' : '🏁'}</span>
+                <div>
+                  <p className={`font-black text-sm uppercase ${countdownActive ? 'text-yellow-800' : 'text-red-800'}`}>
+                    {countdownActive ? 'Reset Locked — Countdown Active' : 'Reset Locked — Election Has Ended'}
+                  </p>
+                  <p className={`text-xs font-bold mt-1 ${countdownActive ? 'text-yellow-700' : 'text-red-700'}`}>
+                    {countdownActive
+                      ? 'The voting countdown is running. Reset is disabled to protect election integrity. Remove the deadline first if you need to reset.'
+                      : 'The election has ended. Reset is disabled to preserve the official results. Archive results before resetting.'}
+                  </p>
+                </div>
               </div>
-              <button onClick={async () => {
-                if (!confirm(`⚠ Are you absolutely sure you want to ${label}? This CANNOT be undone.`)) return;
-                const { error } = await supabase.from(table).delete().neq(col, col === 'email' ? '' : '00000000-0000-0000-0000-000000000000');
-                if (error) { showToast(`Failed: ${error.message}`, false); return; }
-                showToast(`${label} complete. Refresh to see updated data.`);
-              }} className={`${btn} text-white font-black uppercase px-5 py-3 rounded-xl text-xs transition-all shrink-0`}>
-                Reset
-              </button>
+            )}
+
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6 -mt-2">
+              {locked ? 'Unlock by removing the voting deadline in the Admins tab.' : 'Use these to wipe test data before going live. Each action is irreversible.'}
+            </p>
+
+            <div className={`space-y-3 ${locked ? 'opacity-40 pointer-events-none select-none' : ''}`}>
+              {[
+                { label: 'Reset All Votes', sub: 'Clears every ballot — vote counts go to zero', table: 'votes', color: 'border-orange-200 bg-orange-50', btn: 'bg-orange-500 hover:bg-orange-600' },
+                { label: 'Reset Voter Profiles', sub: 'Clears chapter/class assignments — voters must re-register on next login', table: 'voter_profiles', color: 'border-orange-200 bg-orange-50', btn: 'bg-orange-500 hover:bg-orange-600' },
+                { label: 'Reset All Candidates', sub: 'Removes all candidates from the ballot', table: 'candidates', color: 'border-red-200 bg-red-50', btn: 'bg-red-600 hover:bg-red-700' },
+                { label: 'Reset Applications', sub: 'Deletes all candidate registration applications', table: 'candidate_applications', color: 'border-red-200 bg-red-50', btn: 'bg-red-600 hover:bg-red-700' },
+                { label: 'Reset Voter Roster', sub: 'Clears the eligible voter whitelist — all voters must be re-added', table: 'eligible_voters', color: 'border-red-200 bg-red-50', btn: 'bg-red-600 hover:bg-red-700' },
+              ].map(({ label, sub, table, color, btn }) => (
+                <div key={table} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 border-2 rounded-2xl ${color}`}>
+                  <div>
+                    <p className="font-black text-slate-800 text-sm">{label}</p>
+                    <p className="text-xs text-slate-500 font-bold mt-0.5">{sub}</p>
+                  </div>
+                  <button onClick={async () => {
+                    if (!confirm(`⚠ Are you absolutely sure you want to ${label}?\n\nThis CANNOT be undone.`)) return;
+                    const ok = await resetTable(table, showToast);
+                    if (ok) showToast(`✓ ${label} complete. Refresh the page to confirm.`);
+                  }} className={`${btn} text-white font-black uppercase px-5 py-3 rounded-xl text-xs transition-all shrink-0`}>
+                    Reset
+                  </button>
+                </div>
+              ))}
+
+              {/* Full system reset */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 border-2 border-slate-800 bg-slate-900 rounded-2xl mt-2">
+                <div>
+                  <p className="font-black text-white text-sm">🔴 Full System Reset</p>
+                  <p className="text-xs text-slate-400 font-bold mt-0.5">
+                    Clears votes, voter profiles, candidates, and applications in one go. Settings, admins and roster are preserved.
+                  </p>
+                </div>
+                <button onClick={async () => {
+                  if (!confirm('⚠ FULL RESET\n\nThis will permanently delete:\n• All votes\n• All voter profiles\n• All candidates\n• All applications\n\nThis CANNOT be undone. Continue?')) return;
+                  if (!confirm('FINAL CONFIRMATION\n\nClick OK to proceed with the full system reset.')) return;
+                  let allOk = true;
+                  for (const t of ['votes', 'voter_profiles', 'candidates', 'candidate_applications']) {
+                    const ok = await resetTable(t, showToast);
+                    if (!ok) { allOk = false; break; }
+                  }
+                  if (allOk) showToast('✓ Full system reset complete. Please refresh the page now.');
+                }} className="bg-white text-slate-900 font-black uppercase px-5 py-3 rounded-xl text-xs hover:bg-red-600 hover:text-white transition-all shrink-0">
+                  Full Reset
+                </button>
+              </div>
             </div>
-          ))}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 border-2 border-slate-800 bg-slate-900 rounded-2xl mt-2">
-            <div>
-              <p className="font-black text-white text-sm">🔴 Full System Reset</p>
-              <p className="text-xs text-slate-400 font-bold mt-0.5">Clears votes, voter profiles, candidates, and applications. Settings, admins & roster are preserved.</p>
-            </div>
-            <button onClick={async () => {
-              if (!confirm('⚠ FULL RESET: This will delete ALL votes, voter profiles, candidates, and applications. Cannot be undone.')) return;
-              if (!confirm('FINAL CONFIRMATION: Click OK to proceed with full reset.')) return;
-              for (const t of ['votes','voter_profiles','candidates','candidate_applications']) {
-                await supabase.from(t).delete().neq('id', '00000000-0000-0000-0000-000000000000');
-              }
-              showToast('Full system reset complete. Please refresh the page.');
-            }} className="bg-white text-slate-900 font-black uppercase px-5 py-3 rounded-xl text-xs hover:bg-red-600 hover:text-white transition-all shrink-0">
-              Full Reset
-            </button>
-          </div>
-        </div>
-      </Card>
+          </Card>
+        );
+      })()}
 
       <div className="flex justify-end">
         <button onClick={saveSettings} disabled={saving}
