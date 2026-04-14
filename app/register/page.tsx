@@ -245,6 +245,16 @@ export default function RegisterPage() {
 
       if (insertErr) throw new Error(`Submission failed: ${insertErr.message} (code: ${insertErr.code})`);
       setAppId(data.id);
+
+      // Send confirmation email (non-blocking — don't fail submission if email fails)
+      try {
+        await supabase.functions.invoke('notify-applicant', {
+          body: { type: 'submitted', application: data },
+        });
+      } catch (e) {
+        console.warn('Confirmation email failed (non-critical):', e);
+      }
+
       setSubmitted(true);
     } catch (e: any) {
       setError(e.message ?? 'Submission failed. Please try again.');

@@ -90,7 +90,16 @@ export default function AdminPage() {
       if (!user) { setLoading(false); return; }
       setUser(user);
       const lowerEmail = user.email?.toLowerCase();
-      if (lowerEmail === HEAD_ADMIN_EMAIL.toLowerCase()) {
+
+      // Load head admins list from settings (supports multiple head admins)
+      const { data: settingRow } = await supabase
+        .from('election_settings').select('value').eq('key', 'head_admins').maybeSingle();
+      let headAdmins: string[] = [HEAD_ADMIN_EMAIL.toLowerCase()];
+      if (settingRow?.value) {
+        try { headAdmins = JSON.parse(settingRow.value).map((e: string) => e.toLowerCase()); } catch {}
+      }
+
+      if (headAdmins.includes(lowerEmail!)) {
         setIsHeadAdmin(true); setIsAuthorized(true);
       } else {
         const { data } = await supabase
@@ -1268,6 +1277,17 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
   const approved = applications.filter(a => a.status === 'approved' && (isHeadAdmin || a.chapter === myChapter)).length;
   const rejected = applications.filter(a => a.status === 'rejected' && (isHeadAdmin || a.chapter === myChapter)).length;
 
+  // ── Email notification helper ─────────────────────────────────────────────
+  async function sendNotification(type: 'submitted' | 'approved' | 'rejected', application: Application) {
+    try {
+      await supabase.functions.invoke('notify-applicant', {
+        body: { type, application },
+      });
+    } catch (e) {
+      console.warn('Email notification failed (non-critical):', e);
+    }
+  }
+
   async function approve(app: Application) {
     setProcessing(true);
     // Add to candidates table automatically
@@ -1278,30 +1298,38 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
     if (candErr) { showToast(`Failed to add candidate: ${candErr.message}`, false); setProcessing(false); return; }
 
     // Update application status
+    const reviewedAt = new Date().toISOString();
     const { error } = await supabase.from('candidate_applications').update({
-      status: 'approved', reviewed_at: new Date().toISOString(), reviewed_by: adminEmail,
+      status: 'approved', reviewed_at: reviewedAt, reviewed_by: adminEmail,
     }).eq('id', app.id);
     setProcessing(false);
     if (error) { showToast(`Failed: ${error.message}`, false); return; }
 
-    setApplications(prev => prev.map(a => a.id === app.id ? { ...a, status: 'approved' } : a));
+    setApplications(prev => prev.map(a => a.id === app.id ? { ...a, status: 'approved', reviewed_at: reviewedAt } : a));
     setCandidates(prev => [...prev, cand]);
     setSelected(null);
     showToast(`✓ ${app.full_name} approved and added as ${app.position_name} candidate for ${app.chapter}.`);
+
+    // Send approval email (non-blocking)
+    sendNotification('approved', { ...app, status: 'approved', reviewed_at: reviewedAt, reviewed_by: adminEmail });
   }
 
   async function reject(app: Application) {
     if (!rejReason.trim()) { showToast('Please provide a rejection reason.', false); return; }
     setProcessing(true);
+    const reviewedAt = new Date().toISOString();
     const { error } = await supabase.from('candidate_applications').update({
       status: 'rejected', rejection_reason: rejReason.trim(),
-      reviewed_at: new Date().toISOString(), reviewed_by: adminEmail,
+      reviewed_at: reviewedAt, reviewed_by: adminEmail,
     }).eq('id', app.id);
     setProcessing(false);
     if (error) { showToast(`Failed: ${error.message}`, false); return; }
-    setApplications(prev => prev.map(a => a.id === app.id ? { ...a, status: 'rejected', rejection_reason: rejReason } : a));
+    setApplications(prev => prev.map(a => a.id === app.id ? { ...a, status: 'rejected', rejection_reason: rejReason, reviewed_at: reviewedAt } : a));
     setSelected(null); setRejReason('');
     showToast(`${app.full_name}'s application rejected.`);
+
+    // Send rejection email (non-blocking)
+    sendNotification('rejected', { ...app, status: 'rejected', rejection_reason: rejReason.trim(), reviewed_at: reviewedAt });
   }
 
   const statusBadge = (s: string) => ({
@@ -1309,6 +1337,68 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
     approved: 'bg-green-100 text-green-700 border-green-200',
     rejected: 'bg-red-100 text-red-700 border-red-200',
   }[s] ?? 'bg-slate-100 text-slate-700');
+
+  // ── Export functions ──────────────────────────────────────────────────────────
+  function exportCSV(data: Application[]) {
+    const headers = ['Application ID','Full Name','Email','DOB','Class Name','Year Graduated',
+      'Class Sponsor','Principal','ID Number','Chapter','Position','Payment Method','Status','Rejection Reason','Applied At','Reviewed At','Reviewed By'];
+    const rows = data.map(a => [
+      a.id.slice(0,8).toUpperCase(), a.full_name, a.applicant_email, a.dob,
+      a.class_name, String(a.year_graduated), a.sponsor_name, a.principal_name,
+      a.id_number, a.chapter, a.position_name, a.payment_method, a.status,
+      a.rejection_reason ?? '', a.created_at ? new Date(a.created_at).toLocaleString() : '',
+      a.reviewed_at ? new Date(a.reviewed_at).toLocaleString() : '', a.reviewed_by ?? '',
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `BWIAA_Applications_${filter}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  function exportPDF(data: Application[]) {
+    const title = `BWIAA Candidate Applications — ${filter.toUpperCase()} (${data.length})`;
+    const content = `<!DOCTYPE html><html><head><title>${title}</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 40px; color: #1e293b; }
+      h1 { font-size: 20px; font-weight: 900; text-transform: uppercase; border-bottom: 3px solid #dc2626; padding-bottom: 12px; }
+      .meta { font-size: 11px; color: #94a3b8; margin-bottom: 24px; }
+      table { width: 100%; border-collapse: collapse; font-size: 11px; }
+      th { background: #0f172a; color: white; padding: 8px 10px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+      td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+      tr:nth-child(even) td { background: #f8fafc; }
+      .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+      .pending  { background: #fef9c3; color: #854d0e; }
+      .approved { background: #dcfce7; color: #166534; }
+      .rejected { background: #fee2e2; color: #991b1b; }
+      .footer { margin-top: 40px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+    </style></head><body>
+    <h1>${title}</h1>
+    <div class="meta">Generated: ${new Date().toLocaleString()} &nbsp;•&nbsp; Total: ${data.length}</div>
+    <table>
+      <thead><tr>
+        <th>App ID</th><th>Full Name</th><th>Position</th><th>Chapter</th>
+        <th>Payment</th><th>Status</th><th>Applied</th><th>Notes</th>
+      </tr></thead>
+      <tbody>
+        ${data.map(a => `<tr>
+          <td style="font-family:monospace;font-weight:700;color:#dc2626">${a.id.slice(0,8).toUpperCase()}</td>
+          <td><strong>${a.full_name}</strong><br/><span style="color:#94a3b8;font-size:10px">${a.applicant_email}</span></td>
+          <td>${a.position_name}</td>
+          <td>${a.chapter}</td>
+          <td>${a.payment_method === 'in_person' ? 'In Person' : 'Screenshot'}</td>
+          <td><span class="badge ${a.status}">${a.status}</span></td>
+          <td>${new Date(a.created_at).toLocaleDateString()}</td>
+          <td style="color:#64748b;font-size:10px">${a.rejection_reason ?? (a.status === 'approved' ? 'Approved ✓' : '')}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="footer">BWIAA Election Management System — Official Applications Record — Confidential</div>
+    </body></html>`;
+    const win = window.open('', '_blank');
+    if (win) { win.document.write(content); win.document.close(); win.print(); }
+  }
 
   return (
     <div className="space-y-8">
@@ -1412,11 +1502,23 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
         </div>
       )}
 
-      <div>
-        <h2 className="text-3xl font-black uppercase italic text-slate-800">Candidate Applications</h2>
-        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-          Review, approve or reject candidate registrations
-        </p>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-black uppercase italic text-slate-800">Candidate Applications</h2>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+            Review, approve or reject candidate registrations
+          </p>
+        </div>
+        <div className="flex gap-3 flex-wrap">
+          <button onClick={() => exportCSV(visible)}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
+            <Download size={14}/> CSV ({filter})
+          </button>
+          <button onClick={() => exportPDF(visible)}
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
+            <Printer size={14}/> Print/PDF ({filter})
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -1493,9 +1595,49 @@ function SettingsTab({ config, setConfig, showToast }: {
   setConfig: React.Dispatch<React.SetStateAction<ElectionConfig>>;
   showToast: (m: string, ok?: boolean) => void;
 }) {
-  const [local, setLocal]   = useState<ElectionConfig>(JSON.parse(JSON.stringify(config)));
-  const [saving, setSaving] = useState(false);
+  const [local, setLocal]           = useState<ElectionConfig>(JSON.parse(JSON.stringify(config)));
+  const [saving, setSaving]         = useState(false);
   const [newChapter, setNewChapter] = useState('');
+  const [headAdmins, setHeadAdmins] = useState<string[]>([HEAD_ADMIN_EMAIL]);
+  const [newHA, setNewHA]           = useState('');
+  const [haSaving, setHaSaving]     = useState(false);
+
+  // Load head admins on mount
+  useEffect(() => {
+    supabase.from('election_settings').select('value').eq('key', 'head_admins').maybeSingle()
+      .then(({ data }) => {
+        if (data?.value) {
+          try { setHeadAdmins(JSON.parse(data.value)); } catch {}
+        } else {
+          setHeadAdmins([HEAD_ADMIN_EMAIL]);
+        }
+      });
+  }, []);
+
+  async function addHeadAdmin() {
+    const email = newHA.trim().toLowerCase();
+    if (!email || !email.includes('@')) { showToast('Valid email required.', false); return; }
+    if (headAdmins.includes(email)) { showToast('Already a head admin.', false); return; }
+    setHaSaving(true);
+    const updated = [...headAdmins, email];
+    const { error } = await supabase.from('election_settings')
+      .upsert([{ key: 'head_admins', value: JSON.stringify(updated) }], { onConflict: 'key' });
+    setHaSaving(false);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    setHeadAdmins(updated); setNewHA('');
+    showToast(`${email} is now a Head Admin.`);
+  }
+
+  async function removeHeadAdmin(email: string) {
+    if (email === HEAD_ADMIN_EMAIL.toLowerCase()) { showToast('Cannot remove the primary head admin.', false); return; }
+    if (!confirm(`Remove ${email} as Head Admin?`)) return;
+    const updated = headAdmins.filter(e => e !== email);
+    const { error } = await supabase.from('election_settings')
+      .upsert([{ key: 'head_admins', value: JSON.stringify(updated) }], { onConflict: 'key' });
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    setHeadAdmins(updated);
+    showToast(`${email} removed from Head Admins.`);
+  }
 
   function setField(field: keyof ElectionConfig, value: any) {
     setLocal(prev => ({ ...prev, [field]: value }));
@@ -1675,6 +1817,86 @@ function SettingsTab({ config, setConfig, showToast }: {
               <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest leading-tight mt-1">{pf.position}</p>
             </div>
           ))}
+        </div>
+      </Card>
+
+      {/* ── Head Administrators ── */}
+      <Card>
+        <SectionTitle>Head Administrators</SectionTitle>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-4 -mt-2">
+          Head admins have full platform access — add Principals, Presidents, CEOs or co-administrators here.
+        </p>
+        <div className="space-y-2 mb-4">
+          {headAdmins.map((email, i) => (
+            <div key={email} className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl">
+              <Crown size={14} className={i === 0 ? 'text-yellow-500' : 'text-slate-400'}/>
+              <span className="flex-1 font-bold text-slate-800 text-sm">{email}</span>
+              {i === 0 && <span className="text-[10px] font-black text-yellow-600 uppercase bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-200">Primary</span>}
+              {i > 0 && (
+                <button onClick={() => removeHeadAdmin(email)} className="text-red-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-all">
+                  <Trash2 size={14}/>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-3">
+          <input value={newHA} onChange={e => setNewHA(e.target.value)}
+            placeholder="Add head admin email (Principal, CEO, President...)"
+            onKeyDown={e => e.key === 'Enter' && addHeadAdmin()}
+            className="flex-1 border-2 border-dashed border-slate-200 focus:border-red-600 rounded-xl px-4 py-3 font-bold outline-none text-sm"/>
+          <button onClick={addHeadAdmin} disabled={haSaving}
+            className="bg-slate-900 text-white font-black uppercase px-5 py-3 rounded-xl text-xs hover:bg-slate-700 transition-all flex items-center gap-2 disabled:opacity-50">
+            {haSaving ? <Loader2 size={14} className="animate-spin"/> : <PlusCircle size={14}/>} Add
+          </button>
+        </div>
+      </Card>
+
+      {/* ── Danger Zone: Reset ── */}
+      <Card accent="red">
+        <SectionTitle>⚠ Danger Zone — Reset System</SectionTitle>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6 -mt-2">
+          Use these to wipe test data before going live. Each action is irreversible — use with extreme caution.
+        </p>
+        <div className="space-y-3">
+          {[
+            { label: 'Reset All Votes', sub: 'Clears every ballot — vote counts go to zero', table: 'votes', col: 'id', color: 'border-orange-200 bg-orange-50', btn: 'bg-orange-500 hover:bg-orange-600' },
+            { label: 'Reset Voter Profiles', sub: 'Clears chapter/class assignments — voters must re-register on next login', table: 'voter_profiles', col: 'id', color: 'border-orange-200 bg-orange-50', btn: 'bg-orange-500 hover:bg-orange-600' },
+            { label: 'Reset All Candidates', sub: 'Removes all candidates from the ballot', table: 'candidates', col: 'id', color: 'border-red-200 bg-red-50', btn: 'bg-red-600 hover:bg-red-700' },
+            { label: 'Reset Applications', sub: 'Deletes all candidate registration applications', table: 'candidate_applications', col: 'id', color: 'border-red-200 bg-red-50', btn: 'bg-red-600 hover:bg-red-700' },
+            { label: 'Reset Voter Roster', sub: 'Clears the eligible voter whitelist — all voters must be re-added', table: 'eligible_voters', col: 'email', color: 'border-red-200 bg-red-50', btn: 'bg-red-600 hover:bg-red-700' },
+          ].map(({ label, sub, table, col, color, btn }) => (
+            <div key={table} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 border-2 rounded-2xl ${color}`}>
+              <div>
+                <p className="font-black text-slate-800 text-sm">{label}</p>
+                <p className="text-xs text-slate-500 font-bold mt-0.5">{sub}</p>
+              </div>
+              <button onClick={async () => {
+                if (!confirm(`⚠ Are you absolutely sure you want to ${label}? This CANNOT be undone.`)) return;
+                const { error } = await supabase.from(table).delete().neq(col, col === 'email' ? '' : '00000000-0000-0000-0000-000000000000');
+                if (error) { showToast(`Failed: ${error.message}`, false); return; }
+                showToast(`${label} complete. Refresh to see updated data.`);
+              }} className={`${btn} text-white font-black uppercase px-5 py-3 rounded-xl text-xs transition-all shrink-0`}>
+                Reset
+              </button>
+            </div>
+          ))}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 border-2 border-slate-800 bg-slate-900 rounded-2xl mt-2">
+            <div>
+              <p className="font-black text-white text-sm">🔴 Full System Reset</p>
+              <p className="text-xs text-slate-400 font-bold mt-0.5">Clears votes, voter profiles, candidates, and applications. Settings, admins & roster are preserved.</p>
+            </div>
+            <button onClick={async () => {
+              if (!confirm('⚠ FULL RESET: This will delete ALL votes, voter profiles, candidates, and applications. Cannot be undone.')) return;
+              if (!confirm('FINAL CONFIRMATION: Click OK to proceed with full reset.')) return;
+              for (const t of ['votes','voter_profiles','candidates','candidate_applications']) {
+                await supabase.from(t).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+              }
+              showToast('Full system reset complete. Please refresh the page.');
+            }} className="bg-white text-slate-900 font-black uppercase px-5 py-3 rounded-xl text-xs hover:bg-red-600 hover:text-white transition-all shrink-0">
+              Full Reset
+            </button>
+          </div>
         </div>
       </Card>
 
