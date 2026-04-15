@@ -167,7 +167,13 @@ export default function BWIAAElection2026() {
 
   async function checkAccess(email: string) {
     const lowerEmail = email.toLowerCase();
-    if (lowerEmail === HEAD_ADMIN_EMAIL.toLowerCase()) return; // ★ head admin bypass
+
+    // ★ Head admin bypass — also check multi-head-admins from settings
+    const { data: haSetting } = await supabase
+      .from('election_settings').select('value').eq('key', 'head_admins').maybeSingle();
+    let headAdmins: string[] = [HEAD_ADMIN_EMAIL.toLowerCase()];
+    if (haSetting?.value) { try { headAdmins = JSON.parse(haSetting.value).map((e: string) => e.toLowerCase()); } catch {} }
+    if (headAdmins.includes(lowerEmail)) return;
 
     try {
       // 1. Blacklist check first
@@ -179,33 +185,48 @@ export default function BWIAAElection2026() {
         return;
       }
 
-      // 2. Whitelist check — if roster has entries, voter must be on it
+      // 2. Whitelist check — ALWAYS enforced, even if roster is empty
       const { count, error: countError } = await supabase
         .from('eligible_voters').select('*', { count: 'exact', head: true });
-      if (countError) return; // fail open if we can't read roster
-      if (count && count > 0) {
-        const { data: found } = await supabase
-          .from('eligible_voters').select('email, chapter').eq('email', lowerEmail).maybeSingle();
-        if (!found) {
-          await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
-          setErrorMessage(`ACCESS DENIED: ${email} is not on the official BWIAA voter roster. Contact your chapter administrator.`);
-          return;
-        }
-        // 3. ★ Auto-assign chapter from roster if voter profile has no chapter yet
-        if (found.chapter && !myChapter) {
-          setMyChapter(found.chapter);
-          // persist to voter_profiles so it survives refresh
-          const { data: { user: u } } = await supabase.auth.getUser();
-          if (u) {
-            await supabase.from('voter_profiles').upsert(
-              [{ id: u.id, home_chapter: found.chapter }],
-              { onConflict: 'id' }
-            );
-          }
+
+      // If we can't read the roster at all, deny access (fail closed — not open)
+      if (countError) {
+        await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
+        setErrorMessage('ACCESS DENIED: Unable to verify voter eligibility. Contact your administrator.');
+        return;
+      }
+
+      // Roster is empty — nobody gets in except head admins (already handled above)
+      if (!count || count === 0) {
+        await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
+        setErrorMessage('ACCESS DENIED: The voter roster has not been set up yet. Contact your chapter administrator to be added to the roster.');
+        return;
+      }
+
+      // Roster has entries — voter must be on it
+      const { data: found } = await supabase
+        .from('eligible_voters').select('email, chapter').eq('email', lowerEmail).maybeSingle();
+      if (!found) {
+        await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
+        setErrorMessage(`ACCESS DENIED: ${email} is not on the official voter roster. Contact your chapter administrator to be added.`);
+        return;
+      }
+
+      // 3. ★ Auto-assign chapter from roster
+      if (found.chapter && !myChapter) {
+        setMyChapter(found.chapter);
+        const { data: { user: u } } = await supabase.auth.getUser();
+        if (u) {
+          await supabase.from('voter_profiles').upsert(
+            [{ id: u.id, home_chapter: found.chapter }],
+            { onConflict: 'id' }
+          );
         }
       }
     } catch (e) {
       console.error("Access check error:", e);
+      await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
+      setErrorMessage('ACCESS DENIED: An error occurred during verification. Please try again.');
     }
   }
 
@@ -548,10 +569,58 @@ export default function BWIAAElection2026() {
           );
         })}
         {Object.keys(positionMap).length === 0 && (
-          <div className="text-center py-20 text-slate-400">
-            <Loader2 className="mx-auto mb-4 opacity-30" size={48}/>
-            <p className="font-bold uppercase tracking-widest text-sm">No candidates have been added for the {myChapter} chapter yet.</p>
-            <p className="text-xs mt-2 font-bold uppercase tracking-widest">Contact your election administrator.</p>
+          <div className="flex flex-col items-center justify-center py-20 px-6">
+            <div className="bg-white rounded-[3rem] p-10 md:p-14 max-w-lg w-full text-center shadow-xl border-b-8 border-yellow-400">
+              {/* Animated waiting indicator */}
+              <div className="relative w-24 h-24 mx-auto mb-8">
+                <div className="absolute inset-0 rounded-full border-4 border-yellow-200 animate-ping opacity-40"/>
+                <div className="absolute inset-2 rounded-full border-4 border-yellow-300 animate-ping opacity-30" style={{ animationDelay: '0.3s' }}/>
+                <div className="absolute inset-4 rounded-full bg-yellow-400 flex items-center justify-center">
+                  <span className="text-2xl">⏳</span>
+                </div>
+              </div>
+
+              <h2 className="text-2xl font-black uppercase italic text-slate-900 mb-3">
+                Ballot Not Ready Yet
+              </h2>
+              <p className="text-slate-500 font-bold text-sm leading-relaxed mb-8">
+                Candidates for the <span className="text-red-600 font-black">{myChapter}</span> chapter
+                have not been finalised yet. Your ballot will appear here once the Election Committee
+                has confirmed all candidates for your chapter.
+              </p>
+
+              {/* Voter info card */}
+              <div className="bg-slate-50 rounded-2xl p-5 mb-6 text-left space-y-2 border border-slate-100">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Your Registration</p>
+                <div className="flex justify-between">
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Chapter</span>
+                  <span className="text-xs font-black text-slate-800">{myChapter ?? '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Class Year</span>
+                  <span className="text-xs font-black text-slate-800">{myClass ?? '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Email</span>
+                  <span className="text-xs font-black text-slate-800">{user?.email}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Status</span>
+                  <span className="text-xs font-black text-green-600">✓ Verified Voter</span>
+                </div>
+              </div>
+
+              {deadline && !votingClosed && (
+                <div className="bg-slate-900 rounded-2xl p-4 mb-4">
+                  <p className="text-white/50 text-[10px] font-black uppercase tracking-widest mb-1">Election Countdown</p>
+                  <p className="text-red-500 font-black text-2xl tabular-nums">{timeLeft}</p>
+                </div>
+              )}
+
+              <p className="text-xs text-slate-400 font-bold">
+                This page will update automatically when candidates are added. You can check back later or contact your chapter administrator.
+              </p>
+            </div>
           </div>
         )}
       </main>
