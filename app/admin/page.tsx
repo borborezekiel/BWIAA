@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import {
   ShieldCheck, LogOut, Loader2, BarChart2, Users, UserCheck,
   UserX, List, Settings, PlusCircle, Trash2, Trophy, Activity,
-  CheckCircle2, XCircle, Terminal, Crown, Download, Printer, FileText, Sliders,
+  CheckCircle2, XCircle, Terminal, Crown, Download, Printer, FileText, Sliders, Search,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -22,6 +22,13 @@ interface Application    {
   payment_screenshot_1: string | null; payment_screenshot_2: string | null; payment_screenshot_3: string | null;
   status: 'pending' | 'approved' | 'rejected'; rejection_reason: string | null;
   created_at: string; reviewed_at: string | null; reviewed_by: string | null;
+}
+interface Member {
+  id: string; full_name: string; email: string; phone: string | null;
+  class_name: string; year_graduated: number; sponsor_name: string;
+  principal_name: string; id_number: string; chapter: string;
+  photo_url: string | null; status: 'pending' | 'approved' | 'rejected';
+  approved_by: string | null; approved_at: string | null; created_at: string;
 }
 
 // ─── Dynamic Config (loaded from election_settings, overrides these defaults) ──
@@ -55,7 +62,7 @@ type ElectionConfig = typeof DEFAULT_CONFIG;
 let CHAPTERS  = DEFAULT_CONFIG.chapters;
 let POSITIONS = DEFAULT_CONFIG.positions_fees.map(p => p.position);
 
-type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications" | "settings";
+type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications" | "settings" | "members";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ADMIN COMPONENT
@@ -75,7 +82,8 @@ export default function AdminPage() {
   const [admins, setAdmins]         = useState<ElectionAdmin[]>([]);
   const [deadline, setDeadline]     = useState<string | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
-  const [config, setConfig]         = useState<ElectionConfig>(DEFAULT_CONFIG);
+  const [members, setMembers]           = useState<Member[]>([]);
+  const [config, setConfig]             = useState<ElectionConfig>(DEFAULT_CONFIG);
 
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const showToast = useCallback((msg: string, ok = true) => {
@@ -122,7 +130,7 @@ export default function AdminPage() {
   }, [isAuthorized]);
 
   async function fetchAll() {
-    const [v, c, r, b, a, settingsRes, ap] = await Promise.all([
+    const [v, c, r, b, a, settingsRes, ap, mem] = await Promise.all([
       supabase.from('votes').select('*').order('created_at', { ascending: false }),
       supabase.from('candidates').select('*').order('position_name'),
       supabase.from('eligible_voters').select('*').order('email'),
@@ -130,13 +138,15 @@ export default function AdminPage() {
       supabase.from('election_admins').select('*').order('email'),
       supabase.from('election_settings').select('*'),
       supabase.from('candidate_applications').select('*').order('created_at', { ascending: false }),
+      supabase.from('members').select('*').order('created_at', { ascending: false }),
     ]);
-    if (v.data) setVotes(v.data);
-    if (c.data) setCandidates(c.data);
-    if (r.data) setRoster(r.data);
-    if (b.data) setBlacklist(b.data);
-    if (a.data) setAdmins(a.data);
-    if (ap.data) setApplications(ap.data);
+    if (v.data)   setVotes(v.data);
+    if (c.data)   setCandidates(c.data);
+    if (r.data)   setRoster(r.data);
+    if (b.data)   setBlacklist(b.data);
+    if (a.data)   setAdmins(a.data);
+    if (ap.data)  setApplications(ap.data);
+    if (mem.data) setMembers(mem.data);
 
     // Merge all settings keys into config
     if (settingsRes.data) {
@@ -204,6 +214,7 @@ export default function AdminPage() {
     { id: "candidates",   label: "Candidates",   icon: List },
     { id: "voters",       label: "Voters",       icon: Users },
     { id: "roster",       label: "Roster",       icon: UserCheck },
+    { id: "members",      label: `Members${members.filter(m=>m.status==='pending').length > 0 ? ` (${members.filter(m=>m.status==='pending').length})` : ''}`, icon: Users },
     { id: "applications", label: `Applications${applications.filter(a=>a.status==='pending').length > 0 ? ` (${applications.filter(a=>a.status==='pending').length})` : ''}`, icon: FileText },
     { id: "admins",       label: "Admins",       icon: Settings, headOnly: true },
     { id: "settings",     label: "Settings",     icon: Settings, headOnly: true },
@@ -266,6 +277,7 @@ export default function AdminPage() {
         {activeTab === "candidates"    && <CandidatesTab candidates={candidates} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin}/>}
         {activeTab === "voters"        && <VotersTab     votes={votes} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "roster"        && <RosterTab     roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
+        {activeTab === "members"       && <MembersTab members={members} setMembers={setMembers} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "applications"  && <ApplicationsTab applications={applications} setApplications={setApplications} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "admins"   && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
         {activeTab === "settings" && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline}/>}
@@ -1951,6 +1963,265 @@ function SettingsTab({ config, setConfig, showToast, deadline }: {
           {saving ? 'Saving...' : 'Save All Settings'}
         </button>
       </div>
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: MEMBERS
+// ─────────────────────────────────────────────────────────────────────────────
+function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, adminEmail }: {
+  members: Member[];
+  setMembers: React.Dispatch<React.SetStateAction<Member[]>>;
+  showToast: (m: string, ok?: boolean) => void;
+  isHeadAdmin: boolean; myChapter: string | null; adminEmail: string;
+}) {
+  const [filter, setFilter]         = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [selected, setSelected]     = useState<Member | null>(null);
+  const [rejReason, setRejReason]   = useState('');
+  const [processing, setProcessing] = useState(false);
+  const [search, setSearch]         = useState('');
+
+  const visible = members.filter(m => {
+    const chapterMatch = isHeadAdmin || m.chapter === myChapter;
+    const statusMatch  = filter === 'all' || m.status === filter;
+    const searchMatch  = !search ||
+      m.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      m.email.toLowerCase().includes(search.toLowerCase()) ||
+      m.chapter.toLowerCase().includes(search.toLowerCase());
+    return chapterMatch && statusMatch && searchMatch;
+  });
+
+  const pending  = members.filter(m => m.status === 'pending'  && (isHeadAdmin || m.chapter === myChapter)).length;
+  const approved = members.filter(m => m.status === 'approved' && (isHeadAdmin || m.chapter === myChapter)).length;
+  const rejected = members.filter(m => m.status === 'rejected' && (isHeadAdmin || m.chapter === myChapter)).length;
+
+  async function approveMember(m: Member) {
+    setProcessing(true);
+    const approvedAt = new Date().toISOString();
+    const { error } = await supabase.from('members').update({
+      status: 'approved', approved_by: adminEmail, approved_at: approvedAt,
+    }).eq('id', m.id);
+    if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
+
+    // Log activity
+    await supabase.from('activity_log').insert([{
+      member_id: m.id, member_name: m.full_name, chapter: m.chapter,
+      action: 'Membership approved',
+      details: `Approved by ${adminEmail}`,
+    }]);
+
+    setMembers(prev => prev.map(x => x.id === m.id ? { ...x, status: 'approved', approved_by: adminEmail, approved_at: approvedAt } : x));
+    setSelected(null);
+    setProcessing(false);
+    showToast(`✓ ${m.full_name} approved as a member of ${m.chapter}.`);
+  }
+
+  async function rejectMember(m: Member) {
+    if (!rejReason.trim()) { showToast('Please provide a rejection reason.', false); return; }
+    setProcessing(true);
+    const { error } = await supabase.from('members').update({
+      status: 'rejected', approved_by: adminEmail, approved_at: new Date().toISOString(),
+    }).eq('id', m.id);
+    if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
+
+    await supabase.from('activity_log').insert([{
+      member_id: m.id, member_name: m.full_name, chapter: m.chapter,
+      action: 'Membership rejected',
+      details: `Reason: ${rejReason.trim()}`,
+    }]);
+
+    setMembers(prev => prev.map(x => x.id === m.id ? { ...x, status: 'rejected' } : x));
+    setSelected(null); setRejReason('');
+    setProcessing(false);
+    showToast(`${m.full_name}'s membership application rejected.`);
+  }
+
+  function exportCSV() {
+    const headers = ['Member ID','Full Name','Email','Phone','Chapter','Class Name','Year Graduated','Sponsor','Principal','ID Number','Status','Applied','Approved By','Approved At'];
+    const rows = visible.map(m => [
+      m.id.slice(0,8).toUpperCase(), m.full_name, m.email, m.phone ?? '',
+      m.chapter, m.class_name, String(m.year_graduated), m.sponsor_name,
+      m.principal_name, m.id_number, m.status,
+      new Date(m.created_at).toLocaleString(),
+      m.approved_by ?? '', m.approved_at ? new Date(m.approved_at).toLocaleString() : '',
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a'); a.href = url;
+    a.download = `BWIAA_Members_${filter}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  const statusBadge = (s: string) => ({
+    pending:  'bg-yellow-100 text-yellow-700 border-yellow-200',
+    approved: 'bg-green-100 text-green-700 border-green-200',
+    rejected: 'bg-red-100 text-red-700 border-red-200',
+  }[s] ?? 'bg-slate-100 text-slate-700');
+
+  return (
+    <div className="space-y-8">
+
+      {/* Member detail modal */}
+      {selected && (
+        <div className="fixed inset-0 bg-slate-900/95 z-40 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white rounded-[3rem] p-8 max-w-lg w-full my-4 shadow-2xl">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 shrink-0">
+                {selected.photo_url
+                  ? <img src={selected.photo_url} className="w-full h-full object-cover" alt={selected.full_name}/>
+                  : <div className="w-full h-full flex items-center justify-center bg-slate-200">
+                      <span className="text-2xl font-black text-slate-400">{selected.full_name.charAt(0)}</span>
+                    </div>
+                }
+              </div>
+              <div className="flex-1">
+                <h3 className="text-xl font-black uppercase text-slate-900">{selected.full_name}</h3>
+                <p className="text-xs text-red-600 font-bold uppercase mt-1">{selected.chapter}</p>
+                <p className="text-xs text-slate-400 font-bold">{selected.email}</p>
+                <span className={`inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border mt-2 ${statusBadge(selected.status)}`}>
+                  {selected.status}
+                </span>
+              </div>
+              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 p-1">
+                <XCircle size={20}/>
+              </button>
+            </div>
+
+            <div className="space-y-1.5 bg-slate-50 rounded-2xl p-5 mb-5 text-xs">
+              {[
+                ['Member ID',     selected.id.slice(0,8).toUpperCase()],
+                ['Email',         selected.email],
+                ['Phone',         selected.phone ?? '—'],
+                ['ID Number',     selected.id_number],
+                ['Class Name',    selected.class_name],
+                ['Year Graduated',String(selected.year_graduated)],
+                ['Class Sponsor', selected.sponsor_name],
+                ['Principal',     selected.principal_name],
+                ['Applied',       new Date(selected.created_at).toLocaleString()],
+              ].map(([l, v]) => (
+                <div key={l} className="flex justify-between py-1 border-b border-slate-100 last:border-0">
+                  <span className="font-black text-slate-400 uppercase tracking-widest">{l}</span>
+                  <span className={`font-black text-right max-w-[55%] ${l === 'Member ID' ? 'text-red-600 font-mono' : 'text-slate-800'}`}>{v}</span>
+                </div>
+              ))}
+            </div>
+
+            {selected.status === 'pending' && (
+              <div className="space-y-3">
+                <button onClick={() => approveMember(selected)} disabled={processing}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50">
+                  {processing ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
+                  Approve Membership
+                </button>
+                <div className="flex gap-2">
+                  <input value={rejReason} onChange={e => setRejReason(e.target.value)}
+                    placeholder="Rejection reason (required)..."
+                    className="flex-1 border-2 border-slate-200 focus:border-red-600 rounded-2xl px-4 py-3 font-bold outline-none text-sm"/>
+                  <button onClick={() => rejectMember(selected)} disabled={processing || !rejReason.trim()}
+                    className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-5 py-3 rounded-2xl flex items-center gap-2 transition-all disabled:opacity-50 text-sm shrink-0">
+                    <XCircle size={14}/> Reject
+                  </button>
+                </div>
+              </div>
+            )}
+            {selected.status !== 'pending' && (
+              <div className={`rounded-2xl p-4 text-sm font-bold ${selected.status === 'approved' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {selected.status === 'approved'
+                  ? `✓ Approved by ${selected.approved_by ?? 'admin'} on ${selected.approved_at ? new Date(selected.approved_at).toLocaleDateString() : '—'}`
+                  : '✗ This application was rejected.'}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-black uppercase italic text-slate-800">Member Applications</h2>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+            Review and approve member registrations
+          </p>
+        </div>
+        <div className="flex gap-3 flex-wrap">
+          <button onClick={exportCSV}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
+            <Download size={14}/> CSV ({filter})
+          </button>
+          <Link href="/members"
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
+            <Users size={14}/> View Portal
+          </Link>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-yellow-500 text-white rounded-3xl p-6 text-center shadow-lg">
+          <p className="text-4xl font-black">{pending}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Pending</p>
+        </div>
+        <div className="bg-green-600 text-white rounded-3xl p-6 text-center shadow-lg">
+          <p className="text-4xl font-black">{approved}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Approved</p>
+        </div>
+        <div className="bg-red-600 text-white rounded-3xl p-6 text-center shadow-lg">
+          <p className="text-4xl font-black">{rejected}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Rejected</p>
+        </div>
+      </div>
+
+      {/* Search + Filter */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/>
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name, email or chapter..."
+            className="w-full pl-10 pr-4 py-4 border-2 border-slate-200 focus:border-red-600 rounded-2xl font-bold outline-none text-sm bg-white"/>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {(['pending','approved','rejected','all'] as const).map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all border
+                ${filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Member list */}
+      <Card>
+        <SectionTitle>Members ({visible.length})</SectionTitle>
+        <div className="space-y-3">
+          {visible.map(m => (
+            <div key={m.id} onClick={() => { setSelected(m); setRejReason(''); }}
+              className="flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl cursor-pointer transition-all border-2 border-transparent hover:border-slate-200">
+              <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-200 shrink-0">
+                {m.photo_url
+                  ? <img src={m.photo_url} className="w-full h-full object-cover" alt={m.full_name}/>
+                  : <div className="w-full h-full flex items-center justify-center">
+                      <span className="font-black text-slate-400">{m.full_name.charAt(0)}</span>
+                    </div>
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-black text-slate-800 truncate">{m.full_name}</p>
+                <p className="text-xs text-slate-400 font-bold uppercase truncate">{m.chapter} · Class of {m.year_graduated}</p>
+                <p className="text-[10px] text-slate-400 font-bold">{new Date(m.created_at).toLocaleDateString()} · <span className="font-mono text-red-500">{m.id.slice(0,8).toUpperCase()}</span></p>
+              </div>
+              <div className="shrink-0">
+                <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border ${statusBadge(m.status)}`}>
+                  {m.status}
+                </span>
+              </div>
+            </div>
+          ))}
+          {visible.length === 0 && (
+            <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter} member applications.</p>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }

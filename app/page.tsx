@@ -406,8 +406,11 @@ export default function BWIAAElection2026() {
               <Link href="/register/status" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">
                 Check Application Status
               </Link>
+              <Link href="/members" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">
+                Member Portal
+              </Link>
               <Link href="/history" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">
-                View Election History
+                Election History
               </Link>
             </div>
           </div>
