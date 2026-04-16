@@ -115,6 +115,12 @@ export default function MembersPage() {
                 Join Now
               </Link>
             )}
+            <Link href="/dues" className="bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase px-4 py-2 rounded-xl transition-all">
+              Pay Dues
+            </Link>
+            <Link href="/finances" className="bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase px-4 py-2 rounded-xl transition-all">
+              Finances
+            </Link>
             <Link href="/" className="text-white/40 hover:text-white text-xs font-black uppercase tracking-widest transition-all">← Home</Link>
           </div>
         </div>

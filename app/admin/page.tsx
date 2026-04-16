@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase';
 import {
   ShieldCheck, LogOut, Loader2, BarChart2, Users, UserCheck,
   UserX, List, Settings, PlusCircle, Trash2, Trophy, Activity,
-  CheckCircle2, XCircle, Terminal, Crown, Download, Printer, FileText, Sliders, Search,
+  CheckCircle2, XCircle, Terminal, Crown, Download, Printer,
+  FileText, Sliders, Search, CreditCard, DollarSign,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -28,6 +29,13 @@ interface Member {
   class_name: string; year_graduated: number; sponsor_name: string;
   principal_name: string; id_number: string; chapter: string;
   photo_url: string | null; status: 'pending' | 'approved' | 'rejected';
+  approved_by: string | null; approved_at: string | null; created_at: string;
+}
+interface DuesPayment {
+  id: string; member_id: string | null; member_name: string;
+  chapter: string; amount: number; currency: string; period: string;
+  payment_method: string; screenshot_url: string | null;
+  status: string; notes: string | null;
   approved_by: string | null; approved_at: string | null; created_at: string;
 }
 
@@ -62,7 +70,7 @@ type ElectionConfig = typeof DEFAULT_CONFIG;
 let CHAPTERS  = DEFAULT_CONFIG.chapters;
 let POSITIONS = DEFAULT_CONFIG.positions_fees.map(p => p.position);
 
-type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications" | "settings" | "members";
+type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications" | "settings" | "members" | "dues";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ADMIN COMPONENT
@@ -83,6 +91,7 @@ export default function AdminPage() {
   const [deadline, setDeadline]     = useState<string | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [members, setMembers]           = useState<Member[]>([]);
+  const [dues, setDues]                 = useState<DuesPayment[]>([]);
   const [config, setConfig]             = useState<ElectionConfig>(DEFAULT_CONFIG);
 
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
@@ -130,7 +139,7 @@ export default function AdminPage() {
   }, [isAuthorized]);
 
   async function fetchAll() {
-    const [v, c, r, b, a, settingsRes, ap, mem] = await Promise.all([
+    const [v, c, r, b, a, settingsRes, ap, mem, duesRes] = await Promise.all([
       supabase.from('votes').select('*').order('created_at', { ascending: false }),
       supabase.from('candidates').select('*').order('position_name'),
       supabase.from('eligible_voters').select('*').order('email'),
@@ -139,14 +148,16 @@ export default function AdminPage() {
       supabase.from('election_settings').select('*'),
       supabase.from('candidate_applications').select('*').order('created_at', { ascending: false }),
       supabase.from('members').select('*').order('created_at', { ascending: false }),
+      supabase.from('dues_payments').select('*').order('created_at', { ascending: false }),
     ]);
-    if (v.data)   setVotes(v.data);
-    if (c.data)   setCandidates(c.data);
-    if (r.data)   setRoster(r.data);
-    if (b.data)   setBlacklist(b.data);
-    if (a.data)   setAdmins(a.data);
-    if (ap.data)  setApplications(ap.data);
-    if (mem.data) setMembers(mem.data);
+    if (v.data)       setVotes(v.data);
+    if (c.data)       setCandidates(c.data);
+    if (r.data)       setRoster(r.data);
+    if (b.data)       setBlacklist(b.data);
+    if (a.data)       setAdmins(a.data);
+    if (ap.data)      setApplications(ap.data);
+    if (mem.data)     setMembers(mem.data);
+    if (duesRes.data) setDues(duesRes.data);
 
     // Merge all settings keys into config
     if (settingsRes.data) {
@@ -215,7 +226,7 @@ export default function AdminPage() {
     { id: "voters",       label: "Voters",       icon: Users },
     { id: "roster",       label: "Roster",       icon: UserCheck },
     { id: "members",      label: `Members${members.filter(m=>m.status==='pending').length > 0 ? ` (${members.filter(m=>m.status==='pending').length})` : ''}`, icon: Users },
-    { id: "applications", label: `Applications${applications.filter(a=>a.status==='pending').length > 0 ? ` (${applications.filter(a=>a.status==='pending').length})` : ''}`, icon: FileText },
+    { id: "dues",         label: `Dues${dues.filter(d=>d.status==='pending').length > 0 ? ` (${dues.filter(d=>d.status==='pending').length})` : ''}`, icon: CreditCard },
     { id: "admins",       label: "Admins",       icon: Settings, headOnly: true },
     { id: "settings",     label: "Settings",     icon: Settings, headOnly: true },
   ];
@@ -278,6 +289,7 @@ export default function AdminPage() {
         {activeTab === "voters"        && <VotersTab     votes={votes} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "roster"        && <RosterTab     roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "members"       && <MembersTab members={members} setMembers={setMembers} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
+        {activeTab === "dues"          && <DuesTab dues={dues} setDues={setDues} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
         {activeTab === "applications"  && <ApplicationsTab applications={applications} setApplications={setApplications} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "admins"   && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
         {activeTab === "settings" && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline}/>}
@@ -2219,6 +2231,245 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
           ))}
           {visible.length === 0 && (
             <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter} member applications.</p>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: DUES
+// ─────────────────────────────────────────────────────────────────────────────
+function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail, config }: {
+  dues: DuesPayment[];
+  setDues: React.Dispatch<React.SetStateAction<DuesPayment[]>>;
+  showToast: (m: string, ok?: boolean) => void;
+  isHeadAdmin: boolean; myChapter: string | null;
+  adminEmail: string; config: ElectionConfig;
+}) {
+  const [filter, setFilter]       = useState<'pending'|'approved'|'rejected'|'all'>('pending');
+  const [selected, setSelected]   = useState<DuesPayment|null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [search, setSearch]       = useState('');
+  const [viewImg, setViewImg]     = useState<string|null>(null);
+
+  const symbol = config.currency_symbol;
+  const currency = config.currency;
+
+  const visible = dues.filter(d => {
+    const chMatch = isHeadAdmin || d.chapter === myChapter;
+    const stMatch = filter === 'all' || d.status === filter;
+    const srMatch = !search || d.member_name.toLowerCase().includes(search.toLowerCase())
+      || d.chapter.toLowerCase().includes(search.toLowerCase())
+      || d.period.toLowerCase().includes(search.toLowerCase());
+    return chMatch && stMatch && srMatch;
+  });
+
+  const pending  = dues.filter(d => d.status==='pending'  && (isHeadAdmin||d.chapter===myChapter)).length;
+  const approved = dues.filter(d => d.status==='approved' && (isHeadAdmin||d.chapter===myChapter)).length;
+  const rejected = dues.filter(d => d.status==='rejected' && (isHeadAdmin||d.chapter===myChapter)).length;
+  const totalApproved = dues.filter(d => d.status==='approved' && (isHeadAdmin||d.chapter===myChapter)).reduce((s,d)=>s+d.amount,0);
+
+  async function approve(d: DuesPayment) {
+    setProcessing(true);
+    const approvedAt = new Date().toISOString();
+    const { error } = await supabase.from('dues_payments').update({
+      status:'approved', approved_by: adminEmail, approved_at: approvedAt,
+    }).eq('id', d.id);
+    if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
+    await supabase.from('activity_log').insert([{
+      member_name: d.member_name, chapter: d.chapter,
+      action: 'Dues payment approved',
+      details: `${symbol}${d.amount} for ${d.period} approved by ${adminEmail}`,
+    }]);
+    setDues(prev => prev.map(x => x.id===d.id ? {...x, status:'approved', approved_by:adminEmail, approved_at:approvedAt} : x));
+    setSelected(null); setProcessing(false);
+    showToast(`✓ ${symbol}${d.amount} payment from ${d.member_name} approved.`);
+  }
+
+  async function reject(d: DuesPayment) {
+    if (!confirm(`Reject this payment from ${d.member_name}?`)) return;
+    setProcessing(true);
+    const { error } = await supabase.from('dues_payments').update({
+      status:'rejected', approved_by: adminEmail, approved_at: new Date().toISOString(),
+    }).eq('id', d.id);
+    if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
+    setDues(prev => prev.map(x => x.id===d.id ? {...x, status:'rejected'} : x));
+    setSelected(null); setProcessing(false);
+    showToast(`${d.member_name}'s payment rejected.`);
+  }
+
+  function exportCSV() {
+    const headers = ['Member','Chapter','Period','Amount','Currency','Method','Status','Notes','Submitted','Approved By','Approved At'];
+    const rows = visible.map(d => [
+      d.member_name, d.chapter, d.period, String(d.amount), d.currency,
+      d.payment_method, d.status, d.notes??'',
+      new Date(d.created_at).toLocaleString(),
+      d.approved_by??'', d.approved_at?new Date(d.approved_at).toLocaleString():'',
+    ]);
+    const csv = [headers,...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv],{type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url;
+    a.download=`Dues_${filter}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  const statusBadge = (s: string) => ({
+    pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    approved:'bg-green-100 text-green-700 border-green-200',
+    rejected:'bg-red-100 text-red-700 border-red-200',
+  }[s] ?? 'bg-slate-100 text-slate-700');
+
+  return (
+    <div className="space-y-8">
+      {viewImg && (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={()=>setViewImg(null)}>
+          <img src={viewImg} className="max-w-full max-h-full rounded-2xl shadow-2xl" alt="Payment proof"/>
+          <button className="absolute top-4 right-4 bg-white/10 text-white p-2 rounded-full" onClick={()=>setViewImg(null)}>
+            <XCircle size={24}/>
+          </button>
+        </div>
+      )}
+
+      {selected && (
+        <div className="fixed inset-0 bg-slate-900/95 z-40 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white rounded-[3rem] p-8 max-w-lg w-full my-4 shadow-2xl">
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h3 className="text-xl font-black uppercase text-slate-900">{selected.member_name}</h3>
+                <p className="text-xs text-red-600 font-bold uppercase mt-1">{selected.chapter}</p>
+                <span className={`inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border mt-2 ${statusBadge(selected.status)}`}>
+                  {selected.status}
+                </span>
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-black text-slate-900">{symbol}{selected.amount.toLocaleString()}</p>
+                <p className="text-xs text-slate-400 font-bold">{selected.currency}</p>
+              </div>
+              <button onClick={()=>setSelected(null)} className="text-slate-400 hover:text-slate-700 p-1 ml-2"><XCircle size={20}/></button>
+            </div>
+
+            <div className="space-y-1.5 bg-slate-50 rounded-2xl p-5 mb-5 text-xs">
+              {[
+                ['Period', selected.period],
+                ['Payment Method', selected.payment_method==='in_person'?'In Person':'Screenshot/Transfer'],
+                ['Notes', selected.notes??'—'],
+                ['Submitted', new Date(selected.created_at).toLocaleString()],
+              ].map(([l,v])=>(
+                <div key={l} className="flex justify-between py-1 border-b border-slate-100 last:border-0">
+                  <span className="font-black text-slate-400 uppercase tracking-widest">{l}</span>
+                  <span className="font-black text-slate-800 text-right max-w-[60%]">{v}</span>
+                </div>
+              ))}
+            </div>
+
+            {selected.screenshot_url && (
+              <div className="mb-5">
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Payment Screenshot</p>
+                <img src={selected.screenshot_url} className="rounded-2xl max-h-48 w-full object-cover border border-slate-200 cursor-pointer"
+                  alt="Payment proof" onClick={()=>setViewImg(selected.screenshot_url!)}/>
+                <p className="text-[10px] text-slate-400 font-bold mt-1">Click to enlarge</p>
+              </div>
+            )}
+
+            {selected.status==='pending' && (
+              <div className="space-y-3">
+                <button onClick={()=>approve(selected)} disabled={processing}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50">
+                  {processing?<Loader2 size={16} className="animate-spin"/>:<CheckCircle2 size={16}/>}
+                  Approve Payment
+                </button>
+                <button onClick={()=>reject(selected)} disabled={processing}
+                  className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 border-2 border-red-200">
+                  <XCircle size={16}/> Reject Payment
+                </button>
+              </div>
+            )}
+            {selected.status!=='pending' && (
+              <div className={`rounded-2xl p-4 text-sm font-bold ${selected.status==='approved'?'bg-green-50 text-green-700':'bg-red-50 text-red-700'}`}>
+                {selected.status==='approved'
+                  ?`✓ Approved by ${selected.approved_by??'admin'} on ${selected.approved_at?new Date(selected.approved_at).toLocaleDateString():'—'}`
+                  :'✗ This payment was rejected.'}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-black uppercase italic text-slate-800">Dues Payments</h2>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Review and approve member dues submissions</p>
+        </div>
+        <div className="flex gap-3 flex-wrap">
+          <button onClick={exportCSV} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
+            <Download size={14}/> CSV
+          </button>
+          <Link href="/finances" className="flex items-center gap-2 bg-slate-900 hover:bg-slate-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
+            <DollarSign size={14}/> Public View
+          </Link>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-yellow-500 text-white rounded-3xl p-6 text-center shadow-lg">
+          <p className="text-4xl font-black">{pending}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Pending</p>
+        </div>
+        <div className="bg-green-600 text-white rounded-3xl p-6 text-center shadow-lg">
+          <p className="text-4xl font-black">{approved}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Approved</p>
+        </div>
+        <div className="bg-red-600 text-white rounded-3xl p-6 text-center shadow-lg">
+          <p className="text-4xl font-black">{rejected}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Rejected</p>
+        </div>
+        <div className="bg-slate-900 text-white rounded-3xl p-6 text-center shadow-lg">
+          <p className="text-2xl font-black">{symbol}{totalApproved.toLocaleString()}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-60 mt-1">Total Collected</p>
+        </div>
+      </div>
+
+      {/* Search + Filter */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/>
+          <input value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder="Search by name, chapter or period..."
+            className="w-full pl-10 pr-4 py-4 border-2 border-slate-200 focus:border-red-600 rounded-2xl font-bold outline-none text-sm bg-white"/>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {(['pending','approved','rejected','all'] as const).map(f=>(
+            <button key={f} onClick={()=>setFilter(f)}
+              className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all border ${filter===f?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Card>
+        <SectionTitle>Payments ({visible.length})</SectionTitle>
+        <div className="space-y-3">
+          {visible.map(d=>(
+            <div key={d.id} onClick={()=>setSelected(d)}
+              className="flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl cursor-pointer transition-all border-2 border-transparent hover:border-slate-200">
+              <div className="flex-1 min-w-0">
+                <p className="font-black text-slate-800 truncate">{d.member_name}</p>
+                <p className="text-xs text-slate-400 font-bold uppercase truncate">{d.chapter} · {d.period}</p>
+                <p className="text-[10px] text-slate-400 font-bold">{new Date(d.created_at).toLocaleDateString()} · {d.payment_method==='in_person'?'In Person':'Screenshot'}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="font-black text-xl text-slate-900">{symbol}{d.amount.toLocaleString()}</p>
+                <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${statusBadge(d.status)}`}>{d.status}</span>
+              </div>
+            </div>
+          ))}
+          {visible.length===0 && (
+            <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter==='all'?'':''+filter+' '}dues payments found.</p>
           )}
         </div>
       </Card>
