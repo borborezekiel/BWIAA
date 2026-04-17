@@ -2015,17 +2015,22 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
     }).eq('id', m.id);
     if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
 
+    // ★ Auto-add to eligible_voters so member can vote
+    const { error: rosterErr } = await supabase.from('eligible_voters')
+      .upsert([{ email: m.email, chapter: m.chapter }], { onConflict: 'email' });
+    if (rosterErr) console.warn('Could not add to voter roster:', rosterErr.message);
+
     // Log activity
     await supabase.from('activity_log').insert([{
       member_id: m.id, member_name: m.full_name, chapter: m.chapter,
-      action: 'Membership approved',
+      action: 'Membership approved — added to voter roster',
       details: `Approved by ${adminEmail}`,
     }]);
 
-    setMembers(prev => prev.map(x => x.id === m.id ? { ...x, status: 'approved', approved_by: adminEmail, approved_at: approvedAt } : x));
-    setSelected(null);
-    setProcessing(false);
-    showToast(`✓ ${m.full_name} approved as a member of ${m.chapter}.`);
+    setMembers(prev => prev.map(x => x.id === m.id
+      ? { ...x, status: 'approved', approved_by: adminEmail, approved_at: approvedAt } : x));
+    setSelected(null); setProcessing(false);
+    showToast(`✓ ${m.full_name} approved as member and added to voter roster.`);
   }
 
   async function rejectMember(m: Member) {
