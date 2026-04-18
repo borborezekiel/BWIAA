@@ -391,11 +391,12 @@ export default function MemberDashboard() {
             ) : events.map(ev => {
               const myAttendance = attendance.find(a => a.event_id === ev.id);
               const isPast = new Date(ev.event_date) < new Date();
-              const statusColor = {
+              const STATUS_COLORS: Record<string, string> = {
                 present: 'bg-green-100 text-green-700 border-green-200',
                 absent:  'bg-red-100 text-red-700 border-red-200',
                 excused: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-              }[myAttendance?.status ?? ''] ?? '';
+              };
+              const statusColor = STATUS_COLORS[myAttendance?.status ?? ''] ?? '';
 
               return (
                 <div key={ev.id} className={`${card} border rounded-3xl overflow-hidden shadow-sm`}>
