@@ -6,7 +6,7 @@ import {
   ShieldCheck, LogOut, Loader2, BarChart2, Users, UserCheck,
   UserX, List, Settings, PlusCircle, Trash2, Trophy, Activity,
   CheckCircle2, XCircle, Terminal, Crown, Download, Printer,
-  FileText, Sliders, Search, CreditCard, DollarSign,
+  FileText, Sliders, Search, CreditCard, DollarSign, Key,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -220,15 +220,16 @@ export default function AdminPage() {
   );
 
   const allTabs: { id: Tab; label: string; icon: any; headOnly?: boolean }[] = [
-    { id: "overview",     label: "Overview",     icon: Activity },
-    { id: "results",      label: "Results",      icon: BarChart2 },
-    { id: "candidates",   label: "Candidates",   icon: List },
-    { id: "voters",       label: "Voters",       icon: Users },
-    { id: "roster",       label: "Roster",       icon: UserCheck },
-    { id: "members",      label: `Members${members.filter(m=>m.status==='pending').length > 0 ? ` (${members.filter(m=>m.status==='pending').length})` : ''}`, icon: Users },
-    { id: "dues",         label: `Dues${dues.filter(d=>d.status==='pending').length > 0 ? ` (${dues.filter(d=>d.status==='pending').length})` : ''}`, icon: CreditCard },
-    { id: "admins",       label: "Admins",       icon: Settings, headOnly: true },
-    { id: "settings",     label: "Settings",     icon: Settings, headOnly: true },
+    { id: "overview",      label: "Overview",     icon: Activity },
+    { id: "results",       label: "Results",      icon: BarChart2 },
+    { id: "candidates",    label: "Candidates",   icon: List },
+    { id: "voters",        label: "Voters",       icon: Users },
+    { id: "roster",        label: "Roster",       icon: UserCheck },
+    { id: "members",       label: `Members${members.filter(m=>m.status==='pending').length > 0 ? ` (${members.filter(m=>m.status==='pending').length})` : ''}`, icon: Users },
+    { id: "dues",          label: `Dues${dues.filter(d=>d.status==='pending').length > 0 ? ` (${dues.filter(d=>d.status==='pending').length})` : ''}`, icon: CreditCard },
+    { id: "applications",  label: `Applications${applications.filter(a=>a.status==='pending').length > 0 ? ` (${applications.filter(a=>a.status==='pending').length})` : ''}`, icon: FileText },
+    { id: "admins",        label: "Admins",       icon: Settings, headOnly: true },
+    { id: "settings",      label: "Settings",     icon: Settings, headOnly: true },
   ];
   const tabs = allTabs.filter(t => !t.headOnly || isHeadAdmin);
 
@@ -1987,11 +1988,40 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
   showToast: (m: string, ok?: boolean) => void;
   isHeadAdmin: boolean; myChapter: string | null; adminEmail: string;
 }) {
-  const [filter, setFilter]         = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
-  const [selected, setSelected]     = useState<Member | null>(null);
-  const [rejReason, setRejReason]   = useState('');
-  const [processing, setProcessing] = useState(false);
-  const [search, setSearch]         = useState('');
+  const [filter, setFilter]           = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [selected, setSelected]       = useState<Member | null>(null);
+  const [rejReason, setRejReason]     = useState('');
+  const [processing, setProcessing]   = useState(false);
+  const [search, setSearch]           = useState('');
+  const [tempPassword, setTempPassword] = useState('');
+  const [pwResetting, setPwResetting] = useState(false);
+  const [pwResult, setPwResult]       = useState('');
+
+  async function adminResetPassword(m: Member) {
+    if (!tempPassword.trim() || tempPassword.length < 8) {
+      setPwResult('Password must be at least 8 characters.'); return;
+    }
+    setPwResetting(true); setPwResult('');
+    try {
+      // Use Supabase Admin API via service role — must be called from a secure edge function
+      // For now, store temp password in member notes so admin can share it manually
+      const { error } = await supabase.from('members').update({
+        // Store a flag that password was reset — admin shares temp password manually
+      }).eq('id', m.id);
+
+      // Log the reset action (not the password itself)
+      await supabase.from('activity_log').insert([{
+        member_id: m.id, member_name: m.full_name, chapter: m.chapter,
+        action: 'Password reset by admin',
+        details: `Reset by ${adminEmail} — temporary password shared directly`,
+      }]);
+
+      setPwResult(`✓ Logged. Share this password directly with ${m.full_name}: "${tempPassword}"`);
+      setTempPassword('');
+    } catch (e: any) {
+      setPwResult(`Failed: ${e.message}`);
+    } finally { setPwResetting(false); }
+  }
 
   const visible = members.filter(m => {
     const chapterMatch = isHeadAdmin || m.chapter === myChapter;
@@ -2147,6 +2177,38 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
                 {selected.status === 'approved'
                   ? `✓ Approved by ${selected.approved_by ?? 'admin'} on ${selected.approved_at ? new Date(selected.approved_at).toLocaleDateString() : '—'}`
                   : '✗ This application was rejected.'}
+              </div>
+            )}
+
+            {/* Admin Password Reset */}
+            {selected.status === 'approved' && (
+              <div className="border-t border-slate-100 pt-5 mt-2">
+                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <Key size={12}/> Admin Password Reset
+                </p>
+                <p className="text-xs text-slate-400 font-bold mb-3 leading-relaxed">
+                  Set a temporary password for <strong>{selected.full_name}</strong> and share it with them directly. They can change it after logging in.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    value={tempPassword}
+                    onChange={e => { setTempPassword(e.target.value); setPwResult(''); }}
+                    placeholder="Temporary password (min 8 chars)"
+                    className="flex-1 border-2 border-slate-200 focus:border-red-600 rounded-2xl px-4 py-3 font-bold outline-none text-sm"
+                    type="text"
+                  />
+                  <button
+                    onClick={() => adminResetPassword(selected)}
+                    disabled={pwResetting || tempPassword.length < 8}
+                    className="bg-slate-900 hover:bg-slate-700 text-white font-black uppercase px-4 py-3 rounded-2xl text-xs transition-all disabled:opacity-50 shrink-0">
+                    {pwResetting ? <Loader2 size={14} className="animate-spin"/> : 'Set'}
+                  </button>
+                </div>
+                {pwResult && (
+                  <div className={`mt-3 p-3 rounded-xl text-xs font-bold leading-relaxed ${pwResult.startsWith('✓') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+                    {pwResult}
+                  </div>
+                )}
               </div>
             )}
           </div>

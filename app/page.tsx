@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   Vote, ShieldCheck, LogOut, Loader2, CheckCircle2,
-  AlertCircle, Fingerprint, Activity, Terminal, XCircle
+  AlertCircle, Fingerprint, Activity, Terminal, XCircle, Users
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -501,6 +501,11 @@ export default function BWIAAElection2026() {
                 {votingClosed ? 'VOTING CLOSED' : timeLeft}
               </div>
             )}
+            {/* Member Portal — distinct green button, always visible */}
+            <Link href="/members/dashboard"
+              className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white font-black text-[10px] uppercase tracking-widest px-3 py-2 rounded-xl transition-all">
+              <Users size={12}/> Member Portal
+            </Link>
             <span className="text-[11px] text-slate-400 font-bold hidden md:block">{user?.email}</span>
             <AdminLink userEmail={user?.email} headAdminEmail={HEAD_ADMIN_EMAIL} />
             <button onClick={handleSignOut} className="bg-slate-100 p-2.5 rounded-xl text-slate-400 hover:text-red-600 transition-all border border-slate-200" title="Sign Out">
