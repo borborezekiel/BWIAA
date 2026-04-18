@@ -2072,17 +2072,51 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
       status: 'rejected', approved_by: adminEmail, approved_at: new Date().toISOString(),
     }).eq('id', m.id);
     if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
-
     await supabase.from('activity_log').insert([{
       member_id: m.id, member_name: m.full_name, chapter: m.chapter,
       action: 'Membership rejected',
       details: `Reason: ${rejReason.trim()}`,
     }]);
-
     setMembers(prev => prev.map(x => x.id === m.id ? { ...x, status: 'rejected' } : x));
     setSelected(null); setRejReason('');
     setProcessing(false);
     showToast(`${m.full_name}'s membership application rejected.`);
+  }
+
+  async function deactivateMember(m: Member) {
+    if (!confirm(`Deactivate ${m.full_name}? They will lose voting access and member privileges. This can be reversed.`)) return;
+    setProcessing(true);
+    const { error } = await supabase.from('members').update({ status: 'rejected' }).eq('id', m.id);
+    if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
+    // Remove from eligible_voters
+    await supabase.from('eligible_voters').delete().eq('email', m.email);
+    await supabase.from('activity_log').insert([{
+      member_id: m.id, member_name: m.full_name, chapter: m.chapter,
+      action: 'Member deactivated',
+      details: `Deactivated by ${adminEmail}`,
+    }]);
+    setMembers(prev => prev.map(x => x.id === m.id ? { ...x, status: 'rejected' } : x));
+    setSelected(null); setProcessing(false);
+    showToast(`${m.full_name} deactivated and removed from voter roster.`);
+  }
+
+  async function reactivateMember(m: Member) {
+    if (!confirm(`Reactivate ${m.full_name}? They will regain member privileges and be re-added to the voter roster.`)) return;
+    setProcessing(true);
+    const { error } = await supabase.from('members').update({
+      status: 'approved', approved_by: adminEmail, approved_at: new Date().toISOString(),
+    }).eq('id', m.id);
+    if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
+    // Re-add to eligible_voters
+    await supabase.from('eligible_voters').upsert([{ email: m.email, chapter: m.chapter }], { onConflict: 'email' });
+    await supabase.from('activity_log').insert([{
+      member_id: m.id, member_name: m.full_name, chapter: m.chapter,
+      action: 'Member reactivated',
+      details: `Reactivated by ${adminEmail}`,
+    }]);
+    setMembers(prev => prev.map(x => x.id === m.id ? { ...x, status: 'approved' } : x));
+    setSelected(null); setProcessing(false);
+    showToast(`${m.full_name} reactivated and added back to voter roster.`);
   }
 
   function exportCSV() {
@@ -2178,7 +2212,27 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
               <div className={`rounded-2xl p-4 text-sm font-bold ${selected.status === 'approved' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                 {selected.status === 'approved'
                   ? `✓ Approved by ${selected.approved_by ?? 'admin'} on ${selected.approved_at ? new Date(selected.approved_at).toLocaleDateString() : '—'}`
-                  : '✗ This application was rejected.'}
+                  : '✗ This membership is inactive/rejected.'}
+              </div>
+            )}
+
+            {/* Deactivate / Reactivate */}
+            {selected.status === 'approved' && (
+              <div className="border-t border-slate-100 pt-4 mt-2">
+                <button onClick={() => deactivateMember(selected)} disabled={processing}
+                  className="w-full bg-orange-50 hover:bg-orange-100 text-orange-700 border-2 border-orange-200 font-black uppercase py-3 rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 text-sm">
+                  {processing ? <Loader2 size={14} className="animate-spin"/> : '⛔'} Deactivate Member
+                </button>
+                <p className="text-xs text-slate-400 font-bold text-center mt-2">Removes voting access · Reversible</p>
+              </div>
+            )}
+            {selected.status === 'rejected' && (
+              <div className="border-t border-slate-100 pt-4 mt-2">
+                <button onClick={() => reactivateMember(selected)} disabled={processing}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase py-3 rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 text-sm">
+                  {processing ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>} Reactivate Member
+                </button>
+                <p className="text-xs text-slate-400 font-bold text-center mt-2">Restores access and adds back to voter roster</p>
               </div>
             )}
 

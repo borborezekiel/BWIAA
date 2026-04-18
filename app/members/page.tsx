@@ -69,9 +69,11 @@ export default function MembersPage() {
           </div>
 
           {/* TWO CLEAR PATHS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className={`grid ${isLoggedIn && hasMembership ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'} gap-4`}>
             <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
-              <p className="text-white/50 text-[10px] font-black uppercase tracking-widest mb-4">Already a Member?</p>
+              <p className="text-white/50 text-[10px] font-black uppercase tracking-widest mb-4">
+                {isLoggedIn && hasMembership ? 'Your Account' : 'Already a Member?'}
+              </p>
               {isLoggedIn && hasMembership ? (
                 <Link href="/members/dashboard" className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase py-4 rounded-2xl text-sm transition-all">
                   <LayoutDashboard size={16}/> Go to My Dashboard
@@ -81,17 +83,20 @@ export default function MembersPage() {
                   <Link href="/members/login" className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase py-4 rounded-2xl text-sm transition-all">
                     <LogIn size={16}/> Sign In to Member Account
                   </Link>
-                  <p className="text-white/30 text-[10px] font-bold text-center mt-2">Email & password or Google</p>
+                  <p className="text-white/30 text-[10px] font-bold text-center mt-2">Email & password</p>
                 </>
               )}
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
-              <p className="text-white/50 text-[10px] font-black uppercase tracking-widest mb-4">Want to Join?</p>
-              <Link href="/members/register" className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-black uppercase py-4 rounded-2xl text-sm transition-all border border-white/10">
-                <UserPlus size={16}/> Create Member Account
-              </Link>
-              <p className="text-white/30 text-[10px] font-bold text-center mt-2">Free · Pending chapter admin approval</p>
-            </div>
+            {/* Only show Join card when NOT logged in */}
+            {!isLoggedIn && (
+              <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
+                <p className="text-white/50 text-[10px] font-black uppercase tracking-widest mb-4">Want to Join?</p>
+                <Link href="/members/register" className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-black uppercase py-4 rounded-2xl text-sm transition-all border border-white/10">
+                  <UserPlus size={16}/> Create Member Account
+                </Link>
+                <p className="text-white/30 text-[10px] font-bold text-center mt-2">100 LRD fee · Pending approval</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

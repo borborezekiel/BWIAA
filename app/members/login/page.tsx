@@ -20,9 +20,17 @@ export default function MemberLoginPage() {
     if (!email.includes('@')) { setError('Valid email required.'); return; }
     if (!password) { setError('Password required.'); return; }
     setLoading(true); setError('');
-    const { error: e } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error: e } = await supabase.auth.signInWithPassword({ email, password });
+    if (e) { setError(e.message); setLoading(false); return; }
+    // Link auth_user_id to member profile if not yet linked
+    if (data.user) {
+      const { data: mem } = await supabase.from('members')
+        .select('id, auth_user_id').eq('email', email.trim().toLowerCase()).maybeSingle();
+      if (mem && !mem.auth_user_id) {
+        await supabase.from('members').update({ auth_user_id: data.user.id }).eq('id', mem.id);
+      }
+    }
     setLoading(false);
-    if (e) { setError(e.message); return; }
     router.push('/members/dashboard');
   }
 

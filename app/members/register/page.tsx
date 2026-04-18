@@ -132,24 +132,16 @@ export default function MemberRegisterPage() {
   async function submit() {
     setSubmitting(true); setError('');
     try {
-      // 1. Check duplicate email
+      const emailLower = form.email.trim().toLowerCase();
+
+      // 1. Check duplicate
       const { data: existing } = await supabase.from('members').select('id,status')
-        .eq('email', form.email.trim().toLowerCase()).maybeSingle();
+        .eq('email', emailLower).maybeSingle();
       if (existing) throw new Error(existing.status === 'approved'
         ? 'This email is already a registered member. Please log in.'
         : 'An application with this email is already pending review.');
 
-      // 2. Create Supabase Auth account
-      const { data: sd, error: se } = await supabase.auth.signUp({
-        email: form.email.trim().toLowerCase(),
-        password: form.password,
-        options: { data: { full_name: form.full_name.trim() } },
-      });
-      if (se) throw new Error(se.message);
-      if (!sd.user) throw new Error('Account creation failed.');
-      const authUserId = sd.user.id;
-
-      // 3. Upload profile photo
+      // 2. Upload photo first (no auth needed)
       let photo_url: string | null = null;
       if (form.photoFile) {
         const fn = `members/${Date.now()}_${form.full_name.replace(/\s+/g,'_')}.jpg`;
@@ -159,7 +151,7 @@ export default function MemberRegisterPage() {
         photo_url = supabase.storage.from('candidate-photos').getPublicUrl(ud.path).data.publicUrl;
       }
 
-      // 4. Upload payment screenshot
+      // 3. Upload payment screenshot
       let screenshot_url: string | null = null;
       if (form.screenshotFile) {
         const fn = `membership-fees/${Date.now()}_${form.full_name.replace(/\s+/g,'_')}.jpg`;
@@ -169,26 +161,37 @@ export default function MemberRegisterPage() {
         screenshot_url = supabase.storage.from('payment-screenshots').getPublicUrl(ud.path).data.publicUrl;
       }
 
-      // 5. Create member profile
+      // 4. Create member profile WITHOUT auth_user_id (linked by email on first login)
+      // This avoids the FK constraint error caused by unconfirmed Supabase auth accounts
       const { data: member, error: ie } = await supabase.from('members').insert([{
-        auth_user_id:    authUserId,
-        full_name:       form.full_name.trim(),
-        email:           form.email.trim().toLowerCase(),
-        phone:           form.phone.trim() || null,
-        class_name:      form.class_name.trim(),
-        year_graduated:  parseInt(form.year_graduated, 10),
-        sponsor_name:    form.sponsor_name.trim(),
-        principal_name:  form.principal_name.trim(),
-        id_number:       form.id_number.trim(),
-        chapter:         form.chapter,
-        chapter_locked:  true,
-        theme:           'system',
+        full_name:      form.full_name.trim(),
+        email:          emailLower,
+        phone:          form.phone.trim() || null,
+        class_name:     form.class_name.trim(),
+        year_graduated: parseInt(form.year_graduated, 10),
+        sponsor_name:   form.sponsor_name.trim(),
+        principal_name: form.principal_name.trim(),
+        id_number:      form.id_number.trim(),
+        chapter:        form.chapter,
+        chapter_locked: true,
+        theme:          'system',
         photo_url,
-        status:          'pending',
+        status:         'pending',
       }]).select().single();
       if (ie) throw new Error(`Registration failed: ${ie.message}`);
 
-      // 6. Record membership fee payment
+      // 5. Create Supabase Auth account (after member record, so FK never blocks)
+      const { data: sd } = await supabase.auth.signUp({
+        email: emailLower,
+        password: form.password,
+        options: { data: { full_name: form.full_name.trim() } },
+      });
+      // Link auth_user_id if signup succeeded immediately (no email confirm required)
+      if (sd?.user) {
+        await supabase.from('members').update({ auth_user_id: sd.user.id }).eq('id', member.id);
+      }
+
+      // 6. Record membership fee
       await supabase.from('dues_payments').insert([{
         member_id:      member.id,
         member_name:    member.full_name,
