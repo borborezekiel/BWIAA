@@ -1996,6 +1996,8 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
   const [tempPassword, setTempPassword] = useState('');
   const [pwResetting, setPwResetting] = useState(false);
   const [pwResult, setPwResult]       = useState('');
+  const [transferChapter, setTransferChapter] = useState('');
+  const [transferring, setTransferring]       = useState(false);
 
   async function adminResetPassword(m: Member) {
     if (!tempPassword.trim() || tempPassword.length < 8) {
@@ -2187,19 +2189,13 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
                   <Key size={12}/> Admin Password Reset
                 </p>
                 <p className="text-xs text-slate-400 font-bold mb-3 leading-relaxed">
-                  Set a temporary password for <strong>{selected.full_name}</strong> and share it with them directly. They can change it after logging in.
+                  Set a temporary password for <strong>{selected.full_name}</strong> and share it with them directly.
                 </p>
                 <div className="flex gap-2">
-                  <input
-                    value={tempPassword}
-                    onChange={e => { setTempPassword(e.target.value); setPwResult(''); }}
+                  <input value={tempPassword} onChange={e => { setTempPassword(e.target.value); setPwResult(''); }}
                     placeholder="Temporary password (min 8 chars)"
-                    className="flex-1 border-2 border-slate-200 focus:border-red-600 rounded-2xl px-4 py-3 font-bold outline-none text-sm"
-                    type="text"
-                  />
-                  <button
-                    onClick={() => adminResetPassword(selected)}
-                    disabled={pwResetting || tempPassword.length < 8}
+                    className="flex-1 border-2 border-slate-200 focus:border-red-600 rounded-2xl px-4 py-3 font-bold outline-none text-sm" type="text"/>
+                  <button onClick={() => adminResetPassword(selected)} disabled={pwResetting || tempPassword.length < 8}
                     className="bg-slate-900 hover:bg-slate-700 text-white font-black uppercase px-4 py-3 rounded-2xl text-xs transition-all disabled:opacity-50 shrink-0">
                     {pwResetting ? <Loader2 size={14} className="animate-spin"/> : 'Set'}
                   </button>
@@ -2209,6 +2205,51 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
                     {pwResult}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Chapter Transfer */}
+            {selected.status === 'approved' && isHeadAdmin && (
+              <div className="border-t border-slate-100 pt-5 mt-2">
+                <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  🔁 Transfer to Another Chapter
+                </p>
+                <p className="text-xs text-slate-400 font-bold mb-3 leading-relaxed">
+                  Current chapter: <strong>{selected.chapter}</strong>. All records will follow the member.
+                </p>
+                <div className="flex gap-2">
+                  <select value={transferChapter} onChange={e => setTransferChapter(e.target.value)}
+                    className="flex-1 border-2 border-slate-200 focus:border-red-600 rounded-2xl px-4 py-3 font-bold outline-none text-sm">
+                    <option value="">Select new chapter...</option>
+                    {CHAPTERS.filter(c => c !== selected.chapter).map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  <button disabled={!transferChapter || transferring}
+                    onClick={async () => {
+                      if (!transferChapter || !confirm(`Transfer ${selected.full_name} from ${selected.chapter} to ${transferChapter}? This cannot be undone.`)) return;
+                      setTransferring(true);
+                      const { error } = await supabase.from('members').update({ chapter: transferChapter }).eq('id', selected.id);
+                      if (error) { showToast(`Transfer failed: ${error.message}`, false); setTransferring(false); return; }
+                      // Also update eligible_voters
+                      await supabase.from('eligible_voters').update({ chapter: transferChapter }).eq('email', selected.email);
+                      // Log activity
+                      await supabase.from('activity_log').insert([{
+                        member_id: selected.id, member_name: selected.full_name,
+                        chapter: transferChapter,
+                        action: 'Chapter transfer',
+                        details: `Transferred from ${selected.chapter} to ${transferChapter} by ${adminEmail}`,
+                      }]);
+                      setMembers(prev => prev.map(m => m.id === selected.id ? {...m, chapter: transferChapter} : m));
+                      setSelected(prev => prev ? {...prev, chapter: transferChapter} : null);
+                      setTransferChapter('');
+                      setTransferring(false);
+                      showToast(`✓ ${selected.full_name} transferred to ${transferChapter}.`);
+                    }}
+                    className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-4 py-3 rounded-2xl text-xs transition-all disabled:opacity-50 shrink-0 flex items-center gap-1">
+                    {transferring ? <Loader2 size={14} className="animate-spin"/> : '→'} Transfer
+                  </button>
+                </div>
               </div>
             )}
           </div>

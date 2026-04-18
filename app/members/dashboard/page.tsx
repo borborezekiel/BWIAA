@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import {
   User, CreditCard, Activity, LogOut, CheckCircle2, Clock,
   XCircle, Sun, Moon, Monitor, ChevronDown, ChevronUp,
-  Settings, Loader2, Receipt, Lock, Key
+  Settings, Loader2, Receipt, Lock, Key, Calendar, MapPin, Plus
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -26,6 +26,15 @@ interface DuesPayment {
 interface ActivityEntry {
   id: string; action: string; details: string|null; created_at: string;
 }
+interface Event {
+  id: string; title: string; description: string|null;
+  chapter: string; event_date: string; event_time: string|null;
+  location: string|null; created_by: string; created_at: string;
+}
+interface Attendance {
+  id: string; event_id: string; member_id: string;
+  status: 'present'|'absent'|'excused'; note: string|null; created_at: string;
+}
 
 const STATUS_CFG: Record<string,{label:string;color:string;bg:string;border:string}> = {
   pending:  {label:'Pending Approval',color:'text-yellow-700',bg:'bg-yellow-50',border:'border-yellow-200'},
@@ -44,11 +53,13 @@ export default function MemberDashboard() {
   const [dues, setDues]                 = useState<DuesPayment[]>([]);
   const [activity, setActivity]         = useState<ActivityEntry[]>([]);
   const [loading, setLoading]           = useState(true);
-  const [activeTab, setActiveTab]       = useState<'overview'|'dues'|'activity'|'settings'>('overview');
+  const [activeTab, setActiveTab]       = useState<'overview'|'dues'|'activity'|'events'|'settings'>('overview');
   const [theme, setTheme]               = useState('system');
   const [isDark, setIsDark]             = useState(false);
   const [savingTheme, setSavingTheme]   = useState(false);
   const [expandedDues, setExpandedDues] = useState<string|null>(null);
+  const [events, setEvents]             = useState<Event[]>([]);
+  const [attendance, setAttendance]     = useState<Attendance[]>([]);
   const [orgName, setOrgName]           = useState('BWIAA');
   // Password change
   const [curPassword, setCurPassword]   = useState('');
@@ -97,6 +108,16 @@ export default function MemberDashboard() {
       const { data: a } = await supabase.from('activity_log')
         .select('*').eq('member_id', mem.id).order('created_at', { ascending: false }).limit(30);
       if (a) setActivity(a);
+
+      // Fetch chapter events
+      const { data: evs } = await supabase.from('events')
+        .select('*').eq('chapter', mem.chapter).order('event_date', { ascending: false });
+      if (evs) setEvents(evs);
+
+      // Fetch this member's attendance records
+      const { data: att } = await supabase.from('attendance')
+        .select('*').eq('member_id', mem.id);
+      if (att) setAttendance(att);
 
       setLoading(false);
     })();
@@ -185,13 +206,14 @@ export default function MemberDashboard() {
           {[
             {id:'overview', label:'Overview', icon:<User size={14}/>},
             {id:'dues',     label:'My Dues',  icon:<CreditCard size={14}/>},
+            {id:'events',   label:'Events',   icon:<Calendar size={14}/>},
             {id:'activity', label:'Activity', icon:<Activity size={14}/>},
             {id:'settings', label:'Settings', icon:<Settings size={14}/>},
           ].map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id as any)}
-              className={`flex items-center gap-2 px-5 py-3 rounded-xl font-black uppercase text-xs tracking-widest transition-all whitespace-nowrap flex-1 justify-center
+              className={`flex items-center gap-2 px-4 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all whitespace-nowrap flex-1 justify-center
                 ${activeTab===t.id ? 'bg-red-600 text-white' : `${subtext} hover:text-red-600`}`}>
-              {t.icon}{t.label}
+              {t.icon}<span className="hidden sm:inline">{t.label}</span>
             </button>
           ))}
         </div>
@@ -349,6 +371,109 @@ export default function MemberDashboard() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── EVENTS ── */}
+        {activeTab==='events' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className={`font-black ${text} uppercase italic text-xl`}>Chapter Events</h3>
+              <span className={`text-xs font-bold ${subtext} uppercase tracking-widest`}>{member.chapter}</span>
+            </div>
+
+            {events.length === 0 ? (
+              <div className={`${card} border rounded-3xl p-16 text-center shadow-sm`}>
+                <Calendar size={48} className={`mx-auto mb-4 ${subtext} opacity-30`}/>
+                <p className={`font-black ${subtext} uppercase tracking-widest text-sm`}>No events scheduled</p>
+                <p className={`text-xs ${subtext} font-bold mt-2`}>Your chapter administrator will post events here</p>
+              </div>
+            ) : events.map(ev => {
+              const myAttendance = attendance.find(a => a.event_id === ev.id);
+              const isPast = new Date(ev.event_date) < new Date();
+              const statusColor = {
+                present: 'bg-green-100 text-green-700 border-green-200',
+                absent:  'bg-red-100 text-red-700 border-red-200',
+                excused: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+              }[myAttendance?.status ?? ''] ?? '';
+
+              return (
+                <div key={ev.id} className={`${card} border rounded-3xl overflow-hidden shadow-sm`}>
+                  <div className="p-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg ${isPast ? (isDark?'bg-white/10 text-white/40':'bg-slate-100 text-slate-400') : 'bg-red-100 text-red-600'}`}>
+                            {isPast ? 'Past' : 'Upcoming'}
+                          </span>
+                          {myAttendance && (
+                            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${statusColor}`}>
+                              {myAttendance.status}
+                            </span>
+                          )}
+                        </div>
+                        <h4 className={`font-black ${text} text-base uppercase`}>{ev.title}</h4>
+                        {ev.description && <p className={`text-xs ${subtext} font-bold mt-1 leading-relaxed`}>{ev.description}</p>}
+                        <div className={`flex flex-wrap gap-3 mt-3 text-xs ${subtext} font-bold`}>
+                          <span className="flex items-center gap-1">
+                            <Calendar size={11}/> {new Date(ev.event_date).toLocaleDateString('en-US', {weekday:'short',year:'numeric',month:'long',day:'numeric'})}
+                          </span>
+                          {ev.event_time && <span>🕐 {ev.event_time}</span>}
+                          {ev.location && (
+                            <span className="flex items-center gap-1"><MapPin size={11}/> {ev.location}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Attendance status for past events */}
+                    {isPast && (
+                      <div className={`mt-4 pt-4 border-t ${isDark?'border-white/10':'border-slate-100'}`}>
+                        <p className={`text-[10px] font-black ${subtext} uppercase tracking-widest mb-2`}>Your Attendance</p>
+                        {myAttendance ? (
+                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-black uppercase ${statusColor}`}>
+                            {myAttendance.status === 'present' ? <CheckCircle2 size={12}/> : myAttendance.status === 'excused' ? <Clock size={12}/> : <XCircle size={12}/>}
+                            {myAttendance.status === 'present' ? 'You were present' : myAttendance.status === 'excused' ? 'Excused absence' : 'Marked absent'}
+                          </div>
+                        ) : (
+                          <p className={`text-xs ${subtext} font-bold italic`}>No attendance record — contact your administrator</p>
+                        )}
+                        {myAttendance?.note && (
+                          <p className={`text-xs ${subtext} font-bold mt-2 italic`}>Note: {myAttendance.note}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* RSVP for upcoming events */}
+                    {!isPast && !myAttendance && (
+                      <div className={`mt-4 pt-4 border-t ${isDark?'border-white/10':'border-slate-100'}`}>
+                        <p className={`text-[10px] font-black ${subtext} uppercase tracking-widest mb-2`}>Will you attend?</p>
+                        <div className="flex gap-2">
+                          {(['present','excused'] as const).map(status => (
+                            <button key={status} onClick={async () => {
+                              const { data } = await supabase.from('attendance').insert([{
+                                event_id: ev.id, member_id: member.id, status,
+                              }]).select().single();
+                              if (data) {
+                                setAttendance(prev => [...prev, data]);
+                                await supabase.from('activity_log').insert([{
+                                  member_id: member.id, member_name: member.full_name, chapter: member.chapter,
+                                  action: `RSVP: ${status === 'present' ? 'Attending' : 'Excused'} — ${ev.title}`,
+                                  details: ev.event_date,
+                                }]);
+                              }
+                            }} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all border
+                              ${status==='present' ? 'bg-green-600 hover:bg-green-700 text-white border-green-600' : 'border-slate-200 hover:border-yellow-400 text-slate-600 hover:text-yellow-700'}`}>
+                              {status === 'present' ? '✓ Attending' : '~ Excuse'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
