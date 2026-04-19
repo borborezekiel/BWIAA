@@ -332,17 +332,29 @@ export default function BWIAAElection2026() {
           </div>
         )}
         <h1 className="text-white text-5xl md:text-7xl font-black mb-4 tracking-tighter uppercase italic text-center">
-          BWIAA <span className="text-red-600">2026</span>
+          {electionConfig.org_name} <span className="text-red-600">{electionConfig.election_year}</span>
         </h1>
-        <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mb-10">National Alumni Election</p>
+        <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mb-2">{electionConfig.election_title}</p>
+
+        {/* Member Portal shortcut */}
+        <Link href="/members" className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase tracking-widest px-5 py-2.5 rounded-xl transition-all mb-10">
+          <Users size={13}/> Member Portal — Dues, Events & Account
+        </Link>
+
         <div className="bg-white p-6 rounded-3xl mb-8 shadow-2xl w-full max-w-sm border-t-8 border-red-600">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center mb-1">
+            BWIAA Voter Accreditation
+          </p>
           <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest text-center">
             Step 1 — Enter Your Graduating Class Year
           </label>
           <input type="number" value={classInput} onChange={e => setClassInput(e.target.value)} placeholder="e.g. 1995"
             className="p-4 rounded-2xl text-slate-900 font-black w-full text-center border-2 border-slate-100 focus:border-red-600 outline-none text-2xl" />
+          <p className="text-[10px] text-slate-400 font-bold text-center mt-2 uppercase tracking-widest">
+            You must be on the voter roster to proceed
+          </p>
         </div>
-        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-6">Step 2 — Select Your Chapter</p>
+        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-6">Step 2 — Select Your Chapter to Vote</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 w-full max-w-5xl">
           {CHAPTERS.map(c => (
             <button key={c} onClick={() => handleChapterSelect(c)}

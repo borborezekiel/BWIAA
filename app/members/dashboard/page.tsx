@@ -96,7 +96,11 @@ export default function MemberDashboard() {
 
       const { data: mem } = await supabase.from('members')
         .select('*').eq('auth_user_id', user.id).maybeSingle();
-      if (!mem) { router.push('/members/register'); return; }
+      if (!mem) {
+        // If user is an admin but not a member, redirect to register WITH notice
+        router.push('/members/register');
+        return;
+      }
 
       setMember(mem);
       setTheme(mem.theme ?? 'system');
