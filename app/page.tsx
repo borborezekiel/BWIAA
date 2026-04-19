@@ -63,7 +63,6 @@ export default function BWIAAElection2026() {
   const [loading, setLoading]         = useState(true);
   const [receipt, setReceipt]         = useState<VoteRow | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [classInput, setClassInput]   = useState('');
   const [confirm, setConfirm]         = useState<{ pos: string; cand: string } | null>(null);
   const [casting, setCasting]         = useState(false);
   const [deadline, setDeadline]       = useState<string | null>(null);
@@ -231,25 +230,21 @@ export default function BWIAAElection2026() {
   }
 
   async function handleChapterSelect(chapter: string) {
-    const year = parseInt(classInput, 10);
-    if (!classInput || classInput.length !== 4 || isNaN(year) || year < 1950 || year > new Date().getFullYear()) {
-      setErrorMessage("Please enter a valid 4-digit Graduating Class Year (e.g. 1995) before selecting your chapter.");
-      return;
+    // No class year needed — approved members have the right to vote
+    // Class year will be pulled from their member profile if available
+    const { data: { user: u } } = await supabase.auth.getUser();
+    if (u) {
+      // Try to get class year from member profile
+      const { data: mem } = await supabase.from('members')
+        .select('year_graduated, chapter').eq('email', u.email?.toLowerCase() ?? '').maybeSingle();
+      const classYear = mem?.year_graduated ? String(mem.year_graduated) : new Date().getFullYear().toString();
+      const assignedChapter = mem?.chapter ?? chapter;
+      localStorage.setItem('pending_voter_data', JSON.stringify({ chapter: assignedChapter, classYear }));
+      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
+    } else {
+      localStorage.setItem('pending_voter_data', JSON.stringify({ chapter, classYear: new Date().getFullYear().toString() }));
+      await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
     }
-    // Check if this voter is on the roster — if so, use THEIR assigned chapter, not what they clicked
-    const lowerEmail = (await supabase.auth.getUser()).data.user?.email?.toLowerCase();
-    if (lowerEmail) {
-      const { data: found } = await supabase
-        .from('eligible_voters').select('chapter').eq('email', lowerEmail).maybeSingle();
-      if (found?.chapter) {
-        // Voter is on roster — use their assigned chapter, ignore what they clicked
-        localStorage.setItem('pending_voter_data', JSON.stringify({ chapter: found.chapter, classYear: classInput }));
-        await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
-        return;
-      }
-    }
-    localStorage.setItem('pending_voter_data', JSON.stringify({ chapter, classYear: classInput }));
-    await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
   }
 
   function selectCandidate(pos: string, cand: string) {
@@ -341,20 +336,7 @@ export default function BWIAAElection2026() {
           <Users size={13}/> Member Portal — Dues, Events & Account
         </Link>
 
-        <div className="bg-white p-6 rounded-3xl mb-8 shadow-2xl w-full max-w-sm border-t-8 border-red-600">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center mb-1">
-            BWIAA Voter Accreditation
-          </p>
-          <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest text-center">
-            Step 1 — Enter Your Graduating Class Year
-          </label>
-          <input type="number" value={classInput} onChange={e => setClassInput(e.target.value)} placeholder="e.g. 1995"
-            className="p-4 rounded-2xl text-slate-900 font-black w-full text-center border-2 border-slate-100 focus:border-red-600 outline-none text-2xl" />
-          <p className="text-[10px] text-slate-400 font-bold text-center mt-2 uppercase tracking-widest">
-            You must be on the voter roster to proceed
-          </p>
-        </div>
-        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-6">Step 2 — Select Your Chapter to Vote</p>
+        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-6">Select Your Chapter to Vote</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 w-full max-w-5xl">
           {CHAPTERS.map(c => (
             <button key={c} onClick={() => handleChapterSelect(c)}
