@@ -6,7 +6,7 @@ import {
   ShieldCheck, LogOut, Loader2, BarChart2, Users, UserCheck,
   UserX, List, Settings, PlusCircle, Trash2, Trophy, Activity,
   CheckCircle2, XCircle, Terminal, Crown, Download, Printer,
-  FileText, Sliders, Search, CreditCard, DollarSign, Key,
+  FileText, Sliders, Search, CreditCard, DollarSign, Key, Calendar, MapPin, Bell,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -37,6 +37,11 @@ interface DuesPayment {
   payment_method: string; screenshot_url: string | null;
   status: string; notes: string | null;
   approved_by: string | null; approved_at: string | null; created_at: string;
+}
+interface EventRow {
+  id: string; title: string; description: string|null;
+  chapter: string|null; event_date: string; event_time: string|null;
+  location: string|null; event_type: string; created_by: string; created_at: string;
 }
 
 // ─── Dynamic Config (loaded from election_settings, overrides these defaults) ──
@@ -70,7 +75,7 @@ type ElectionConfig = typeof DEFAULT_CONFIG;
 let CHAPTERS  = DEFAULT_CONFIG.chapters;
 let POSITIONS = DEFAULT_CONFIG.positions_fees.map(p => p.position);
 
-type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications" | "settings" | "members" | "dues";
+type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications" | "settings" | "members" | "dues" | "events";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ADMIN COMPONENT
@@ -92,6 +97,7 @@ export default function AdminPage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [members, setMembers]           = useState<Member[]>([]);
   const [dues, setDues]                 = useState<DuesPayment[]>([]);
+  const [events, setEvents]             = useState<EventRow[]>([]);
   const [config, setConfig]             = useState<ElectionConfig>(DEFAULT_CONFIG);
 
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
@@ -139,7 +145,7 @@ export default function AdminPage() {
   }, [isAuthorized]);
 
   async function fetchAll() {
-    const [v, c, r, b, a, settingsRes, ap, mem, duesRes] = await Promise.all([
+    const [v, c, r, b, a, settingsRes, ap, mem, duesRes, evRes] = await Promise.all([
       supabase.from('votes').select('*').order('created_at', { ascending: false }),
       supabase.from('candidates').select('*').order('position_name'),
       supabase.from('eligible_voters').select('*').order('email'),
@@ -149,6 +155,7 @@ export default function AdminPage() {
       supabase.from('candidate_applications').select('*').order('created_at', { ascending: false }),
       supabase.from('members').select('*').order('created_at', { ascending: false }),
       supabase.from('dues_payments').select('*').order('created_at', { ascending: false }),
+      supabase.from('events').select('*').order('event_date', { ascending: false }),
     ]);
     if (v.data)       setVotes(v.data);
     if (c.data)       setCandidates(c.data);
@@ -158,6 +165,7 @@ export default function AdminPage() {
     if (ap.data)      setApplications(ap.data);
     if (mem.data)     setMembers(mem.data);
     if (duesRes.data) setDues(duesRes.data);
+    if (evRes.data)   setEvents(evRes.data);
 
     // Merge all settings keys into config
     if (settingsRes.data) {
@@ -227,6 +235,7 @@ export default function AdminPage() {
     { id: "roster",        label: "Roster",       icon: UserCheck },
     { id: "members",       label: `Members${members.filter(m=>m.status==='pending').length > 0 ? ` (${members.filter(m=>m.status==='pending').length})` : ''}`, icon: Users },
     { id: "dues",          label: `Dues${dues.filter(d=>d.status==='pending').length > 0 ? ` (${dues.filter(d=>d.status==='pending').length})` : ''}`, icon: CreditCard },
+    { id: "events",       label: "Events",       icon: Calendar },
     { id: "applications",  label: `Applications${applications.filter(a=>a.status==='pending').length > 0 ? ` (${applications.filter(a=>a.status==='pending').length})` : ''}`, icon: FileText },
     { id: "admins",        label: "Admins",       icon: Settings, headOnly: true },
     { id: "settings",      label: "Settings",     icon: Settings, headOnly: true },
@@ -291,6 +300,7 @@ export default function AdminPage() {
         {activeTab === "roster"        && <RosterTab     roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "members"       && <MembersTab members={members} setMembers={setMembers} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "dues"          && <DuesTab dues={dues} setDues={setDues} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
+        {activeTab === "events"        && <EventsTab events={events} setEvents={setEvents} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
         {activeTab === "applications"  && <ApplicationsTab applications={applications} setApplications={setApplications} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "admins"   && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
         {activeTab === "settings" && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline}/>}
@@ -2635,6 +2645,211 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
           )}
         </div>
       </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: EVENTS & ANNOUNCEMENTS
+// ─────────────────────────────────────────────────────────────────────────────
+function EventsTab({ events, setEvents, showToast, isHeadAdmin, myChapter, adminEmail, config }: {
+  events: EventRow[];
+  setEvents: React.Dispatch<React.SetStateAction<EventRow[]>>;
+  showToast: (m: string, ok?: boolean) => void;
+  isHeadAdmin: boolean; myChapter: string | null;
+  adminEmail: string; config: ElectionConfig;
+}) {
+  const [title, setTitle]       = useState('');
+  const [description, setDesc]  = useState('');
+  const [chapter, setChapter]   = useState(myChapter ?? config.chapters[0] ?? 'All');
+  const [eventDate, setDate]    = useState('');
+  const [eventTime, setTime]    = useState('');
+  const [location, setLocation] = useState('');
+  const [eventType, setType]    = useState<'meeting'|'event'|'announcement'|'other'>('meeting');
+  const [saving, setSaving]     = useState(false);
+  const [filter, setFilter]     = useState<'all'|'upcoming'|'past'>('upcoming');
+
+  const visible = events.filter(e => {
+    const chMatch = isHeadAdmin || !e.chapter || e.chapter === myChapter || e.chapter === 'All';
+    const now = new Date();
+    const evDate = new Date(e.event_date);
+    if (filter === 'upcoming') return chMatch && evDate >= now;
+    if (filter === 'past') return chMatch && evDate < now;
+    return chMatch;
+  });
+
+  async function createEvent() {
+    if (!title.trim()) { showToast('Event title required.', false); return; }
+    if (!eventDate) { showToast('Event date required.', false); return; }
+    setSaving(true);
+    const { data, error } = await supabase.from('events').insert([{
+      title: title.trim(),
+      description: description.trim() || null,
+      chapter: chapter === 'All' ? null : chapter,
+      event_date: eventDate,
+      event_time: eventTime || null,
+      location: location.trim() || null,
+      event_type: eventType,
+      created_by: adminEmail,
+    }]).select().single();
+    setSaving(false);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    setEvents(prev => [data, ...prev]);
+    setTitle(''); setDesc(''); setDate(''); setTime(''); setLocation('');
+    showToast(`✓ ${eventType === 'announcement' ? 'Announcement' : 'Event'} posted to ${chapter === 'All' ? 'all chapters' : chapter}.`);
+  }
+
+  async function deleteEvent(id: string) {
+    if (!confirm('Delete this event?')) return;
+    const { error } = await supabase.from('events').delete().eq('id', id);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    setEvents(prev => prev.filter(e => e.id !== id));
+    showToast('Event deleted.');
+  }
+
+  const typeConfig: Record<string, { label: string; color: string; bg: string }> = {
+    meeting:      { label: 'Meeting',      color: 'text-blue-700',   bg: 'bg-blue-100 border-blue-200' },
+    event:        { label: 'Event',        color: 'text-green-700',  bg: 'bg-green-100 border-green-200' },
+    announcement: { label: 'Announcement', color: 'text-red-700',    bg: 'bg-red-100 border-red-200' },
+    other:        { label: 'Other',        color: 'text-slate-700',  bg: 'bg-slate-100 border-slate-200' },
+  };
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-3xl font-black uppercase italic text-slate-800">Events & Announcements</h2>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+          Post events, meetings and announcements to your chapter members
+        </p>
+      </div>
+
+      {/* Create Event */}
+      <Card accent="red">
+        <SectionTitle>Post New Event / Announcement</SectionTitle>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="md:col-span-2">
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Title *</label>
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Chapter General Meeting, Election Results Announcement..."
+              className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+
+          {/* Type selector */}
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Type</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['meeting','event','announcement','other'] as const).map(t => (
+                <button key={t} onClick={() => setType(t)}
+                  className={`py-3 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${eventType === t ? 'bg-red-600 text-white border-red-600' : 'border-slate-200 text-slate-500 hover:border-red-400'}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Chapter */}
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+              Chapter {isHeadAdmin ? '(or All)' : ''}
+            </label>
+            <select value={chapter} onChange={e => setChapter(e.target.value)} disabled={!isHeadAdmin}
+              className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none disabled:bg-slate-50">
+              {isHeadAdmin && <option value="All">All Chapters</option>}
+              {config.chapters.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Date *</label>
+            <input type="date" value={eventDate} onChange={e => setDate(e.target.value)}
+              className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Time (optional)</label>
+            <input type="time" value={eventTime} onChange={e => setTime(e.target.value)}
+              className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Location (optional)</label>
+            <input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Chapter Hall, Zoom, TBA..."
+              className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Description / Message (optional)</label>
+            <textarea value={description} onChange={e => setDesc(e.target.value)} placeholder="Provide details about this event or announcement..."
+              rows={3} className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none resize-none"/>
+          </div>
+        </div>
+        <button onClick={createEvent} disabled={saving}
+          className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-2 transition-all disabled:opacity-50">
+          {saving ? <Loader2 size={16} className="animate-spin"/> : eventType === 'announcement' ? <Bell size={16}/> : <Calendar size={16}/>}
+          {saving ? 'Posting...' : eventType === 'announcement' ? 'Post Announcement' : 'Create Event'}
+        </button>
+      </Card>
+
+      {/* Filter */}
+      <div className="flex gap-2">
+        {(['upcoming','past','all'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {/* Events list */}
+      <div className="space-y-4">
+        {visible.length === 0 ? (
+          <div className="text-center py-16 text-slate-400">
+            <Calendar size={48} className="mx-auto mb-4 opacity-20"/>
+            <p className="font-black uppercase tracking-widest text-sm">No {filter} events</p>
+          </div>
+        ) : visible.map(ev => {
+          const cfg = typeConfig[ev.event_type] ?? typeConfig['other'];
+          const isPast = new Date(ev.event_date) < new Date();
+          return (
+            <Card key={ev.id}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${cfg.bg} ${cfg.color}`}>
+                      {cfg.label}
+                    </span>
+                    {ev.chapter && (
+                      <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+                        {ev.chapter}
+                      </span>
+                    )}
+                    {!ev.chapter && (
+                      <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-slate-800 text-white border border-slate-700">
+                        All Chapters
+                      </span>
+                    )}
+                    {isPast && (
+                      <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-slate-100 text-slate-400 border border-slate-200">
+                        Past
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-black text-slate-800 text-lg uppercase">{ev.title}</h3>
+                  {ev.description && <p className="text-slate-500 text-sm font-bold mt-1 leading-relaxed">{ev.description}</p>}
+                  <div className="flex flex-wrap gap-4 mt-3 text-xs text-slate-400 font-bold">
+                    <span className="flex items-center gap-1">
+                      <Calendar size={12}/> {new Date(ev.event_date).toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'})}
+                    </span>
+                    {ev.event_time && <span>🕐 {ev.event_time}</span>}
+                    {ev.location && <span className="flex items-center gap-1"><MapPin size={12}/> {ev.location}</span>}
+                    <span className="text-slate-300">Posted by {ev.created_by}</span>
+                  </div>
+                </div>
+                <button onClick={() => deleteEvent(ev.id)}
+                  className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-xl transition-all shrink-0">
+                  <Trash2 size={16}/>
+                </button>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }

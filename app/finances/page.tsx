@@ -2,8 +2,52 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Loader2, TrendingUp, Users, ChevronDown, ChevronUp, Search, DollarSign } from 'lucide-react';
+import { Loader2, TrendingUp, ChevronDown, ChevronUp, Search, DollarSign, Lock } from 'lucide-react';
 import Link from 'next/link';
+
+function useAuth() {
+  const [ok, setOk] = useState<boolean|null>(null);
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { setOk(false); return; }
+      const { data: mem } = await supabase.from('members').select('id,status')
+        .or(`auth_user_id.eq.${user.id},email.eq.${user.email?.toLowerCase()}`).maybeSingle();
+      const { data: adm } = await supabase.from('election_admins').select('email')
+        .eq('email', user.email?.toLowerCase() ?? '').maybeSingle();
+      const { data: ha } = await supabase.from('election_settings').select('value').eq('key','head_admins').maybeSingle();
+      let heads = ['ezekielborbor17@gmail.com'];
+      if (ha?.value) { try { heads = JSON.parse(ha.value); } catch {} }
+      setOk(!!adm || heads.includes(user.email?.toLowerCase() ?? '') || (!!mem && mem.status === 'approved'));
+    });
+  }, []);
+  return ok;
+}
+
+// Blurred overlay shown to non-members
+function LockedOverlay() {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{backdropFilter:'blur(12px)', background:'rgba(15,23,42,0.7)'}}>
+      <div className="bg-white rounded-[3rem] p-10 max-w-md w-full text-center shadow-2xl mx-4">
+        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-5">
+          <Lock size={28} className="text-red-600"/>
+        </div>
+        <h2 className="text-2xl font-black uppercase italic text-slate-900 mb-3">Members Only</h2>
+        <p className="text-slate-500 font-bold text-sm mb-8 leading-relaxed">
+          Financial records are only visible to active BWIAA members and administrators. Sign in or register to access this page.
+        </p>
+        <div className="flex flex-col gap-3">
+          <Link href="/members/login" className="w-full bg-red-600 text-white font-black py-4 rounded-2xl uppercase text-sm hover:bg-red-700 transition-all">
+            Sign In to Member Account
+          </Link>
+          <Link href="/members/register" className="w-full bg-slate-100 text-slate-700 font-black py-4 rounded-2xl uppercase text-sm hover:bg-slate-200 transition-all">
+            Register as a Member
+          </Link>
+          <Link href="/" className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2 hover:text-slate-600">← Back to Home</Link>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface DuesPayment {
   id: string; member_name: string; chapter: string;
@@ -12,6 +56,7 @@ interface DuesPayment {
 }
 
 export default function FinancesPage() {
+  const authOk = useAuth();
   const [payments, setPayments]         = useState<DuesPayment[]>([]);
   const [loading, setLoading]           = useState(true);
   const [orgName, setOrgName]           = useState('BWIAA');
@@ -61,14 +106,16 @@ export default function FinancesPage() {
 
   const CURRENT_YEAR = new Date().getFullYear();
 
-  if (loading) return (
+  if (authOk === null || loading) return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center">
       <Loader2 className="animate-spin text-red-600" size={48}/>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 pb-20">
+    <div className="relative min-h-screen bg-slate-950 pb-20">
+      {/* Show blurred overlay for non-members but keep page visible underneath */}
+      {authOk === false && <LockedOverlay/>}
       {/* Header */}
       <div className="bg-slate-900 border-b border-white/5 p-6 sticky top-0 z-30">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">

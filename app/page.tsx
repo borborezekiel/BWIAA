@@ -122,12 +122,73 @@ export default function BWIAAElection2026() {
     checkAccess(user.email);
   }, [user]);
 
-  // Deadline countdown
+  // Deadline countdown + auto-archive when it hits zero
   useEffect(() => {
     if (!deadline) return;
-    const tick = () => {
+    const tick = async () => {
       const diff = new Date(deadline).getTime() - Date.now();
-      if (diff <= 0) { setTimeLeft('VOTING CLOSED'); setVotingClosed(true); return; }
+      if (diff <= 0) {
+        setTimeLeft('VOTING CLOSED');
+        setVotingClosed(true);
+
+        // Auto-archive: only if not already archived for this deadline
+        const archiveKey = `archived_${deadline}`;
+        if (!localStorage.getItem(archiveKey)) {
+          localStorage.setItem(archiveKey, '1');
+          try {
+            // Fetch all votes and candidates to compute winners
+            const [{ data: allVotes }, { data: allCandidates }] = await Promise.all([
+              supabase.from('votes').select('*'),
+              supabase.from('candidates').select('*'),
+            ]);
+            if (!allVotes || !allCandidates) return;
+
+            // Group by chapter + position, find winner
+            const grouped: Record<string, Record<string, Record<string, number>>> = {};
+            allVotes.forEach((v: any) => {
+              if (!grouped[v.chapter]) grouped[v.chapter] = {};
+              if (!grouped[v.chapter][v.position_name]) grouped[v.chapter][v.position_name] = {};
+              const curr = grouped[v.chapter][v.position_name][v.candidate_name] ?? 0;
+              grouped[v.chapter][v.position_name][v.candidate_name] = curr + 1;
+            });
+
+            const year = new Date().getFullYear();
+            const { data: settings } = await supabase.from('election_settings').select('*');
+            const orgName = settings?.find((r: any) => r.key === 'org_name')?.value ?? 'BWIAA';
+            const electionTitle = settings?.find((r: any) => r.key === 'election_title')?.value ?? 'Election';
+
+            const historyRows: any[] = [];
+            Object.entries(grouped).forEach(([chapter, positions]) => {
+              Object.entries(positions).forEach(([position, candidates]) => {
+                const total = Object.values(candidates).reduce((a, b) => a + b, 0);
+                const winnerName = Object.entries(candidates).sort((a, b) => b[1] - a[1])[0]?.[0];
+                const winnerVotes = candidates[winnerName] ?? 0;
+                const winnerCand = allCandidates.find((c: any) => c.full_name === winnerName && c.chapter === chapter);
+                historyRows.push({
+                  election_year:    year,
+                  election_name:    `${orgName} ${electionTitle} ${year}`,
+                  chapter,
+                  position_name:    position,
+                  winner_name:      winnerName,
+                  winner_photo_url: winnerCand?.photo_url ?? null,
+                  total_votes:      total,
+                  winner_votes:     winnerVotes,
+                  archived_by:      'system',
+                });
+              });
+            });
+
+            if (historyRows.length > 0) {
+              await supabase.from('election_history').upsert(historyRows, {
+                onConflict: 'election_year,chapter,position_name',
+              });
+            }
+          } catch (e) {
+            console.error('Auto-archive error:', e);
+          }
+        }
+        return;
+      }
       const d = Math.floor(diff / 86400000);
       const h = Math.floor((diff % 86400000) / 3600000);
       const m = Math.floor((diff % 3600000) / 60000);

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   ChevronRight, ChevronLeft, CheckCircle2, Upload, Loader2,
-  User, FileText, CreditCard, AlertCircle, Camera, X
+  User, FileText, CreditCard, AlertCircle, Camera, X, Lock, ShieldCheck
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -64,6 +64,7 @@ interface FormData {
 }
 
 export default function RegisterPage() {
+  const [memberCheck, setMemberCheck] = useState<'loading'|'ok'|'not-member'|'pending'>('loading');
   const [config, setConfig]   = useState<ElectionConfig>(DEFAULT_CONFIG);
   const [cfgLoaded, setCfgLoaded] = useState(false);
   const [step, setStep]       = useState<Step>(1);
@@ -89,6 +90,18 @@ export default function RegisterPage() {
         position_name: cfg.positions_fees[0]?.position ?? prev.position_name,
       }));
       setCfgLoaded(true);
+    });
+
+    // Verify user is an active member before allowing candidate registration
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { setMemberCheck('not-member'); return; }
+      const { data: mem } = await supabase.from('members').select('id,status')
+        .or(`auth_user_id.eq.${user.id},email.eq.${user.email?.toLowerCase()}`)
+        .maybeSingle();
+      if (!mem) { setMemberCheck('not-member'); return; }
+      if (mem.status === 'pending') { setMemberCheck('pending'); return; }
+      if (mem.status !== 'approved') { setMemberCheck('not-member'); return; }
+      setMemberCheck('ok');
     });
   }, []);
 
@@ -263,11 +276,53 @@ export default function RegisterPage() {
     }
   }
 
-  // ── Loading config ────────────────────────────────────────────────────────────
-  if (!cfgLoaded) return (
+  // ── Member gate ───────────────────────────────────────────────────────────────
+  if (memberCheck === 'loading' || !cfgLoaded) return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center gap-4 text-white">
       <Loader2 className="animate-spin text-red-600" size={36}/>
-      <span className="font-black uppercase tracking-widest text-sm">Loading Registration Form...</span>
+      <span className="font-black uppercase tracking-widest text-sm">Verifying membership...</span>
+    </div>
+  );
+
+  if (memberCheck === 'not-member') return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+      <div className="bg-white rounded-[3rem] p-10 max-w-md w-full text-center shadow-2xl">
+        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Lock size={28} className="text-red-600"/>
+        </div>
+        <h2 className="text-2xl font-black uppercase italic text-slate-900 mb-3">Members Only</h2>
+        <p className="text-slate-500 font-bold text-sm mb-2 leading-relaxed">
+          You must be an <strong>active BWIAA member</strong> to apply as a candidate.
+        </p>
+        <p className="text-slate-400 text-xs font-bold mb-8 leading-relaxed">
+          Register as a member first, pay your membership fee, and wait for your chapter admin to approve your membership. Then you can apply to run for office.
+        </p>
+        <div className="flex flex-col gap-3">
+          <Link href="/members/register" className="w-full bg-red-600 text-white font-black py-4 rounded-2xl uppercase text-sm hover:bg-red-700 transition-all">
+            Register as a Member
+          </Link>
+          <Link href="/members/login" className="w-full bg-slate-100 text-slate-700 font-black py-4 rounded-2xl uppercase text-sm hover:bg-slate-200 transition-all">
+            Sign In
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (memberCheck === 'pending') return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+      <div className="bg-white rounded-[3rem] p-10 max-w-md w-full text-center shadow-2xl">
+        <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <ShieldCheck size={28} className="text-yellow-600"/>
+        </div>
+        <h2 className="text-2xl font-black uppercase italic text-slate-900 mb-3">Membership Pending</h2>
+        <p className="text-slate-500 font-bold text-sm mb-8 leading-relaxed">
+          Your membership application is still being reviewed. You can apply as a candidate once your chapter administrator approves your membership.
+        </p>
+        <Link href="/members/dashboard" className="block w-full bg-red-600 text-white font-black py-4 rounded-2xl uppercase text-sm hover:bg-red-700 transition-all">
+          Check My Application Status
+        </Link>
+      </div>
     </div>
   );
 
