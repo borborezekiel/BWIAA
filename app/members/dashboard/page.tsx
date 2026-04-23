@@ -5,10 +5,20 @@ import { supabase } from '@/lib/supabase';
 import {
   User, CreditCard, Activity, LogOut, CheckCircle2, Clock,
   XCircle, Sun, Moon, Monitor, ChevronDown, ChevronUp,
-  Settings, Loader2, Receipt, Lock, Key, Calendar, MapPin, Plus
+  Settings, Loader2, Receipt, Lock, Key, Calendar, MapPin, Plus,
+  Download, Printer, Users,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+
+// Print styles — only ID card is visible when printing
+const PRINT_STYLES = `
+  @media print {
+    body > * { display: none !important; }
+    #member-id-card-wrapper { display: block !important; position: fixed; top: 0; left: 0; width: 100%; }
+    #member-id-card { margin: 40px auto; }
+  }
+`;
 
 interface Member {
   id: string; auth_user_id: string; full_name: string; email: string;
@@ -53,14 +63,15 @@ export default function MemberDashboard() {
   const [dues, setDues]                 = useState<DuesPayment[]>([]);
   const [activity, setActivity]         = useState<ActivityEntry[]>([]);
   const [loading, setLoading]           = useState(true);
-  const [activeTab, setActiveTab]       = useState<'overview'|'dues'|'activity'|'events'|'settings'>('overview');
+  const [activeTab, setActiveTab]       = useState<'overview'|'dues'|'activity'|'events'|'id-card'|'settings'>('overview');
   const [theme, setTheme]               = useState('system');
   const [isDark, setIsDark]             = useState(false);
   const [savingTheme, setSavingTheme]   = useState(false);
-  const [expandedDues, setExpandedDues] = useState<string|null>(null);
-  const [events, setEvents]             = useState<Event[]>([]);
-  const [attendance, setAttendance]     = useState<Attendance[]>([]);
-  const [orgName, setOrgName]           = useState('BWIAA');
+  const [expandedDues, setExpandedDues]       = useState<string|null>(null);
+  const [events, setEvents]                   = useState<Event[]>([]);
+  const [attendance, setAttendance]           = useState<Attendance[]>([]);
+  const [chapterAttendance, setChapterAtt]    = useState<{member_name:string; event_title:string; event_date:string; status:string}[]>([]);
+  const [orgName, setOrgName]                 = useState('BWIAA');
   // Password change
   const [curPassword, setCurPassword]   = useState('');
   const [newPassword, setNewPassword]   = useState('');
@@ -113,7 +124,21 @@ export default function MemberDashboard() {
         .select('*').eq('member_id', mem.id).order('created_at', { ascending: false }).limit(30);
       if (a) setActivity(a);
 
-      // Fetch chapter events
+      // Fetch chapter-wide attendance (all members visible to all)
+      const { data: chAtt } = await supabase
+        .from('attendance')
+        .select('status, note, created_at, events(title, event_date, chapter), members(full_name)')
+        .eq('events.chapter', mem.chapter)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (chAtt) {
+        setChapterAtt(chAtt.map((a: any) => ({
+          member_name: a.members?.full_name ?? 'Unknown',
+          event_title: a.events?.title ?? 'Unknown Event',
+          event_date:  a.events?.event_date ?? '',
+          status:      a.status,
+        })));
+      }
       const { data: evs } = await supabase.from('events')
         .select('*').eq('chapter', mem.chapter).order('event_date', { ascending: false });
       if (evs) setEvents(evs);
@@ -165,6 +190,15 @@ export default function MemberDashboard() {
 
   return (
     <div className={`min-h-screen ${bg} pb-20 transition-colors duration-300`}>
+      {/* Print styles — only ID card shows when printing */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #member-id-card, #member-id-card * { visibility: visible !important; }
+          #member-id-card { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); }
+        }
+      `}</style>
+      <style>{PRINT_STYLES}</style>
 
       {/* Header */}
       <div className={`${card} border-b p-5 sticky top-0 z-30 shadow-sm transition-colors`}>
@@ -212,10 +246,11 @@ export default function MemberDashboard() {
             {id:'dues',     label:'My Dues',  icon:<CreditCard size={14}/>},
             {id:'events',   label:'Events',   icon:<Calendar size={14}/>},
             {id:'activity', label:'Activity', icon:<Activity size={14}/>},
+            {id:'id-card',  label:'ID Card',  icon:<IdCard size={14}/>},
             {id:'settings', label:'Settings', icon:<Settings size={14}/>},
           ].map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id as any)}
-              className={`flex items-center gap-2 px-4 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all whitespace-nowrap flex-1 justify-center
+              className={`flex items-center gap-1.5 px-3 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest transition-all whitespace-nowrap flex-1 justify-center
                 ${activeTab===t.id ? 'bg-red-600 text-white' : `${subtext} hover:text-red-600`}`}>
               {t.icon}<span className="hidden sm:inline">{t.label}</span>
             </button>
@@ -354,27 +389,146 @@ export default function MemberDashboard() {
 
         {/* ── ACTIVITY ── */}
         {activeTab==='activity' && (
-          <div className="space-y-4">
-            <h3 className={`font-black ${text} uppercase italic text-xl`}>My Activity History</h3>
-            {activity.length === 0 ? (
-              <div className={`${card} border rounded-3xl p-16 text-center shadow-sm`}>
-                <Activity size={48} className={`mx-auto mb-4 ${subtext} opacity-30`}/>
-                <p className={`font-black ${subtext} uppercase tracking-widest text-sm`}>No activity yet</p>
-              </div>
-            ) : (
-              <div className={`${card} border rounded-3xl overflow-hidden shadow-sm`}>
-                {activity.map((a, i) => (
-                  <div key={a.id} className={`flex items-start gap-4 p-5 ${i<activity.length-1?`border-b ${divider}`:''}`}>
-                    <div className="w-2 h-2 bg-red-500 rounded-full mt-2 shrink-0"/>
-                    <div className="flex-1">
-                      <p className={`font-black ${text} text-sm`}>{a.action}</p>
-                      {a.details && <p className={`text-xs ${subtext} font-bold mt-0.5`}>{a.details}</p>}
+          <div className="space-y-6">
+            {/* My personal activity */}
+            <div>
+              <h3 className={`font-black ${text} uppercase italic text-lg mb-3`}>My Activity History</h3>
+              {activity.length === 0 ? (
+                <div className={`${card} border rounded-3xl p-12 text-center shadow-sm`}>
+                  <Activity size={40} className={`mx-auto mb-3 ${subtext} opacity-30`}/>
+                  <p className={`font-black ${subtext} uppercase tracking-widest text-sm`}>No activity yet</p>
+                </div>
+              ) : (
+                <div className={`${card} border rounded-3xl overflow-hidden shadow-sm`}>
+                  {activity.map((a, i) => (
+                    <div key={a.id} className={`flex items-start gap-4 p-4 ${i<activity.length-1?`border-b ${isDark?'border-slate-800':'border-slate-100'}`:''}`}>
+                      <div className="w-2 h-2 bg-red-500 rounded-full mt-2 shrink-0"/>
+                      <div className="flex-1">
+                        <p className={`font-black ${text} text-sm`}>{a.action}</p>
+                        {a.details && <p className={`text-xs ${subtext} font-bold mt-0.5`}>{a.details}</p>}
+                      </div>
+                      <p className={`text-[10px] ${subtext} font-bold shrink-0`}>{new Date(a.created_at).toLocaleDateString()}</p>
                     </div>
-                    <p className={`text-[10px] ${subtext} font-bold shrink-0`}>{new Date(a.created_at).toLocaleDateString()}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Chapter-wide attendance — all members see everyone */}
+            <div>
+              <h3 className={`font-black ${text} uppercase italic text-lg mb-3 flex items-center gap-2`}>
+                <Users size={16} className="text-red-500"/> Chapter Attendance Records
+              </h3>
+              <p className={`text-xs ${subtext} font-bold mb-4`}>All members attendance is visible for transparency</p>
+              {chapterAttendance.length === 0 ? (
+                <div className={`${card} border rounded-3xl p-12 text-center shadow-sm`}>
+                  <p className={`font-black ${subtext} uppercase tracking-widest text-sm`}>No attendance records yet</p>
+                </div>
+              ) : (
+                <div className={`${card} border rounded-3xl overflow-hidden shadow-sm`}>
+                  {/* Header */}
+                  <div className={`grid grid-cols-4 gap-2 px-5 py-3 ${isDark?'bg-white/5':'bg-slate-50'} border-b ${isDark?'border-slate-800':'border-slate-100'}`}>
+                    {['Member','Event','Date','Status'].map(h => (
+                      <p key={h} className={`text-[10px] font-black uppercase tracking-widest ${subtext}`}>{h}</p>
+                    ))}
                   </div>
-                ))}
+                  {chapterAttendance.map((a, i) => {
+                    const statusColors: Record<string,string> = {
+                      present: 'text-green-600', absent: 'text-red-500', excused: 'text-yellow-600'
+                    };
+                    return (
+                      <div key={i} className={`grid grid-cols-4 gap-2 px-5 py-3 ${i<chapterAttendance.length-1?`border-b ${isDark?'border-slate-800':'border-slate-100'}`:''}`}>
+                        <p className={`text-xs font-black ${text} truncate`}>{a.member_name}</p>
+                        <p className={`text-xs font-bold ${subtext} truncate`}>{a.event_title}</p>
+                        <p className={`text-xs font-bold ${subtext}`}>{a.event_date ? new Date(a.event_date).toLocaleDateString() : '—'}</p>
+                        <p className={`text-xs font-black uppercase ${statusColors[a.status] ?? subtext}`}>{a.status}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── ID CARD ── */}
+        {activeTab==='id-card' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className={`font-black ${text} uppercase italic text-xl`}>Member ID Card</h3>
+              <div className="flex gap-2">
+                <button onClick={() => window.print()}
+                  className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">
+                  <Printer size={14}/> Print
+                </button>
+                <button onClick={async () => {
+                  // Trigger browser print which can save as PDF
+                  window.print();
+                }} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">
+                  <Download size={14}/> Save PDF
+                </button>
+              </div>
+            </div>
+
+            {member.status !== 'approved' && (
+              <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-4">
+                <p className="text-yellow-800 font-black text-sm">⏳ ID card available after membership approval</p>
               </div>
             )}
+
+            {/* ID Card — print-optimized */}
+            <div id="member-id-card-wrapper" className="flex justify-center">
+              <div id="member-id-card" className="bg-white rounded-[2rem] overflow-hidden shadow-2xl border border-slate-200"
+                style={{width:'340px', minHeight:'200px'}}>
+                {/* Card header */}
+                <div className="bg-slate-900 px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-red-500 font-black text-[10px] uppercase tracking-widest">Official Member ID</p>
+                    <p className="text-white font-black uppercase italic text-sm">{orgName}</p>
+                  </div>
+                  <div className="bg-red-600 text-white text-[10px] font-black uppercase px-2 py-1 rounded-lg tracking-widest">
+                    {member.status === 'approved' ? 'ACTIVE' : 'PENDING'}
+                  </div>
+                </div>
+                {/* Card body */}
+                <div className="p-5 flex gap-4">
+                  <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 shrink-0 border-2 border-slate-200">
+                    {member.photo_url
+                      ? <img src={member.photo_url} className="w-full h-full object-cover" alt={member.full_name}/>
+                      : <div className="w-full h-full bg-slate-200 flex items-center justify-center">
+                          <span className="text-2xl font-black text-slate-400">{member.full_name.charAt(0)}</span>
+                        </div>
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-black text-slate-900 text-sm uppercase leading-tight">{member.full_name}</p>
+                    <p className="text-red-600 font-bold text-[10px] uppercase tracking-widest mt-0.5">{member.chapter}</p>
+                    <div className="mt-2 space-y-0.5">
+                      <p className="text-[10px] text-slate-500 font-bold">Class: <span className="text-slate-800">{member.class_name} '{String(member.year_graduated).slice(-2)}</span></p>
+                      <p className="text-[10px] text-slate-500 font-bold">ID No: <span className="text-slate-800 font-mono">{member.id_number}</span></p>
+                      <p className="text-[10px] text-slate-500 font-bold">Member: <span className="text-slate-800 font-mono">{member.id.slice(0,8).toUpperCase()}</span></p>
+                    </div>
+                  </div>
+                </div>
+                  {/* Card footer */}
+                  <div className="bg-slate-50 border-t border-slate-100 px-5 py-3 flex justify-between items-center">
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                      Issued {new Date(member.created_at).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'})}
+                    </p>
+                    {/* Simple barcode-style visual */}
+                    <div className="flex gap-px">
+                      {member.id.slice(0,12).split('').map((c, i) => (
+                        <div key={i} className="bg-slate-900 rounded-sm"
+                          style={{width:'2px', height: (parseInt(c,16) % 3 + 1) * 8 + 'px'}}/>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+            </div>
+
+            <p className={`text-xs ${subtext} font-bold text-center`}>
+              Click Print or Save PDF to get a physical copy of your member ID card.
+            </p>
           </div>
         )}
 

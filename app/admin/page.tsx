@@ -47,11 +47,13 @@ interface EventRow {
 // ─── Dynamic Config (loaded from election_settings, overrides these defaults) ──
 const HEAD_ADMIN_EMAIL = "ezekielborbor17@gmail.com";
 const DEFAULT_CONFIG = {
-  org_name:       "BWIAA",
-  election_title: "National Alumni Election",
-  election_year:  "2026",
-  currency:       "USD",
-  currency_symbol:"$",
+  org_name:         "BWIAA",
+  election_title:   "National Alumni Election",
+  election_year:    "2026",
+  currency:         "USD",
+  currency_symbol:  "$",
+  maintenance_fee:  20,
+  maintenance_currency: "LRD",
   chapters: [
     "Harbel Chapter","Montserrado Chapter","Grand Bassa Chapter","Nimba Chapter",
     "Weala Branch","Robertsport Branch","LAC Branch","Bong Chapter",
@@ -75,7 +77,7 @@ type ElectionConfig = typeof DEFAULT_CONFIG;
 let CHAPTERS  = DEFAULT_CONFIG.chapters;
 let POSITIONS = DEFAULT_CONFIG.positions_fees.map(p => p.position);
 
-type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications" | "settings" | "members" | "dues" | "events";
+type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications" | "settings" | "members" | "dues" | "events" | "audit";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ADMIN COMPONENT
@@ -98,6 +100,8 @@ export default function AdminPage() {
   const [members, setMembers]           = useState<Member[]>([]);
   const [dues, setDues]                 = useState<DuesPayment[]>([]);
   const [events, setEvents]             = useState<EventRow[]>([]);
+  const [auditLog, setAuditLog]         = useState<any[]>([]);
+  const [auditLog, setAuditLog]         = useState<any[]>([]);
   const [config, setConfig]             = useState<ElectionConfig>(DEFAULT_CONFIG);
 
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
@@ -145,7 +149,7 @@ export default function AdminPage() {
   }, [isAuthorized]);
 
   async function fetchAll() {
-    const [v, c, r, b, a, settingsRes, ap, mem, duesRes, evRes] = await Promise.all([
+    const [v, c, r, b, a, settingsRes, ap, mem, duesRes, evRes, auditRes] = await Promise.all([
       supabase.from('votes').select('*').order('created_at', { ascending: false }),
       supabase.from('candidates').select('*').order('position_name'),
       supabase.from('eligible_voters').select('*').order('email'),
@@ -156,6 +160,7 @@ export default function AdminPage() {
       supabase.from('members').select('*').order('created_at', { ascending: false }),
       supabase.from('dues_payments').select('*').order('created_at', { ascending: false }),
       supabase.from('events').select('*').order('event_date', { ascending: false }),
+      supabase.from('activity_log').select('*').order('created_at', { ascending: false }).limit(500),
     ]);
     if (v.data)       setVotes(v.data);
     if (c.data)       setCandidates(c.data);
@@ -166,6 +171,7 @@ export default function AdminPage() {
     if (mem.data)     setMembers(mem.data);
     if (duesRes.data) setDues(duesRes.data);
     if (evRes.data)   setEvents(evRes.data);
+    if (auditRes.data) setAuditLog(auditRes.data);
 
     // Merge all settings keys into config
     if (settingsRes.data) {
@@ -179,6 +185,8 @@ export default function AdminPage() {
       if (get('election_year'))   merged.election_year   = get('election_year')!;
       if (get('currency'))        merged.currency        = get('currency')!;
       if (get('currency_symbol')) merged.currency_symbol = get('currency_symbol')!;
+      if (get('maintenance_fee')) merged.maintenance_fee = Number(get('maintenance_fee'));
+      if (get('maintenance_currency')) merged.maintenance_currency = get('maintenance_currency')!;
       if (get('chapters')) {
         try {
           const parsed = JSON.parse(get('chapters')!);
@@ -236,6 +244,8 @@ export default function AdminPage() {
     { id: "members",       label: `Members${members.filter(m=>m.status==='pending').length > 0 ? ` (${members.filter(m=>m.status==='pending').length})` : ''}`, icon: Users },
     { id: "dues",          label: `Dues${dues.filter(d=>d.status==='pending').length > 0 ? ` (${dues.filter(d=>d.status==='pending').length})` : ''}`, icon: CreditCard },
     { id: "events",       label: "Events",       icon: Calendar },
+    { id: "audit",        label: "Audit Log",    icon: FileText, headOnly: true },
+    { id: "audit",        label: "Audit Log",    icon: FileText, headOnly: true },
     { id: "applications",  label: `Applications${applications.filter(a=>a.status==='pending').length > 0 ? ` (${applications.filter(a=>a.status==='pending').length})` : ''}`, icon: FileText },
     { id: "admins",        label: "Admins",       icon: Settings, headOnly: true },
     { id: "settings",      label: "Settings",     icon: Settings, headOnly: true },
@@ -301,6 +311,8 @@ export default function AdminPage() {
         {activeTab === "members"       && <MembersTab members={members} setMembers={setMembers} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "dues"          && <DuesTab dues={dues} setDues={setDues} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
         {activeTab === "events"        && <EventsTab events={events} setEvents={setEvents} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
+        {activeTab === "audit"         && isHeadAdmin && <AuditLogTab log={auditLog} config={config}/>}
+        {activeTab === "audit"         && isHeadAdmin && <AuditTab auditLog={auditLog} config={config}/>}
         {activeTab === "applications"  && <ApplicationsTab applications={applications} setApplications={setApplications} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "admins"   && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
         {activeTab === "settings" && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline}/>}
@@ -1708,13 +1720,15 @@ function SettingsTab({ config, setConfig, showToast, deadline }: {
   async function saveSettings() {
     setSaving(true);
     const rows = [
-      { key: 'org_name',        value: local.org_name },
-      { key: 'election_title',  value: local.election_title },
-      { key: 'election_year',   value: local.election_year },
-      { key: 'currency',        value: local.currency },
-      { key: 'currency_symbol', value: local.currency_symbol },
-      { key: 'chapters',        value: JSON.stringify(local.chapters) },
-      { key: 'positions_fees',  value: JSON.stringify(local.positions_fees) },
+      { key: 'org_name',              value: local.org_name },
+      { key: 'election_title',        value: local.election_title },
+      { key: 'election_year',         value: local.election_year },
+      { key: 'currency',              value: local.currency },
+      { key: 'currency_symbol',       value: local.currency_symbol },
+      { key: 'maintenance_fee',       value: String(local.maintenance_fee) },
+      { key: 'maintenance_currency',  value: local.maintenance_currency },
+      { key: 'chapters',              value: JSON.stringify(local.chapters) },
+      { key: 'positions_fees',        value: JSON.stringify(local.positions_fees) },
     ];
     const { error } = await supabase.from('election_settings')
       .upsert(rows, { onConflict: 'key' });
@@ -1778,6 +1792,27 @@ function SettingsTab({ config, setConfig, showToast, deadline }: {
                 placeholder="$, £, ₵..."
                 className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
             </div>
+          </div>
+          {/* Maintenance fee */}
+          <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-5">
+            <p className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3">System Maintenance Fee (per due payment)</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Amount</label>
+                <input type="number" value={local.maintenance_fee} onChange={e => setField('maintenance_fee', Number(e.target.value))}
+                  placeholder="20"
+                  className="w-full border-2 border-slate-200 focus:border-amber-500 rounded-2xl px-5 py-4 font-bold outline-none"/>
+              </div>
+              <div>
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Currency</label>
+                <input value={local.maintenance_currency} onChange={e => setField('maintenance_currency', e.target.value)}
+                  placeholder="LRD"
+                  className="w-full border-2 border-slate-200 focus:border-amber-500 rounded-2xl px-5 py-4 font-bold outline-none"/>
+              </div>
+            </div>
+            <p className="text-xs text-amber-600 font-bold mt-2">
+              This amount is automatically added to every dues payment as a system maintenance contribution.
+            </p>
           </div>
         </div>
         <div className="mt-6 p-5 bg-slate-900 rounded-2xl text-white text-center">
@@ -2850,6 +2885,351 @@ function EventsTab({ events, setEvents, showToast, isHeadAdmin, myChapter, admin
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: AUDIT LOG
+// ─────────────────────────────────────────────────────────────────────────────
+function AuditTab({ auditLog, config }: { auditLog: any[]; config: ElectionConfig }) {
+  const [search, setSearch]       = useState('');
+  const [chapterF, setChapterF]   = useState('All');
+  const [actionF, setActionF]     = useState('All');
+
+  const filtered = auditLog.filter(a => {
+    const s = search.toLowerCase();
+    const matchSearch = !s || a.member_name?.toLowerCase().includes(s) || a.action?.toLowerCase().includes(s) || a.details?.toLowerCase().includes(s);
+    const matchChapter = chapterF === 'All' || a.chapter === chapterF;
+    const matchAction  = actionF  === 'All' || a.action?.toLowerCase().includes(actionF.toLowerCase());
+    return matchSearch && matchChapter && matchAction;
+  });
+
+  const actionTypes = [...new Set(auditLog.map(a => a.action).filter(Boolean))].sort();
+
+  function exportCSV() {
+    const headers = ['Date','Time','Member','Chapter','Action','Details'];
+    const rows = filtered.map(a => {
+      const d = new Date(a.created_at);
+      return [
+        d.toLocaleDateString(),
+        d.toLocaleTimeString(),
+        a.member_name ?? '',
+        a.chapter ?? '',
+        a.action ?? '',
+        a.details ?? '',
+      ];
+    });
+    const csv = [headers,...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type:'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const el   = document.createElement('a');
+    el.href = url;
+    el.download = `${config.org_name}_AuditLog_${new Date().toISOString().slice(0,10)}.csv`;
+    el.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function printLog() {
+    const html = `
+      <!DOCTYPE html><html><head><title>${config.org_name} Audit Log</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 11px; padding: 20px; }
+        h1 { font-size: 16px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+        p.sub { color: #666; font-size: 10px; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #1e293b; color: white; text-transform: uppercase; font-size: 9px; letter-spacing: 1px; padding: 6px 8px; text-align: left; }
+        td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; font-size: 10px; }
+        tr:nth-child(even) td { background: #f8fafc; }
+        .action { font-weight: bold; }
+        .meta { color: #64748b; }
+      </style></head><body>
+      <h1>${config.org_name} — Official Audit Log</h1>
+      <p class="sub">Generated: ${new Date().toLocaleString()} · ${filtered.length} records · ${chapterF !== 'All' ? chapterF : 'All Chapters'}</p>
+      <table>
+        <thead><tr><th>Date</th><th>Time</th><th>Member</th><th>Chapter</th><th>Action</th><th>Details</th></tr></thead>
+        <tbody>
+          ${filtered.map(a => {
+            const d = new Date(a.created_at);
+            return `<tr>
+              <td class="meta">${d.toLocaleDateString()}</td>
+              <td class="meta">${d.toLocaleTimeString()}</td>
+              <td><strong>${a.member_name ?? '—'}</strong></td>
+              <td class="meta">${a.chapter ?? '—'}</td>
+              <td class="action">${a.action ?? '—'}</td>
+              <td class="meta">${a.details ?? '—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <p style="margin-top:20px;font-size:9px;color:#94a3b8;text-align:center">${config.org_name} Official Audit Record · Confidential</p>
+      </body></html>
+    `;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); win.close(); }, 500);
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-black uppercase italic text-slate-800">Audit Log</h2>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+            Full record of all actions — {filtered.length} entries
+          </p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={exportCSV}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
+            <Download size={14}/> Export CSV
+          </button>
+          <button onClick={printLog}
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
+            <Printer size={14}/> Print / PDF
+          </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/>
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name, action or details..."
+            className="w-full pl-10 pr-4 py-4 border-2 border-slate-200 focus:border-red-600 rounded-2xl font-bold outline-none text-sm bg-white"/>
+        </div>
+        <select value={chapterF} onChange={e => setChapterF(e.target.value)}
+          className="border-2 border-slate-200 rounded-2xl px-5 py-4 font-bold outline-none text-sm bg-white focus:border-red-600">
+          <option value="All">All Chapters</option>
+          {config.chapters.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={actionF} onChange={e => setActionF(e.target.value)}
+          className="border-2 border-slate-200 rounded-2xl px-5 py-4 font-bold outline-none text-sm bg-white focus:border-red-600">
+          <option value="All">All Actions</option>
+          {actionTypes.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+      </div>
+
+      {/* Log table */}
+      <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+        {/* Header */}
+        <div className="grid grid-cols-12 gap-2 px-5 py-3 bg-slate-900">
+          {[['col-span-2','Date/Time'],['col-span-2','Member'],['col-span-2','Chapter'],['col-span-3','Action'],['col-span-3','Details']].map(([cls,h]) => (
+            <p key={h} className={`${cls} text-[10px] font-black uppercase tracking-widest text-white/60`}>{h}</p>
+          ))}
+        </div>
+        <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="text-center py-16 text-slate-400">
+              <FileText size={40} className="mx-auto mb-3 opacity-20"/>
+              <p className="font-black uppercase tracking-widest text-sm">No audit entries found</p>
+            </div>
+          ) : filtered.map(a => {
+            const d = new Date(a.created_at);
+            const actionColor =
+              a.action?.includes('approved') ? 'text-green-700' :
+              a.action?.includes('rejected') || a.action?.includes('deactivated') ? 'text-red-600' :
+              a.action?.includes('created') || a.action?.includes('submitted') ? 'text-blue-600' :
+              'text-slate-700';
+            return (
+              <div key={a.id} className="grid grid-cols-12 gap-2 px-5 py-3.5 hover:bg-slate-50 transition-all">
+                <div className="col-span-2">
+                  <p className="text-[10px] font-black text-slate-800">{d.toLocaleDateString()}</p>
+                  <p className="text-[10px] text-slate-400 font-bold">{d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
+                </div>
+                <div className="col-span-2 min-w-0">
+                  <p className="text-xs font-black text-slate-800 truncate">{a.member_name ?? '—'}</p>
+                </div>
+                <div className="col-span-2 min-w-0">
+                  <p className="text-[10px] font-bold text-slate-400 truncate">{a.chapter ?? '—'}</p>
+                </div>
+                <div className="col-span-3 min-w-0">
+                  <p className={`text-xs font-black uppercase truncate ${actionColor}`}>{a.action ?? '—'}</p>
+                </div>
+                <div className="col-span-3 min-w-0">
+                  <p className="text-[10px] text-slate-400 font-bold truncate">{a.details ?? '—'}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {filtered.length > 0 && (
+          <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex justify-between">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{filtered.length} records shown</p>
+            <p className="text-xs font-bold text-slate-400">Scroll to see all · Export CSV for full data</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: AUDIT LOG
+// ─────────────────────────────────────────────────────────────────────────────
+function AuditLogTab({ log, config }: { log: any[]; config: ElectionConfig }) {
+  const [search, setSearch]           = useState('');
+  const [chapterFilter, setChapter]   = useState('All');
+  const [actionFilter, setAction]     = useState('All');
+
+  const filtered = log.filter(l => {
+    const s = search.toLowerCase();
+    const matchSearch = !s ||
+      (l.member_name ?? '').toLowerCase().includes(s) ||
+      (l.action ?? '').toLowerCase().includes(s) ||
+      (l.details ?? '').toLowerCase().includes(s);
+    const matchChapter = chapterFilter === 'All' || l.chapter === chapterFilter;
+    const matchAction  = actionFilter  === 'All' || (l.action ?? '').includes(actionFilter);
+    return matchSearch && matchChapter && matchAction;
+  });
+
+  const actionTypes = ['All', ...Array.from(new Set(log.map(l => l.action).filter(Boolean))).sort()];
+
+  function exportCSV() {
+    const headers = ['Timestamp','Member','Chapter','Action','Details'];
+    const rows = filtered.map(l => [
+      new Date(l.created_at).toLocaleString(),
+      l.member_name ?? '—',
+      l.chapter ?? '—',
+      l.action ?? '—',
+      l.details ?? '—',
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `BWIAA_Audit_Log_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  function printLog() {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    const rows = filtered.map(l => `
+      <tr>
+        <td>${new Date(l.created_at).toLocaleString()}</td>
+        <td><strong>${l.member_name ?? '—'}</strong></td>
+        <td>${l.chapter ?? '—'}</td>
+        <td>${l.action ?? '—'}</td>
+        <td>${l.details ?? '—'}</td>
+      </tr>`).join('');
+    printWindow.document.write(`
+      <!DOCTYPE html><html><head>
+      <title>BWIAA Audit Log — ${new Date().toLocaleDateString()}</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 11px; padding: 20px; }
+        h1 { font-size: 16px; margin-bottom: 4px; }
+        p { color: #666; font-size: 10px; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #1e293b; color: white; padding: 8px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+        td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+        tr:nth-child(even) { background: #f8fafc; }
+        @media print { body { padding: 0; } }
+      </style></head><body>
+      <h1>BWIAA Official Audit Log</h1>
+      <p>Generated: ${new Date().toLocaleString()} · ${filtered.length} records · ${chapterFilter !== 'All' ? chapterFilter : 'All Chapters'}</p>
+      <table>
+        <thead><tr><th>Timestamp</th><th>Member</th><th>Chapter</th><th>Action</th><th>Details</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      </body></html>`);
+    printWindow.document.close();
+    printWindow.print();
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-black uppercase italic text-slate-800">Audit Log</h2>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+            Full record of all actions — who did what, when, and where
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={exportCSV}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
+            <Download size={14}/> CSV
+          </button>
+          <button onClick={printLog}
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
+            <Printer size={14}/> Print
+          </button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-slate-900 text-white rounded-3xl p-5 text-center">
+          <p className="text-3xl font-black">{log.length}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-50 mt-1">Total Entries</p>
+        </div>
+        <div className="bg-blue-600 text-white rounded-3xl p-5 text-center">
+          <p className="text-3xl font-black">{[...new Set(log.map(l=>l.member_name).filter(Boolean))].length}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Unique Members</p>
+        </div>
+        <div className="bg-red-600 text-white rounded-3xl p-5 text-center">
+          <p className="text-3xl font-black">{filtered.length}</p>
+          <p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Showing</p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/>
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search member, action, details..."
+            className="w-full pl-10 pr-4 py-4 border-2 border-slate-200 focus:border-red-600 rounded-2xl font-bold outline-none text-sm bg-white"/>
+        </div>
+        <select value={chapterFilter} onChange={e => setChapter(e.target.value)}
+          className="border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none text-sm bg-white">
+          {['All', ...config.chapters].map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={actionFilter} onChange={e => setAction(e.target.value)}
+          className="border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none text-sm bg-white min-w-0 max-w-[200px]">
+          {actionTypes.slice(0, 20).map(a => <option key={a} value={a}>{a.length > 30 ? a.slice(0,30)+'…' : a}</option>)}
+        </select>
+      </div>
+
+      {/* Log table */}
+      <Card>
+        <div className="overflow-x-auto -mx-2">
+          {/* Header */}
+          <div className="grid grid-cols-5 gap-3 px-4 py-3 bg-slate-50 rounded-2xl mb-2 min-w-[600px]">
+            {['Time','Member','Chapter','Action','Details'].map(h => (
+              <p key={h} className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</p>
+            ))}
+          </div>
+          {/* Rows */}
+          <div className="space-y-1 min-w-[600px]">
+            {filtered.length === 0 ? (
+              <p className="text-slate-400 font-bold text-sm text-center py-8">No matching log entries.</p>
+            ) : filtered.map((l, i) => (
+              <div key={l.id ?? i} className="grid grid-cols-5 gap-3 px-4 py-3 hover:bg-slate-50 rounded-2xl transition-all border border-transparent hover:border-slate-100">
+                <div>
+                  <p className="text-[10px] font-black text-slate-800">{new Date(l.created_at).toLocaleDateString()}</p>
+                  <p className="text-[9px] text-slate-400 font-bold">{new Date(l.created_at).toLocaleTimeString()}</p>
+                </div>
+                <p className="text-xs font-black text-slate-800 truncate self-center">{l.member_name ?? '—'}</p>
+                <p className="text-xs font-bold text-slate-500 truncate self-center">{l.chapter ?? '—'}</p>
+                <p className="text-xs font-bold text-red-600 truncate self-center">{l.action ?? '—'}</p>
+                <p className="text-xs font-bold text-slate-500 truncate self-center">{l.details ?? '—'}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        {filtered.length > 0 && (
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center mt-4 pt-4 border-t border-slate-100">
+            {filtered.length} entries shown · Last updated {log[0] ? new Date(log[0].created_at).toLocaleString() : '—'}
+          </p>
+        )}
+      </Card>
     </div>
   );
 }

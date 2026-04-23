@@ -82,6 +82,8 @@ export default function DuesPage() {
   const [orgName, setOrgName]       = useState('BWIAA');
   const [currency, setCurrency]     = useState('USD');
   const [symbol, setSymbol]         = useState('$');
+  const [maintenanceFee, setMaintenanceFee]           = useState(20);
+  const [maintenanceCurrency, setMaintenanceCurrency] = useState('LRD');
   const [chapters, setChapters]     = useState<string[]>([]);
   const [myMember, setMyMember]     = useState<Member|null>(null);
   const [payments, setPayments]     = useState<DuesPayment[]>([]);
@@ -105,10 +107,12 @@ export default function DuesPage() {
       const { data: settings } = await supabase.from('election_settings').select('*');
       if (settings) {
         const get = (k: string) => settings.find((r: any) => r.key === k)?.value;
-        if (get('org_name'))        setOrgName(get('org_name'));
-        if (get('currency'))        setCurrency(get('currency'));
-        if (get('currency_symbol')) setSymbol(get('currency_symbol'));
-        if (get('chapters'))        { try { const c = JSON.parse(get('chapters')); setChapters(c); setChapter(c[0]); } catch {} }
+        if (get('org_name'))             setOrgName(get('org_name'));
+        if (get('currency'))             setCurrency(get('currency'));
+        if (get('currency_symbol'))      setSymbol(get('currency_symbol'));
+        if (get('maintenance_fee'))      setMaintenanceFee(Number(get('maintenance_fee')));
+        if (get('maintenance_currency')) setMaintenanceCurrency(get('maintenance_currency'));
+        if (get('chapters'))             { try { const c = JSON.parse(get('chapters')); setChapters(c); setChapter(c[0]); } catch {} }
       }
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.email) {
@@ -166,17 +170,36 @@ export default function DuesPage() {
         if (ue) throw new Error(`Upload failed: ${ue.message}`);
         screenshot_url = supabase.storage.from('payment-screenshots').getPublicUrl(ud.path).data.publicUrl;
       }
+
+      // Main dues payment
       const { data, error: ie } = await supabase.from('dues_payments').insert([{
         member_id: myMember?.id ?? null, member_name: memberName.trim(),
         chapter, amount: parseFloat(amount), currency, period,
         payment_method: method, screenshot_url, notes: notes.trim() || null, status: 'pending',
       }]).select().single();
       if (ie) throw new Error(ie.message);
+
+      // Maintenance fee — always added as a separate line item
+      if (maintenanceFee > 0) {
+        await supabase.from('dues_payments').insert([{
+          member_id:      myMember?.id ?? null,
+          member_name:    memberName.trim(),
+          chapter,
+          amount:         maintenanceFee,
+          currency:       maintenanceCurrency,
+          period:         `${period} — System Maintenance`,
+          payment_method: method,
+          screenshot_url: null,
+          notes:          `Automatic system maintenance fee (${maintenanceFee} ${maintenanceCurrency}) linked to dues payment`,
+          status:         'pending',
+        }]);
+      }
+
       if (myMember) {
         await supabase.from('activity_log').insert([{
           member_id: myMember.id, member_name: myMember.full_name, chapter,
           action: 'Dues payment submitted',
-          details: `${symbol}${amount} for ${period}`,
+          details: `${symbol}${amount} ${currency} + ${maintenanceFee} ${maintenanceCurrency} maintenance fee for ${period}`,
         }]);
       }
       setPayments(prev => [data, ...prev]); setSubmitted(true);
@@ -233,10 +256,18 @@ export default function DuesPage() {
             <h2 className="text-2xl font-black uppercase italic text-slate-900 mb-3">Payment Submitted!</h2>
             <p className="text-slate-500 font-bold text-sm mb-6">Pending review by your chapter administrator.</p>
             <div className="bg-slate-50 rounded-2xl p-5 mb-6 text-left space-y-2 border border-slate-100">
-              {[['Name',memberName],['Chapter',chapter],['Amount',`${symbol}${parseFloat(amount).toLocaleString()} ${currency}`],['Period',period],['Method',method==='in_person'?'In Person':'Screenshot'],['Status','Pending Review']].map(([l,v])=>(
+              {[
+                ['Name', memberName],
+                ['Chapter', chapter],
+                ['Dues Amount', `${symbol}${parseFloat(amount || '0').toLocaleString()} ${currency}`],
+                ['Maintenance Fee', `${maintenanceFee} ${maintenanceCurrency}`],
+                ['Period', period],
+                ['Method', method==='in_person'?'In Person':'Screenshot'],
+                ['Status', 'Pending Review'],
+              ].map(([l,v])=>(
                 <div key={l} className="flex justify-between py-1 border-b border-slate-100 last:border-0">
                   <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{l}</span>
-                  <span className="text-xs font-black text-slate-800">{v}</span>
+                  <span className={`text-xs font-black ${l==='Maintenance Fee'?'text-amber-600':'text-slate-800'}`}>{v}</span>
                 </div>
               ))}
             </div>
@@ -338,6 +369,18 @@ export default function DuesPage() {
               <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl p-4">
                 <AlertCircle size={16} className="text-red-600 shrink-0 mt-0.5"/>
                 <p className="text-red-700 text-sm font-bold">{error}</p>
+              </div>
+            )}
+
+            {maintenanceFee > 0 && (
+              <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+                <span className="text-amber-500 shrink-0">⚙</span>
+                <div>
+                  <p className="text-amber-800 font-black text-xs uppercase tracking-widest">System Maintenance Fee</p>
+                  <p className="text-amber-700 text-xs font-bold mt-1 leading-relaxed">
+                    An additional <strong>{maintenanceFee} {maintenanceCurrency}</strong> maintenance contribution will be recorded alongside this payment.
+                  </p>
+                </div>
               </div>
             )}
 
