@@ -244,7 +244,6 @@ export default function AdminPage() {
     { id: "dues",          label: `Dues${dues.filter(d=>d.status==='pending').length > 0 ? ` (${dues.filter(d=>d.status==='pending').length})` : ''}`, icon: CreditCard },
     { id: "events",       label: "Events",       icon: Calendar },
     { id: "audit",        label: "Audit Log",    icon: FileText, headOnly: true },
-    { id: "audit",        label: "Audit Log",    icon: FileText, headOnly: true },
     { id: "applications",  label: `Applications${applications.filter(a=>a.status==='pending').length > 0 ? ` (${applications.filter(a=>a.status==='pending').length})` : ''}`, icon: FileText },
     { id: "admins",        label: "Admins",       icon: Settings, headOnly: true },
     { id: "settings",      label: "Settings",     icon: Settings, headOnly: true },
@@ -306,7 +305,7 @@ export default function AdminPage() {
         {activeTab === "results"       && <ResultsTab    votes={votes} candidates={candidates} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "candidates"    && <CandidatesTab candidates={candidates} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin}/>}
         {activeTab === "voters"        && <VotersTab     votes={votes} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
-        {activeTab === "roster"        && <RosterTab     roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
+        {activeTab === "roster"        && <RosterTab     roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} members={members}/>}
         {activeTab === "members"       && <MembersTab members={members} setMembers={setMembers} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "dues"          && <DuesTab dues={dues} setDues={setDues} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
         {activeTab === "events"        && <EventsTab events={events} setEvents={setEvents} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config} members={members}/>}
@@ -947,7 +946,7 @@ function VotersTab({ votes, isHeadAdmin, myChapter }: { votes: VoteRow[]; isHead
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: ROSTER + BLACKLIST
 // ─────────────────────────────────────────────────────────────────────────────
-function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHeadAdmin, myChapter }: {
+function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHeadAdmin, myChapter, members }: {
   roster: EligibleVoter[];
   setRoster: React.Dispatch<React.SetStateAction<EligibleVoter[]>>;
   blacklist: BlacklistedVoter[];
@@ -955,6 +954,7 @@ function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHe
   showToast: (m: string, ok?: boolean) => void;
   isHeadAdmin: boolean;
   myChapter: string | null;
+  members: Member[];
 }) {
   const [rEmail, setREmail]     = useState('');
   const [rChapter, setRChapter] = useState(myChapter ?? CHAPTERS[0]);
@@ -965,19 +965,55 @@ function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHe
 
   const visibleRoster = isHeadAdmin ? roster : roster.filter(r => r.chapter === myChapter);
 
+  // Only approved members can be on the roster
+  const approvedMembers = members.filter(m =>
+    m.status === 'approved' && (isHeadAdmin || m.chapter === myChapter)
+  );
+
   async function addToRoster() {
     const email = rEmail.trim().toLowerCase();
-    if (!email) { showToast("Email required.", false); return; }
-    setRSaving(true);
-    const { data, error } = await supabase.from('eligible_voters').insert([{ email, chapter: rChapter }]).select().single();
-    setRSaving(false);
-    if (error) {
-      const isDupe = error.code === '23505' || error.message.toLowerCase().includes('unique') || error.message.toLowerCase().includes('duplicate');
-      showToast(isDupe ? "Already on roster." : `Failed: ${error.message}`, false);
+    if (!email) { showToast('Email required.', false); return; }
+
+    // ★ SECURITY: Verify this email belongs to an approved member
+    const approvedMember = members.find(m =>
+      m.email.toLowerCase() === email && m.status === 'approved'
+    );
+
+    if (!approvedMember) {
+      // Check if they exist at all in members table
+      const anyMember = members.find(m => m.email.toLowerCase() === email);
+      if (anyMember && anyMember.status === 'pending') {
+        showToast(`❌ ${email} has a pending membership application. They must be approved as a member before being added to the voter roster.`, false);
+      } else if (anyMember && anyMember.status === 'rejected') {
+        showToast(`❌ ${email}'s membership was rejected. They cannot be added to the voter roster.`, false);
+      } else {
+        showToast(`❌ ${email} is not a registered BWIAA member. Only approved members can be added to the voter roster. They must register and be approved first.`, false);
+      }
       return;
     }
+
+    // Chapter guard — chapter admins can only add to their chapter
+    if (!isHeadAdmin && approvedMember.chapter !== myChapter) {
+      showToast(`❌ ${email} belongs to ${approvedMember.chapter}, not your chapter. You can only manage your own chapter's roster.`, false);
+      return;
+    }
+
+    setRSaving(true);
+    // Use the member's actual chapter from their profile, not manual input
+    const { data, error } = await supabase.from('eligible_voters').insert([{
+      email,
+      chapter: approvedMember.chapter,
+    }]).select().single();
+    setRSaving(false);
+
+    if (error) {
+      const isDupe = error.code === '23505' || error.message.toLowerCase().includes('unique') || error.message.toLowerCase().includes('duplicate');
+      showToast(isDupe ? `${email} is already on the roster.` : `Failed: ${error.message}`, false);
+      return;
+    }
+
     setRoster(prev => [...prev, data]); setREmail('');
-    showToast(`${email} added to roster.`);
+    showToast(`✓ ${approvedMember.full_name} (${email}) added to the voter roster for ${approvedMember.chapter}.`);
   }
 
   async function removeFromRoster(email: string) {
@@ -1017,18 +1053,88 @@ function RosterTab({ roster, setRoster, blacklist, setBlacklist, showToast, isHe
 
       <Card accent="green">
         <SectionTitle>Add Voter to Roster</SectionTitle>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <input value={rEmail} onChange={e => setREmail(e.target.value)} placeholder="member@gmail.com"
-            className="border-2 border-slate-200 focus:border-green-500 rounded-2xl px-5 py-4 font-bold outline-none md:col-span-2"/>
-          <select value={rChapter} onChange={e => setRChapter(e.target.value)} disabled={!isHeadAdmin}
-            className="border-2 border-slate-200 focus:border-green-500 rounded-2xl px-5 py-4 font-bold outline-none disabled:bg-slate-100">
-            {CHAPTERS.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+
+        {/* Security notice */}
+        <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 mb-5 flex items-start gap-3">
+          <span className="text-amber-500 text-lg shrink-0">🔒</span>
+          <div>
+            <p className="font-black text-amber-800 text-sm uppercase tracking-widest">Members Only — Voter Eligibility Enforced</p>
+            <p className="text-amber-700 text-xs font-bold mt-1 leading-relaxed">
+              Only <strong>approved BWIAA members</strong> can be added to the voter roster.
+              Non-members cannot be added regardless of their email address.
+              Members are automatically added to the roster when their membership is approved.
+            </p>
+          </div>
         </div>
-        <button onClick={addToRoster} disabled={rSaving}
-          className="bg-green-600 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-3 hover:bg-green-700 transition-all disabled:opacity-50">
-          {rSaving ? <Loader2 size={16} className="animate-spin"/> : <UserCheck size={16}/>} Add to Roster
-        </button>
+
+        {/* Approved members not yet on roster */}
+        {(() => {
+          const rosterEmails = new Set(roster.map(r => r.email.toLowerCase()));
+          const eligible = approvedMembers.filter(m => !rosterEmails.has(m.email.toLowerCase()));
+          return eligible.length > 0 ? (
+            <div className="mb-5">
+              <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">
+                Approved members not yet on roster ({eligible.length})
+              </p>
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {eligible.map(m => (
+                  <div key={m.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:border-green-300 transition-all">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl overflow-hidden bg-slate-200 shrink-0">
+                        {m.photo_url
+                          ? <img src={m.photo_url} className="w-full h-full object-cover" alt={m.full_name}/>
+                          : <div className="w-full h-full flex items-center justify-center bg-slate-300"><span className="font-black text-slate-500 text-xs">{m.full_name.charAt(0)}</span></div>
+                        }
+                      </div>
+                      <div>
+                        <p className="font-black text-slate-800 text-sm">{m.full_name}</p>
+                        <p className="text-xs text-slate-400 font-bold">{m.email} · {m.chapter}</p>
+                      </div>
+                    </div>
+                    <button onClick={async () => {
+                      setRSaving(true);
+                      const { data, error } = await supabase.from('eligible_voters')
+                        .insert([{ email: m.email.toLowerCase(), chapter: m.chapter }]).select().single();
+                      setRSaving(false);
+                      if (error) {
+                        const isDupe = error.code === '23505' || error.message.toLowerCase().includes('duplicate');
+                        showToast(isDupe ? 'Already on roster.' : `Failed: ${error.message}`, false);
+                        return;
+                      }
+                      setRoster(prev => [...prev, data]);
+                      showToast(`✓ ${m.full_name} added to voter roster.`);
+                    }} disabled={rSaving}
+                      className="bg-green-600 hover:bg-green-700 text-white font-black uppercase text-xs px-4 py-2 rounded-xl transition-all disabled:opacity-50 shrink-0">
+                      + Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-5">
+              <p className="text-green-700 font-black text-sm">✓ All approved members are already on the voter roster.</p>
+            </div>
+          );
+        })()}
+
+        {/* Manual email add — still requires member verification */}
+        <div className="border-t border-slate-100 pt-5">
+          <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Or add by email (verified members only)</p>
+          <div className="flex gap-3">
+            <input value={rEmail} onChange={e => setREmail(e.target.value)}
+              placeholder="member@email.com — must be an approved member"
+              className="flex-1 border-2 border-slate-200 focus:border-green-500 rounded-2xl px-5 py-4 font-bold outline-none text-sm"/>
+            <button onClick={addToRoster} disabled={rSaving || !rEmail.trim()}
+              className="bg-green-600 text-white font-black uppercase px-6 py-4 rounded-2xl flex items-center gap-2 hover:bg-green-700 transition-all disabled:opacity-50 shrink-0">
+              {rSaving ? <Loader2 size={14} className="animate-spin"/> : <UserCheck size={14}/>}
+              Verify & Add
+            </button>
+          </div>
+          <p className="text-[10px] text-slate-400 font-bold mt-2">
+            The system will check that this email belongs to an approved member before adding them.
+          </p>
+        </div>
       </Card>
 
       <Card>
