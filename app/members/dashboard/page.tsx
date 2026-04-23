@@ -454,81 +454,157 @@ export default function MemberDashboard() {
         {/* ── ID CARD ── */}
         {activeTab==='id-card' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className={`font-black ${text} uppercase italic text-xl`}>Member ID Card</h3>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <h3 className={`font-black ${text} uppercase italic text-xl`}>Your Member ID Card</h3>
               <div className="flex gap-2">
                 <button onClick={() => window.print()}
                   className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">
-                  <Printer size={14}/> Print
+                  <Printer size={14}/> Print Card
                 </button>
-                <button onClick={async () => {
-                  // Trigger browser print which can save as PDF
-                  window.print();
+                <button onClick={() => {
+                  const w = window.open('', '_blank');
+                  if (!w) return;
+                  w.document.write(`<!DOCTYPE html><html><head>
+                    <title>${member.full_name} — BWIAA Member ID</title>
+                    <style>
+                      @page { size: 85.6mm 54mm; margin: 0; }
+                      * { margin: 0; padding: 0; box-sizing: border-box; }
+                      body { width: 85.6mm; height: 54mm; font-family: Arial, sans-serif; overflow: hidden; }
+                      .card { width: 100%; height: 100%; display: flex; flex-direction: column; }
+                      .header { background: #0f172a; padding: 6px 10px; display: flex; justify-content: space-between; align-items: center; }
+                      .header-left p:first-child { color: #ef4444; font-size: 6px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; }
+                      .header-left p:last-child { color: white; font-size: 10px; font-weight: 900; font-style: italic; text-transform: uppercase; }
+                      .status { background: #ef4444; color: white; font-size: 7px; font-weight: 900; padding: 2px 5px; border-radius: 3px; text-transform: uppercase; }
+                      .body { flex: 1; display: flex; gap: 8px; padding: 8px; background: white; }
+                      .photo { width: 44px; height: 44px; border-radius: 6px; border: 2px solid #e2e8f0; object-fit: cover; flex-shrink: 0; background: #e2e8f0; }
+                      .photo-placeholder { width: 44px; height: 44px; border-radius: 6px; border: 2px solid #e2e8f0; background: #cbd5e1; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 900; color: #94a3b8; }
+                      .info h1 { font-size: 9px; font-weight: 900; text-transform: uppercase; color: #0f172a; line-height: 1.2; }
+                      .info .chapter { font-size: 7px; color: #ef4444; font-weight: 700; text-transform: uppercase; margin-top: 1px; }
+                      .info .detail { font-size: 6.5px; color: #64748b; margin-top: 4px; line-height: 1.6; }
+                      .info .detail span { color: #0f172a; font-weight: 700; }
+                      .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 10px; display: flex; justify-content: space-between; align-items: center; }
+                      .issued { font-size: 6px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+                      .barcode { display: flex; gap: 1px; align-items: flex-end; }
+                      .bar { background: #0f172a; border-radius: 1px; width: 2px; }
+                    </style></head><body>
+                    <div class="card">
+                      <div class="header">
+                        <div class="header-left">
+                          <p>Official Member ID</p>
+                          <p>${orgName}</p>
+                        </div>
+                        <div class="status">${member.status === 'approved' ? 'ACTIVE' : 'PENDING'}</div>
+                      </div>
+                      <div class="body">
+                        ${member.photo_url
+                          ? `<img class="photo" src="${member.photo_url}" alt="${member.full_name}"/>`
+                          : `<div class="photo-placeholder">${member.full_name.charAt(0)}</div>`
+                        }
+                        <div class="info">
+                          <h1>${member.full_name}</h1>
+                          <div class="chapter">${member.chapter}</div>
+                          <div class="detail">
+                            Class: <span>${member.class_name} '${String(member.year_graduated).slice(-2)}</span><br/>
+                            ID No: <span>${member.id_number}</span><br/>
+                            Member: <span>${member.id.slice(0,8).toUpperCase()}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="footer">
+                        <div class="issued">Issued ${new Date(member.created_at).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'})}</div>
+                        <div class="barcode">
+                          ${member.id.slice(0,12).split('').map((c: string) => `<div class="bar" style="height:${(parseInt(c,16)%3+1)*6}px"></div>`).join('')}
+                        </div>
+                      </div>
+                    </div>
+                    <script>window.onload=()=>{window.print();}</script>
+                  </body></html>`);
+                  w.document.close();
                 }} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">
-                  <Download size={14}/> Save PDF
+                  <Download size={14}/> Save as PDF
                 </button>
               </div>
             </div>
 
             {member.status !== 'approved' && (
               <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-4">
-                <p className="text-yellow-800 font-black text-sm">⏳ ID card available after membership approval</p>
+                <p className="text-yellow-800 font-black text-sm">⏳ ID card is available after your membership is approved by your chapter administrator.</p>
               </div>
             )}
 
-            {/* ID Card — print-optimized */}
-            <div id="member-id-card-wrapper" className="flex justify-center">
-              <div id="member-id-card" className="bg-white rounded-[2rem] overflow-hidden shadow-2xl border border-slate-200"
-                style={{width:'340px', minHeight:'200px'}}>
-                {/* Card header */}
+            {/* Card preview */}
+            <div className="flex justify-center">
+              <div id="member-id-card" className="rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-200" style={{width:'380px'}}>
+                {/* Header */}
                 <div className="bg-slate-900 px-6 py-4 flex items-center justify-between">
                   <div>
                     <p className="text-red-500 font-black text-[10px] uppercase tracking-widest">Official Member ID</p>
-                    <p className="text-white font-black uppercase italic text-sm">{orgName}</p>
+                    <p className="text-white font-black uppercase italic">{orgName}</p>
                   </div>
-                  <div className="bg-red-600 text-white text-[10px] font-black uppercase px-2 py-1 rounded-lg tracking-widest">
-                    {member.status === 'approved' ? 'ACTIVE' : 'PENDING'}
+                  <div className={`font-black text-[10px] uppercase px-3 py-1.5 rounded-xl tracking-widest ${member.status === 'approved' ? 'bg-green-500 text-white' : 'bg-yellow-500 text-yellow-900'}`}>
+                    {member.status === 'approved' ? '✓ ACTIVE' : 'PENDING'}
                   </div>
                 </div>
-                {/* Card body */}
-                <div className="p-5 flex gap-4">
-                  <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 shrink-0 border-2 border-slate-200">
+
+                {/* Body */}
+                <div className="bg-white p-6 flex gap-5 items-start">
+                  <div className="w-24 h-24 rounded-2xl overflow-hidden bg-slate-100 shrink-0 border-2 border-slate-200">
                     {member.photo_url
                       ? <img src={member.photo_url} className="w-full h-full object-cover" alt={member.full_name}/>
                       : <div className="w-full h-full bg-slate-200 flex items-center justify-center">
-                          <span className="text-2xl font-black text-slate-400">{member.full_name.charAt(0)}</span>
+                          <span className="text-3xl font-black text-slate-400">{member.full_name.charAt(0)}</span>
                         </div>
                     }
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-black text-slate-900 text-sm uppercase leading-tight">{member.full_name}</p>
-                    <p className="text-red-600 font-bold text-[10px] uppercase tracking-widest mt-0.5">{member.chapter}</p>
-                    <div className="mt-2 space-y-0.5">
-                      <p className="text-[10px] text-slate-500 font-bold">Class: <span className="text-slate-800">{member.class_name} '{String(member.year_graduated).slice(-2)}</span></p>
-                      <p className="text-[10px] text-slate-500 font-bold">ID No: <span className="text-slate-800 font-mono">{member.id_number}</span></p>
-                      <p className="text-[10px] text-slate-500 font-bold">Member: <span className="text-slate-800 font-mono">{member.id.slice(0,8).toUpperCase()}</span></p>
+                    <p className="font-black text-slate-900 text-base uppercase leading-tight">{member.full_name}</p>
+                    <p className="text-red-600 font-bold text-xs uppercase tracking-widest mt-1">{member.chapter}</p>
+                    <div className="mt-3 space-y-1.5">
+                      <div className="flex gap-2">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">Class</span>
+                        <span className="text-[10px] text-slate-800 font-black">{member.class_name} · Class of {member.year_graduated}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">ID No.</span>
+                        <span className="text-[10px] text-slate-800 font-black font-mono">{member.id_number}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">Member</span>
+                        <span className="text-[10px] text-slate-800 font-black font-mono">{member.id.slice(0,8).toUpperCase()}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">Sponsor</span>
+                        <span className="text-[10px] text-slate-800 font-black">{member.sponsor_name}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">Principal</span>
+                        <span className="text-[10px] text-slate-800 font-black">{member.principal_name}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-                  {/* Card footer */}
-                  <div className="bg-slate-50 border-t border-slate-100 px-5 py-3 flex justify-between items-center">
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
-                      Issued {new Date(member.created_at).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'})}
-                    </p>
-                    {/* Simple barcode-style visual */}
-                    <div className="flex gap-px">
-                      {member.id.slice(0,12).split('').map((c, i) => (
-                        <div key={i} className="bg-slate-900 rounded-sm"
-                          style={{width:'2px', height: (parseInt(c,16) % 3 + 1) * 8 + 'px'}}/>
-                      ))}
-                    </div>
+
+                {/* Footer */}
+                <div className="bg-slate-50 border-t border-slate-100 px-6 py-3 flex justify-between items-center">
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                    Issued {new Date(member.created_at).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}
+                  </p>
+                  <div className="flex gap-px items-end">
+                    {member.id.slice(0,16).split('').map((c: string, i: number) => (
+                      <div key={i} className="bg-slate-700 rounded-sm" style={{width:'2px', height:`${(parseInt(c,16)%3+1)*7}px`}}/>
+                    ))}
                   </div>
                 </div>
+              </div>
             </div>
 
-            <p className={`text-xs ${subtext} font-bold text-center`}>
-              Click Print or Save PDF to get a physical copy of your member ID card.
-            </p>
+            <div className={`${isDark?'bg-white/5 border-white/10':'bg-slate-50 border-slate-200'} border rounded-2xl p-5 text-center space-y-1`}>
+              <p className={`text-sm font-black ${text}`}>How to get your physical ID card</p>
+              <p className={`text-xs font-bold ${subtext} leading-relaxed`}>
+                Click <strong>Print Card</strong> to print directly, or <strong>Save as PDF</strong> to download a PDF file
+                sized for a standard ID card (85.6mm × 54mm — same as a credit card). You can then print and laminate it.
+              </p>
+            </div>
           </div>
         )}
 

@@ -3111,18 +3111,102 @@ function AttendanceModal({ event, members, adminEmail, onClose, showToast }: {
       </div>
 
       {/* Footer */}
-      <div className="bg-white border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-4 shrink-0">
-        <div className="flex gap-4 text-xs font-bold">
+      <div className="bg-white border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-4 shrink-0 flex-wrap">
+        <div className="flex gap-4 text-xs font-bold flex-wrap">
           <span className="text-green-600 font-black">{Object.values(attendance).filter(s=>s==='present').length} Present</span>
           <span className="text-red-500 font-black">{Object.values(attendance).filter(s=>s==='absent').length} Absent</span>
           <span className="text-yellow-600 font-black">{Object.values(attendance).filter(s=>s==='excused').length} Excused</span>
           <span className="text-slate-400">{members.length - totalMarked} Unmarked</span>
         </div>
-        <div className="flex gap-3">
-          <button onClick={onClose} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-black uppercase px-6 py-3 rounded-2xl text-sm transition-all">Cancel</button>
+        <div className="flex gap-2 flex-wrap">
+          {/* Export CSV */}
+          <button onClick={() => {
+            const headers = ['Member Name','Chapter','Class','Year','Status','Note'];
+            const rows = members.map(m => [
+              m.full_name, m.chapter, m.class_name, String(m.year_graduated),
+              attendance[m.id] ?? 'unmarked',
+              notes[m.id] ?? '',
+            ]);
+            const csv = [headers,...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+            const blob = new Blob([csv],{type:'text/csv'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Attendance_${event.title.replace(/\s+/g,'_')}_${event.event_date}.csv`;
+            a.click(); URL.revokeObjectURL(url);
+          }} className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">
+            <Download size={13}/> CSV
+          </button>
+          {/* Print / PDF */}
+          <button onClick={() => {
+            const pw = window.open('','_blank');
+            if (!pw) return;
+            const presentList  = members.filter(m => attendance[m.id] === 'present');
+            const absentList   = members.filter(m => attendance[m.id] === 'absent');
+            const excusedList  = members.filter(m => attendance[m.id] === 'excused');
+            const unmarkedList = members.filter(m => !attendance[m.id]);
+            const row = (m: Member, status: string) => `
+              <tr>
+                <td>${m.full_name}</td>
+                <td>${m.class_name} '${String(m.year_graduated).slice(-2)}</td>
+                <td style="color:${status==='present'?'#16a34a':status==='absent'?'#dc2626':status==='excused'?'#d97706':'#94a3b8'};font-weight:900;text-transform:uppercase">${status}</td>
+                <td>${notes[m.id] ?? ''}</td>
+              </tr>`;
+            pw.document.write(`<!DOCTYPE html><html><head>
+              <title>Attendance — ${event.title}</title>
+              <style>
+                body{font-family:Arial,sans-serif;font-size:11px;padding:24px;color:#0f172a}
+                h1{font-size:16px;font-weight:900;text-transform:uppercase;margin-bottom:2px}
+                .meta{color:#64748b;font-size:10px;margin-bottom:16px}
+                .summary{display:flex;gap:16px;margin-bottom:16px;font-size:11px}
+                .s{padding:6px 12px;border-radius:6px;font-weight:900;text-transform:uppercase}
+                .p{background:#dcfce7;color:#15803d}.a{background:#fee2e2;color:#b91c1c}
+                .e{background:#fef3c7;color:#92400e}.u{background:#f1f5f9;color:#475569}
+                table{width:100%;border-collapse:collapse;margin-bottom:20px}
+                th{background:#1e293b;color:white;padding:7px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+                td{padding:6px 10px;border-bottom:1px solid #e2e8f0;vertical-align:top}
+                tr:nth-child(even){background:#f8fafc}
+                h2{font-size:12px;font-weight:900;text-transform:uppercase;margin:16px 0 6px;padding-bottom:4px;border-bottom:2px solid #e2e8f0}
+                @media print{body{padding:0}}
+              </style></head><body>
+              <h1>${event.title}</h1>
+              <div class="meta">
+                ${new Date(event.event_date).toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}
+                ${event.event_time ? ' · ' + event.event_time : ''}
+                ${event.chapter ? ' · ' + event.chapter : ' · All Chapters'}
+                ${event.location ? ' · ' + event.location : ''}
+              </div>
+              <div class="summary">
+                <div class="s p">✓ Present: ${presentList.length}</div>
+                <div class="s a">✗ Absent: ${absentList.length}</div>
+                <div class="s e">~ Excused: ${excusedList.length}</div>
+                <div class="s u">? Unmarked: ${unmarkedList.length}</div>
+              </div>
+              ${presentList.length > 0 ? `<h2>✓ Present (${presentList.length})</h2>
+                <table><thead><tr><th>Name</th><th>Class</th><th>Status</th><th>Note</th></tr></thead>
+                <tbody>${presentList.map(m => row(m,'present')).join('')}</tbody></table>` : ''}
+              ${absentList.length > 0 ? `<h2>✗ Absent (${absentList.length})</h2>
+                <table><thead><tr><th>Name</th><th>Class</th><th>Status</th><th>Note</th></tr></thead>
+                <tbody>${absentList.map(m => row(m,'absent')).join('')}</tbody></table>` : ''}
+              ${excusedList.length > 0 ? `<h2>~ Excused (${excusedList.length})</h2>
+                <table><thead><tr><th>Name</th><th>Class</th><th>Status</th><th>Note</th></tr></thead>
+                <tbody>${excusedList.map(m => row(m,'excused')).join('')}</tbody></table>` : ''}
+              ${unmarkedList.length > 0 ? `<h2>? Unmarked (${unmarkedList.length})</h2>
+                <table><thead><tr><th>Name</th><th>Class</th><th>Status</th><th>Note</th></tr></thead>
+                <tbody>${unmarkedList.map(m => row(m,'unmarked')).join('')}</tbody></table>` : ''}
+              <p style="color:#94a3b8;font-size:9px;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:8px">
+                Generated ${new Date().toLocaleString()} · Recorded by ${adminEmail}
+              </p>
+              <script>window.onload=()=>{window.print()}</script>
+            </body></html>`);
+            pw.document.close();
+          }} className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-700 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">
+            <Printer size={13}/> Print / PDF
+          </button>
+          <button onClick={onClose} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-black uppercase px-5 py-2.5 rounded-xl text-xs transition-all">Cancel</button>
           <button onClick={saveAttendance} disabled={saving || totalMarked === 0}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase px-8 py-3 rounded-2xl text-sm transition-all disabled:opacity-50">
-            {saving ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase px-6 py-2.5 rounded-xl text-xs transition-all disabled:opacity-50">
+            {saving ? <Loader2 size={13} className="animate-spin"/> : <CheckCircle2 size={13}/>}
             Save Attendance
           </button>
         </div>
