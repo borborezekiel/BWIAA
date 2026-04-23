@@ -310,7 +310,7 @@ export default function AdminPage() {
         {activeTab === "roster"        && <RosterTab     roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "members"       && <MembersTab members={members} setMembers={setMembers} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "dues"          && <DuesTab dues={dues} setDues={setDues} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
-        {activeTab === "events"        && <EventsTab events={events} setEvents={setEvents} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
+        {activeTab === "events"        && <EventsTab events={events} setEvents={setEvents} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config} members={members}/>}
         {activeTab === "audit"         && isHeadAdmin && <AuditLogTab log={auditLog} config={config}/>}
         {activeTab === "audit"         && isHeadAdmin && <AuditTab auditLog={auditLog} config={config}/>}
         {activeTab === "applications"  && <ApplicationsTab applications={applications} setApplications={setApplications} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
@@ -2687,12 +2687,13 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: EVENTS & ANNOUNCEMENTS
 // ─────────────────────────────────────────────────────────────────────────────
-function EventsTab({ events, setEvents, showToast, isHeadAdmin, myChapter, adminEmail, config }: {
+function EventsTab({ events, setEvents, showToast, isHeadAdmin, myChapter, adminEmail, config, members }: {
   events: EventRow[];
   setEvents: React.Dispatch<React.SetStateAction<EventRow[]>>;
   showToast: (m: string, ok?: boolean) => void;
   isHeadAdmin: boolean; myChapter: string | null;
   adminEmail: string; config: ElectionConfig;
+  members: Member[];
 }) {
   const [title, setTitle]       = useState('');
   const [description, setDesc]  = useState('');
@@ -2702,7 +2703,8 @@ function EventsTab({ events, setEvents, showToast, isHeadAdmin, myChapter, admin
   const [location, setLocation] = useState('');
   const [eventType, setType]    = useState<'meeting'|'event'|'announcement'|'other'>('meeting');
   const [saving, setSaving]     = useState(false);
-  const [filter, setFilter]     = useState<'all'|'upcoming'|'past'>('upcoming');
+  const [filter, setFilter]     = useState<'all'|'upcoming'|'past'>('all');
+  const [attendanceEvent, setAttendanceEvent] = useState<EventRow|null>(null);
 
   const visible = events.filter(e => {
     const chMatch = isHeadAdmin || !e.chapter || e.chapter === myChapter || e.chapter === 'All';
@@ -2751,6 +2753,19 @@ function EventsTab({ events, setEvents, showToast, isHeadAdmin, myChapter, admin
 
   return (
     <div className="space-y-8">
+      {/* Attendance taking modal */}
+      {attendanceEvent && (
+        <AttendanceModal
+          event={attendanceEvent}
+          members={members.filter(m =>
+            m.status === 'approved' &&
+            (isHeadAdmin || !attendanceEvent.chapter || m.chapter === attendanceEvent.chapter)
+          )}
+          adminEmail={adminEmail}
+          onClose={() => setAttendanceEvent(null)}
+          showToast={showToast}
+        />
+      )}
       <div>
         <h2 className="text-3xl font-black uppercase italic text-slate-800">Events & Announcements</h2>
         <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
@@ -2881,6 +2896,19 @@ function EventsTab({ events, setEvents, showToast, isHeadAdmin, myChapter, admin
                   <Trash2 size={16}/>
                 </button>
               </div>
+              {/* Take Attendance button — for non-announcement events */}
+              {ev.event_type !== 'announcement' && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <button
+                    onClick={() => setAttendanceEvent(ev)}
+                    className="flex items-center gap-2 bg-slate-900 hover:bg-slate-700 text-white font-black uppercase text-xs px-5 py-3 rounded-2xl transition-all">
+                    <CheckCircle2 size={14}/> Take Attendance
+                  </button>
+                  <p className="text-[10px] text-slate-400 font-bold mt-2">
+                    Mark present, absent or excused for each chapter member
+                  </p>
+                </div>
+              )}
             </Card>
           );
         })}
@@ -2890,9 +2918,223 @@ function EventsTab({ events, setEvents, showToast, isHeadAdmin, myChapter, admin
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TAB: AUDIT LOG
+// ATTENDANCE MODAL
 // ─────────────────────────────────────────────────────────────────────────────
-function AuditTab({ auditLog, config }: { auditLog: any[]; config: ElectionConfig }) {
+function AttendanceModal({ event, members, adminEmail, onClose, showToast }: {
+  event: EventRow;
+  members: Member[];
+  adminEmail: string;
+  onClose: () => void;
+  showToast: (m: string, ok?: boolean) => void;
+}) {
+  const [attendance, setAttendance] = useState<Record<string,'present'|'absent'|'excused'>>({});
+  const [notes, setNotes]           = useState<Record<string,string>>({});
+  const [loading, setLoading]       = useState(true);
+  const [saving, setSaving]         = useState(false);
+  const [mobileView, setMobileView] = useState(false);
+  const [search, setSearch]         = useState('');
+
+  useEffect(() => {
+    supabase.from('attendance').select('*').eq('event_id', event.id).then(({ data }) => {
+      if (data) {
+        const map: Record<string,'present'|'absent'|'excused'> = {};
+        const noteMap: Record<string,string> = {};
+        data.forEach((a: any) => { map[a.member_id] = a.status; noteMap[a.member_id] = a.note ?? ''; });
+        setAttendance(map); setNotes(noteMap);
+      }
+      setLoading(false);
+    });
+  }, [event.id]);
+
+  function setStatus(memberId: string, status: 'present'|'absent'|'excused') {
+    setAttendance(prev => ({ ...prev, [memberId]: status }));
+  }
+
+  function markAll(status: 'present'|'absent'|'excused') {
+    const map: Record<string,'present'|'absent'|'excused'> = {};
+    members.forEach(m => { map[m.id] = status; });
+    setAttendance(map);
+  }
+
+  async function saveAttendance() {
+    setSaving(true);
+    const rows = Object.entries(attendance).map(([member_id, status]) => ({
+      event_id: event.id, member_id, status, note: notes[member_id] || null,
+    }));
+    if (rows.length === 0) { showToast('No attendance marked yet.', false); setSaving(false); return; }
+    const { error } = await supabase.from('attendance').upsert(rows, { onConflict: 'event_id,member_id' });
+    if (error) { showToast(`Failed: ${error.message}`, false); setSaving(false); return; }
+    const present = rows.filter(r => r.status === 'present').length;
+    const absent  = rows.filter(r => r.status === 'absent').length;
+    const excused = rows.filter(r => r.status === 'excused').length;
+    await supabase.from('activity_log').insert([{
+      member_name: adminEmail, chapter: event.chapter ?? 'All',
+      action: `Attendance taken — ${event.title}`,
+      details: `Present: ${present}, Absent: ${absent}, Excused: ${excused}`,
+    }]);
+    showToast(`✓ Attendance saved — ${present} present, ${absent} absent, ${excused} excused.`);
+    setSaving(false); onClose();
+  }
+
+  const filtered = members.filter(m => !search || m.full_name.toLowerCase().includes(search.toLowerCase()));
+  const totalMarked  = Object.keys(attendance).length;
+  const totalPresent = Object.values(attendance).filter(s => s === 'present').length;
+
+  const BTNS = [
+    { status: 'present' as const, label:'P', full:'Present', color:'bg-green-600 text-white',   outline:'border-green-300' },
+    { status: 'absent'  as const, label:'A', full:'Absent',  color:'bg-red-600 text-white',     outline:'border-red-300'   },
+    { status: 'excused' as const, label:'E', full:'Excused', color:'bg-yellow-500 text-white',  outline:'border-yellow-300'},
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/95 z-50 flex flex-col backdrop-blur-sm">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between gap-4 shrink-0">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-black text-slate-900 uppercase text-sm truncate">{event.title}</h3>
+          <p className="text-xs text-slate-400 font-bold">
+            {new Date(event.event_date).toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}
+            {event.event_time && ` · ${event.event_time}`}{event.chapter && ` · ${event.chapter}`}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <button onClick={() => setMobileView(v => !v)}
+            className="hidden md:flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-xs uppercase px-3 py-2 rounded-xl transition-all">
+            {mobileView ? '🖥 Desktop' : '📱 Mobile'}
+          </button>
+          <div className="text-right">
+            <p className="text-xs font-black text-slate-800">{totalMarked}/{members.length} marked</p>
+            <p className="text-[10px] text-green-600 font-bold">{totalPresent} present</p>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-red-600 rounded-xl hover:bg-red-50 transition-all">
+            <XCircle size={20}/>
+          </button>
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex items-center gap-3 flex-wrap shrink-0">
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mark All:</p>
+        {BTNS.map(b => (
+          <button key={b.status} onClick={() => markAll(b.status)}
+            className={`${b.color} font-black text-xs uppercase px-4 py-2 rounded-xl`}>
+            All {b.full}
+          </button>
+        ))}
+        <div className="flex-1"/>
+        <div className="relative">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+            className="pl-8 pr-4 py-2 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-red-600 w-36"/>
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="flex items-center justify-center py-20"><Loader2 className="animate-spin text-red-600" size={32}/></div>
+        ) : mobileView ? (
+          /* Mobile checklist */
+          <div className="divide-y divide-slate-100">
+            {filtered.map(m => {
+              const cur = attendance[m.id];
+              return (
+                <div key={m.id} className="flex items-center gap-4 px-6 py-4 bg-white">
+                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-200 shrink-0">
+                    {m.photo_url
+                      ? <img src={m.photo_url} className="w-full h-full object-cover" alt={m.full_name}/>
+                      : <div className="w-full h-full flex items-center justify-center bg-slate-300"><span className="font-black text-slate-500 text-sm">{m.full_name.charAt(0)}</span></div>
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-black text-slate-800 text-sm truncate">{m.full_name}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">{m.class_name} · {m.year_graduated}</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    {BTNS.map(b => (
+                      <button key={b.status} onClick={() => setStatus(m.id, b.status)}
+                        className={`w-12 h-12 rounded-2xl font-black text-base transition-all border-2 ${cur === b.status ? b.color + ' border-transparent scale-110 shadow-lg' : 'bg-white border-slate-200 text-slate-300'}`}>
+                        {b.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* Desktop table */
+          <div className="p-6">
+            <div className="grid grid-cols-[2fr,auto,auto,auto,2fr] gap-3 px-4 py-3 bg-slate-100 rounded-2xl mb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              <span>Member</span>
+              <span className="text-green-700 text-center px-4">Present</span>
+              <span className="text-red-600 text-center px-4">Absent</span>
+              <span className="text-yellow-600 text-center px-4">Excused</span>
+              <span>Note</span>
+            </div>
+            <div className="space-y-1">
+              {filtered.map(m => {
+                const cur = attendance[m.id];
+                return (
+                  <div key={m.id} className={`grid grid-cols-[2fr,auto,auto,auto,2fr] gap-3 px-4 py-3 rounded-2xl items-center border transition-all ${
+                    cur === 'present' ? 'bg-green-50 border-green-100' :
+                    cur === 'absent'  ? 'bg-red-50 border-red-100' :
+                    cur === 'excused' ? 'bg-yellow-50 border-yellow-100' :
+                    'bg-white hover:bg-slate-50 border-slate-100'
+                  }`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl overflow-hidden bg-slate-200 shrink-0">
+                        {m.photo_url ? <img src={m.photo_url} className="w-full h-full object-cover" alt={m.full_name}/>
+                          : <div className="w-full h-full flex items-center justify-center bg-slate-300"><span className="font-black text-slate-500 text-xs">{m.full_name.charAt(0)}</span></div>}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-black text-slate-800 text-sm truncate">{m.full_name}</p>
+                        <p className="text-[10px] text-slate-400 font-bold">{m.class_name} · {m.year_graduated}</p>
+                      </div>
+                    </div>
+                    {BTNS.map(b => (
+                      <div key={b.status} className="flex justify-center px-3">
+                        <button onClick={() => setStatus(m.id, b.status)}
+                          className={`w-10 h-10 rounded-xl font-black text-sm transition-all border-2 ${
+                            cur === b.status ? b.color + ' border-transparent scale-110 shadow-md' : 'bg-white border-slate-200 text-slate-300 hover:border-slate-400'
+                          }`}>
+                          {b.label}
+                        </button>
+                      </div>
+                    ))}
+                    <input value={notes[m.id] ?? ''} onChange={e => setNotes(prev => ({...prev, [m.id]: e.target.value}))}
+                      placeholder="Optional note..." className="border border-slate-200 focus:border-red-600 rounded-xl px-3 py-2 text-xs font-bold outline-none w-full"/>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="bg-white border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-4 shrink-0">
+        <div className="flex gap-4 text-xs font-bold">
+          <span className="text-green-600 font-black">{Object.values(attendance).filter(s=>s==='present').length} Present</span>
+          <span className="text-red-500 font-black">{Object.values(attendance).filter(s=>s==='absent').length} Absent</span>
+          <span className="text-yellow-600 font-black">{Object.values(attendance).filter(s=>s==='excused').length} Excused</span>
+          <span className="text-slate-400">{members.length - totalMarked} Unmarked</span>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-black uppercase px-6 py-3 rounded-2xl text-sm transition-all">Cancel</button>
+          <button onClick={saveAttendance} disabled={saving || totalMarked === 0}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase px-8 py-3 rounded-2xl text-sm transition-all disabled:opacity-50">
+            {saving ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
+            Save Attendance
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: AUDIT LOG
   const [search, setSearch]       = useState('');
   const [chapterF, setChapterF]   = useState('All');
   const [actionF, setActionF]     = useState('All');
