@@ -246,7 +246,7 @@ export default function MemberDashboard() {
             {id:'dues',     label:'My Dues',  icon:<CreditCard size={14}/>},
             {id:'events',   label:'Events',   icon:<Calendar size={14}/>},
             {id:'activity', label:'Activity', icon:<Activity size={14}/>},
-            {id:'id-card',  label:'ID Card',  icon:<IdCard size={14}/>},
+            {id:'id-card',  label:'ID Card',  icon:<CreditCard size={14}/>},
             {id:'settings', label:'Settings', icon:<Settings size={14}/>},
           ].map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id as any)}
