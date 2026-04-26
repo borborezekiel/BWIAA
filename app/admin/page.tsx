@@ -6,7 +6,7 @@ import {
   ShieldCheck, LogOut, Loader2, BarChart2, Users, UserCheck,
   UserX, List, Settings, PlusCircle, Trash2, Trophy, Activity,
   CheckCircle2, XCircle, Terminal, Crown, Download, Printer,
-  FileText, Sliders, Search, CreditCard, DollarSign, Key, Calendar, MapPin, Bell,
+  FileText, Sliders, Search, CreditCard, DollarSign, Key, Calendar, MapPin, Bell, TrendingUp,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -77,7 +77,7 @@ type ElectionConfig = typeof DEFAULT_CONFIG;
 let CHAPTERS  = DEFAULT_CONFIG.chapters;
 let POSITIONS = DEFAULT_CONFIG.positions_fees.map(p => p.position);
 
-type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications" | "settings" | "members" | "dues" | "events" | "audit";
+type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" | "applications" | "settings" | "members" | "dues" | "events" | "audit" | "investments";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ADMIN COMPONENT
@@ -244,6 +244,7 @@ export default function AdminPage() {
     { id: "dues",          label: `Dues${dues.filter(d=>d.status==='pending').length > 0 ? ` (${dues.filter(d=>d.status==='pending').length})` : ''}`, icon: CreditCard },
     { id: "events",       label: "Events",       icon: Calendar },
     { id: "audit",        label: "Audit Log",    icon: FileText, headOnly: true },
+    { id: "investments",  label: "Investments",  icon: TrendingUp, headOnly: true },
     { id: "applications",  label: `Applications${applications.filter(a=>a.status==='pending').length > 0 ? ` (${applications.filter(a=>a.status==='pending').length})` : ''}`, icon: FileText },
     { id: "admins",        label: "Admins",       icon: Settings, headOnly: true },
     { id: "settings",      label: "Settings",     icon: Settings, headOnly: true },
@@ -310,6 +311,7 @@ export default function AdminPage() {
         {activeTab === "dues"          && <DuesTab dues={dues} setDues={setDues} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
         {activeTab === "events"        && <EventsTab events={events} setEvents={setEvents} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config} members={members}/>}
         {activeTab === "audit"         && isHeadAdmin && <AuditLogTab log={auditLog} config={config}/>}
+        {activeTab === "investments"   && isHeadAdmin && <InvestmentsTab showToast={showToast} isHeadAdmin={isHeadAdmin} members={members} config={config}/>}
         {activeTab === "applications"  && <ApplicationsTab applications={applications} setApplications={setApplications} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "admins"   && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
         {activeTab === "settings" && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline}/>}
@@ -3482,6 +3484,277 @@ function AuditLogTab({ log, config }: { log: any[]; config: ElectionConfig }) {
             {filtered.length} entries shown · Last updated {log[0] ? new Date(log[0].created_at).toLocaleString() : '—'}
           </p>
         )}
+      </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: INVESTMENTS
+// ─────────────────────────────────────────────────────────────────────────────
+function InvestmentsTab({ showToast, isHeadAdmin, members, config }: {
+  showToast: (m: string, ok?: boolean) => void;
+  isHeadAdmin: boolean;
+  members: Member[];
+  config: ElectionConfig;
+}) {
+  const [investments, setInvestments] = useState<any[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [saving, setSaving]           = useState(false);
+  // Form
+  const [title, setTitle]       = useState('');
+  const [category, setCategory] = useState('Stock Market');
+  const [description, setDesc]  = useState('');
+  const [amount, setAmount]     = useState('');
+  const [currency, setCurrency] = useState('USD');
+  const [returnAmount, setReturn] = useState('');
+  const [returnDate, setReturnDate] = useState('');
+  // Distributing
+  const [distributing, setDistributing] = useState<string|null>(null);
+
+  useEffect(() => {
+    supabase.from('investments').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => { if (data) setInvestments(data); setLoading(false); });
+  }, []);
+
+  async function recordInvestment() {
+    if (!title.trim() || !amount) { showToast('Title and amount required.', false); return; }
+    setSaving(true);
+    const { data, error } = await supabase.from('investments').insert([{
+      title: title.trim(), category, description: description.trim()||null,
+      invested_amount: parseFloat(amount), currency,
+      return_amount: returnAmount ? parseFloat(returnAmount) : null,
+      return_date: returnDate || null,
+      status: 'active',
+      created_by: 'admin',
+    }]).select().single();
+    setSaving(false);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    setInvestments(prev => [data, ...prev]);
+    setTitle(''); setAmount(''); setDesc(''); setReturn(''); setReturnDate('');
+    showToast(`✓ Investment "${data.title}" recorded.`);
+  }
+
+  async function distributeReturns(inv: any) {
+    if (!inv.return_amount) { showToast('Enter the return amount first.', false); return; }
+    if (!confirm(`Distribute returns for "${inv.title}"?\n\n70% ($${(inv.return_amount * 0.7).toFixed(2)}) split among eligible members.\n30% ($${(inv.return_amount * 0.3).toFixed(2)}) reinvested.\n\nThis cannot be undone.`)) return;
+
+    setDistributing(inv.id);
+
+    // Get members who have at least one approved dues payment
+    const { data: duesPayers } = await supabase.from('dues_payments')
+      .select('member_id').eq('status', 'approved').not('member_id', 'is', null);
+
+    const eligibleIds = [...new Set((duesPayers ?? []).map((d: any) => d.member_id))];
+    const eligibleMembers = members.filter(m => m.status === 'approved' && eligibleIds.includes(m.id));
+
+    if (eligibleMembers.length === 0) {
+      showToast('No eligible members found. Members must have at least one approved dues payment.', false);
+      setDistributing(null); return;
+    }
+
+    const memberPool   = inv.return_amount * 0.70;
+    const shareEach    = memberPool / eligibleMembers.length;
+    const now          = new Date().toISOString();
+
+    // Insert individual return records for each member
+    const returnRows = eligibleMembers.map(m => ({
+      investment_id: inv.id, member_id: m.id,
+      member_name: m.full_name, share_amount: shareEach,
+      currency: inv.currency, distributed_at: now,
+    }));
+
+    const { error: retErr } = await supabase.from('member_returns').insert(returnRows);
+    if (retErr) { showToast(`Failed to record returns: ${retErr.message}`, false); setDistributing(null); return; }
+
+    // Update investment status
+    await supabase.from('investments').update({
+      status: 'returned', member_share_each: shareEach,
+      eligible_members: eligibleMembers.length, distributed_at: now,
+    }).eq('id', inv.id);
+
+    // Log to activity
+    await supabase.from('activity_log').insert([{
+      member_name: 'System', chapter: 'All',
+      action: `Investment returns distributed — ${inv.title}`,
+      details: `$${shareEach.toFixed(2)} each to ${eligibleMembers.length} members · 30% ($${(inv.return_amount * 0.3).toFixed(2)}) reinvested`,
+    }]);
+
+    setInvestments(prev => prev.map(i => i.id === inv.id
+      ? { ...i, status: 'returned', member_share_each: shareEach, eligible_members: eligibleMembers.length, distributed_at: now }
+      : i));
+    setDistributing(null);
+    showToast(`✓ $${shareEach.toFixed(2)} distributed to each of ${eligibleMembers.length} eligible members.`);
+  }
+
+  async function markReturned(inv: any, retAmount: number) {
+    await supabase.from('investments').update({ return_amount: retAmount, status: 'returned' }).eq('id', inv.id);
+    setInvestments(prev => prev.map(i => i.id === inv.id ? {...i, return_amount: retAmount, status: 'returned'} : i));
+    showToast(`Return amount recorded. Click Distribute to send shares to members.`);
+  }
+
+  const CATEGORIES = ['Stock Market','Transportation','Entertainment','Real Estate','Other'];
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-3xl font-black uppercase italic text-slate-800">Investment Portfolio</h2>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+            Record investments · distribute returns · 70% members / 30% reinvested
+          </p>
+        </div>
+        <Link href="/investments" className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
+          <TrendingUp size={14}/> Member View
+        </Link>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label:'Total Invested', value:`$${investments.reduce((s,i)=>s+i.invested_amount,0).toLocaleString()}`, bg:'bg-blue-600' },
+          { label:'Total Returned', value:`$${investments.filter(i=>i.status==='returned').reduce((s,i)=>s+(i.return_amount??0),0).toLocaleString()}`, bg:'bg-green-600' },
+          { label:'Active',         value:String(investments.filter(i=>i.status==='active').length), bg:'bg-amber-600' },
+          { label:'Completed',      value:String(investments.filter(i=>i.status==='returned').length), bg:'bg-slate-700' },
+        ].map(s => (
+          <div key={s.label} className={`${s.bg} text-white rounded-3xl p-5 text-center shadow-lg`}>
+            <p className="text-2xl font-black">{s.value}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest opacity-80 mt-1">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Record new investment */}
+      <Card accent="green">
+        <SectionTitle>Record New Investment</SectionTitle>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="md:col-span-2">
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Investment Title *</label>
+            <input value={title} onChange={e=>setTitle(e.target.value)}
+              placeholder="e.g. Tech Stock Portfolio Q1 2026, Shuttle Bus Route..."
+              className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Category</label>
+            <select value={category} onChange={e=>setCategory(e.target.value)}
+              className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none">
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Amount Invested *</label>
+            <input type="number" value={amount} onChange={e=>setAmount(e.target.value)}
+              placeholder="0.00" className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Return Amount (if known)</label>
+            <input type="number" value={returnAmount} onChange={e=>setReturn(e.target.value)}
+              placeholder="0.00 — fill in when return is received"
+              className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Return Date</label>
+            <input type="date" value={returnDate} onChange={e=>setReturnDate(e.target.value)}
+              className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Description (optional)</label>
+            <textarea value={description} onChange={e=>setDesc(e.target.value)} rows={2}
+              placeholder="Brief description of this investment..."
+              className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none resize-none"/>
+          </div>
+        </div>
+        <button onClick={recordInvestment} disabled={saving}
+          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase px-8 py-4 rounded-2xl transition-all disabled:opacity-50">
+          {saving ? <Loader2 size={16} className="animate-spin"/> : <TrendingUp size={16}/>}
+          Record Investment
+        </button>
+      </Card>
+
+      {/* Distribution formula info */}
+      <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-5 flex gap-4 items-start">
+        <div className="text-2xl shrink-0">📊</div>
+        <div>
+          <p className="font-black text-green-800 uppercase text-sm">Distribution Formula</p>
+          <p className="text-green-700 text-xs font-bold mt-1 leading-relaxed">
+            When you click <strong>Distribute Returns</strong> on an investment: 70% of the return is split equally among all
+            active members who have <strong>at least one approved dues payment</strong>. 30% is noted as reinvested.
+            Each member's share is recorded in their account and visible in the Investments page.
+          </p>
+        </div>
+      </div>
+
+      {/* Investments list */}
+      <Card>
+        <SectionTitle>All Investments ({investments.length})</SectionTitle>
+        {loading ? (
+          <div className="flex justify-center py-12"><Loader2 className="animate-spin text-slate-400" size={32}/></div>
+        ) : investments.length === 0 ? (
+          <p className="text-slate-400 font-bold text-sm text-center py-8">No investments recorded yet.</p>
+        ) : investments.map(inv => (
+          <div key={inv.id} className="border-2 border-slate-100 rounded-2xl overflow-hidden mb-3">
+            <div className="p-5">
+              <div className="flex items-start justify-between gap-4 mb-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg text-white ${
+                      inv.category==='Stock Market'?'bg-blue-600':inv.category==='Transportation'?'bg-amber-600':
+                      inv.category==='Entertainment'?'bg-purple-600':inv.category==='Real Estate'?'bg-green-600':'bg-slate-600'
+                    }`}>{inv.category}</span>
+                    <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${
+                      inv.status==='returned'?'bg-green-50 text-green-700 border-green-200':
+                      inv.status==='active'  ?'bg-blue-50 text-blue-700 border-blue-200':
+                      'bg-amber-50 text-amber-700 border-amber-200'}`}>{inv.status}</span>
+                  </div>
+                  <p className="font-black text-slate-800 uppercase">{inv.title}</p>
+                  {inv.description && <p className="text-xs text-slate-500 font-bold mt-0.5">{inv.description}</p>}
+                  <div className="flex flex-wrap gap-4 mt-2 text-xs font-bold text-slate-500">
+                    <span>Invested: <strong className="text-slate-800">${inv.invested_amount.toLocaleString()}</strong></span>
+                    {inv.return_amount && <span>Return: <strong className="text-green-700">${inv.return_amount.toLocaleString()}</strong></span>}
+                    {inv.member_share_each && <span>Per member: <strong className="text-green-700">${inv.member_share_each.toFixed(2)}</strong></span>}
+                    {inv.eligible_members && <span>To <strong>{inv.eligible_members}</strong> members</span>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Return input + distribute */}
+              {inv.status !== 'returned' && (
+                <div className="flex gap-3 flex-wrap mt-3 pt-3 border-t border-slate-100">
+                  <div className="flex gap-2 flex-1 min-w-0">
+                    <input
+                      type="number"
+                      placeholder="Enter actual return amount..."
+                      defaultValue={inv.return_amount ?? ''}
+                      id={`ret-${inv.id}`}
+                      className="flex-1 border-2 border-slate-200 focus:border-green-600 rounded-2xl px-4 py-2.5 font-bold outline-none text-sm min-w-0"/>
+                    <button onClick={() => {
+                      const el = document.getElementById(`ret-${inv.id}`) as HTMLInputElement;
+                      if (!el?.value) { showToast('Enter return amount first.', false); return; }
+                      markReturned(inv, parseFloat(el.value));
+                    }} className="bg-slate-700 hover:bg-slate-600 text-white font-black uppercase text-xs px-4 py-2.5 rounded-2xl transition-all shrink-0">
+                      Save
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => distributeReturns(inv)}
+                    disabled={!inv.return_amount || distributing === inv.id}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase text-xs px-5 py-2.5 rounded-2xl transition-all disabled:opacity-50 shrink-0">
+                    {distributing === inv.id ? <Loader2 size={13} className="animate-spin"/> : <TrendingUp size={13}/>}
+                    Distribute 70/30
+                  </button>
+                </div>
+              )}
+
+              {inv.status === 'returned' && inv.distributed_at && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <p className="text-xs text-green-600 font-bold">
+                    ✓ Distributed on {new Date(inv.distributed_at).toLocaleDateString()} · ${inv.member_share_each?.toFixed(2)} per member · {inv.eligible_members} members
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
       </Card>
     </div>
   );

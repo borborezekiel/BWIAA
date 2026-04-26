@@ -6,7 +6,7 @@ import {
   User, CreditCard, Activity, LogOut, CheckCircle2, Clock,
   XCircle, Sun, Moon, Monitor, ChevronDown, ChevronUp,
   Settings, Loader2, Receipt, Lock, Key, Calendar, MapPin, Plus,
-  Download, Printer, Users,
+  Download, Printer, Users, TrendingUp,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -318,14 +318,14 @@ export default function MemberDashboard() {
             </div>
 
             {member.status === 'approved' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Link href="/dues" className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-red-400 transition-all shadow-sm`}>
                   <div className="w-12 h-12 bg-green-600 rounded-2xl flex items-center justify-center shrink-0">
                     <CreditCard size={20} className="text-white"/>
                   </div>
                   <div>
                     <p className={`font-black ${text} uppercase`}>Pay Dues</p>
-                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>Submit chapter dues payment</p>
+                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>Submit chapter dues</p>
                   </div>
                 </Link>
                 <Link href="/finances" className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-red-400 transition-all shadow-sm`}>
@@ -333,8 +333,17 @@ export default function MemberDashboard() {
                     <Receipt size={20} className="text-white"/>
                   </div>
                   <div>
-                    <p className={`font-black ${text} uppercase`}>Chapter Finances</p>
-                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>View financial records</p>
+                    <p className={`font-black ${text} uppercase`}>Finances</p>
+                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>Chapter financial records</p>
+                  </div>
+                </Link>
+                <Link href="/investments" className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-green-400 transition-all shadow-sm`}>
+                  <div className="w-12 h-12 bg-green-700 rounded-2xl flex items-center justify-center shrink-0">
+                    <TrendingUp size={20} className="text-white"/>
+                  </div>
+                  <div>
+                    <p className={`font-black ${text} uppercase`}>Investments</p>
+                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>Portfolio & my returns</p>
                   </div>
                 </Link>
               </div>

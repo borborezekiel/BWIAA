@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import {
   Users, Search, Loader2, ChevronDown, ChevronUp,
   LogIn, UserPlus, LayoutDashboard, Globe, CreditCard,
-  DollarSign, Trophy, Vote, Sun, Moon, Monitor
+  DollarSign, Trophy, Vote, Sun, Moon, Monitor, TrendingUp
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -165,12 +165,13 @@ export default function MembersPage() {
         </div>
 
         {/* ── Quick links — colorful, at the top ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {[
-            { href:'/dues',     label:'Pay Dues',         icon:<CreditCard size={20}/>, color:'bg-green-600',  hover:'hover:bg-green-700' },
-            { href:'/finances', label:'Finances',          icon:<DollarSign size={20}/>, color:'bg-blue-600',   hover:'hover:bg-blue-700'  },
-            { href:'/history',  label:'Election History',  icon:<Trophy size={20}/>,     color:'bg-amber-500',  hover:'hover:bg-amber-600' },
-            { href:'/',         label:'Voting Portal',     icon:<Vote size={20}/>,       color:'bg-red-600',    hover:'hover:bg-red-700'   },
+            { href:'/dues',        label:'Pay Dues',        icon:<CreditCard size={20}/>, color:'bg-green-600',  hover:'hover:bg-green-700'  },
+            { href:'/finances',    label:'Finances',         icon:<DollarSign size={20}/>, color:'bg-blue-600',   hover:'hover:bg-blue-700'   },
+            { href:'/investments', label:'Investments',      icon:<TrendingUp size={20}/>, color:'bg-emerald-700',hover:'hover:bg-emerald-800' },
+            { href:'/history',     label:'Election History', icon:<Trophy size={20}/>,     color:'bg-amber-500',  hover:'hover:bg-amber-600'  },
+            { href:'/',            label:'Voting Portal',    icon:<Vote size={20}/>,       color:'bg-red-600',    hover:'hover:bg-red-700'    },
           ].map(({ href, label, icon, color, hover }) => (
             <Link key={href} href={href}
               className={`${color} ${hover} text-white rounded-3xl p-5 flex flex-col items-center gap-3 text-center transition-all shadow-lg`}>
