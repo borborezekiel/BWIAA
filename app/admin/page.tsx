@@ -43,6 +43,13 @@ interface EventRow {
   chapter: string|null; event_date: string; event_time: string|null;
   location: string|null; event_type: string; created_by: string; created_at: string;
 }
+interface InvestmentRow {
+  id: string; title: string; category: string; description: string|null;
+  invested_amount: number; currency: string; return_amount: number|null;
+  return_date: string|null; status: string; distributed_at: string|null;
+  created_by: string; created_at: string; approved_by: string|null;
+  total_points_used: number|null; member_count_used: number|null;
+}
 
 // ─── Dynamic Config (loaded from election_settings, overrides these defaults) ──
 const HEAD_ADMIN_EMAIL = "ezekielborbor17@gmail.com";
@@ -3492,116 +3499,246 @@ function AuditLogTab({ log, config }: { log: any[]; config: ElectionConfig }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: INVESTMENTS
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// INVESTMENTS TAB — Weighted tier distribution (Bronze/Silver/Gold/Platinum)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Tier definitions — mirrors investments_page.tsx
+const INVEST_TIERS = [
+  { name:'Platinum', minLRD:5000, points:5, color:'text-purple-700', bg:'bg-purple-50', border:'border-purple-200', pill:'bg-purple-600' },
+  { name:'Gold',     minLRD:2000, points:3, color:'text-amber-700',  bg:'bg-amber-50',  border:'border-amber-200',  pill:'bg-amber-500'  },
+  { name:'Silver',   minLRD:500,  points:2, color:'text-slate-600',  bg:'bg-slate-50',  border:'border-slate-200',  pill:'bg-slate-500'  },
+  { name:'Bronze',   minLRD:0,    points:1, color:'text-orange-700', bg:'bg-orange-50', border:'border-orange-200', pill:'bg-orange-500' },
+];
+
+function getInvestTier(totalLRD: number) {
+  return INVEST_TIERS.find(t => totalLRD >= t.minLRD) ?? INVEST_TIERS[INVEST_TIERS.length - 1];
+}
+
+function isActiveDuesPayer(lastDate: string | null): boolean {
+  if (!lastDate) return false;
+  return (Date.now() - new Date(lastDate).getTime()) / 86400000 <= 90;
+}
+
 function InvestmentsTab({ showToast, isHeadAdmin, members, config }: {
   showToast: (m: string, ok?: boolean) => void;
-  isHeadAdmin: boolean;
-  members: Member[];
-  config: ElectionConfig;
+  isHeadAdmin: boolean; members: Member[]; config: ElectionConfig;
 }) {
   const [investments, setInvestments] = useState<any[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [saving, setSaving]           = useState(false);
+  const [memberStats, setMemberStats] = useState<any[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [distributing, setDistributing] = useState<string|null>(null);
+  const [showPreview, setShowPreview]   = useState<string|null>(null);
+  const [previewRows, setPreviewRows]   = useState<any[]>([]);
   // Form
   const [title, setTitle]       = useState('');
   const [category, setCategory] = useState('Stock Market');
   const [description, setDesc]  = useState('');
   const [amount, setAmount]     = useState('');
-  const [currency, setCurrency] = useState('USD');
   const [returnAmount, setReturn] = useState('');
-  const [returnDate, setReturnDate] = useState('');
-  // Distributing
-  const [distributing, setDistributing] = useState<string|null>(null);
+  const [returnDate, setRetDate]  = useState('');
 
   useEffect(() => {
     supabase.from('investments').select('*').order('created_at', { ascending: false })
-      .then(({ data }) => { if (data) setInvestments(data); setLoading(false); });
-  }, []);
+      .then(({ data }) => { if (data) setInvestments(data); });
+
+    // Load all approved members with their dues history to compute tiers
+    (async () => {
+      const approvedMembers = members.filter(m => m.status === 'approved');
+      const stats = await Promise.all(approvedMembers.map(async (m) => {
+        const { data: dues } = await supabase.from('dues_payments')
+          .select('amount,currency,created_at').eq('member_id', m.id).eq('status','approved')
+          .order('created_at', { ascending: false });
+        const totalLRD = (dues ?? []).reduce((s: number, d: any) =>
+          s + (d.currency === 'LRD' ? d.amount : d.amount * 190), 0);
+        const lastDate = dues && dues.length > 0 ? dues[0].created_at : null;
+        const tier     = getInvestTier(totalLRD);
+        const active   = isActiveDuesPayer(lastDate);
+        return { ...m, totalLRD, tier, active, lastDate };
+      }));
+      setMemberStats(stats);
+      setLoading(false);
+    })();
+  }, [members]);
+
+  // Build distribution preview for an investment
+  async function buildPreview(inv: any, retAmt: number) {
+    const eligible = memberStats.filter(m => m.active && m.status === 'approved');
+    const pool70   = retAmt * 0.70;
+    const totalPts = eligible.reduce((s: number, m: any) => s + m.tier.points, 0);
+    const perPoint = totalPts > 0 ? pool70 / totalPts : 0;
+    const rows = eligible.map((m: any) => ({
+      id: m.id, name: m.full_name, chapter: m.chapter,
+      tier: m.tier.name, points: m.tier.points,
+      share: perPoint * m.tier.points,
+      totalLRD: m.totalLRD,
+    })).sort((a: any, b: any) => b.share - a.share);
+    setPreviewRows(rows);
+    setShowPreview(inv.id);
+  }
 
   async function recordInvestment() {
     if (!title.trim() || !amount) { showToast('Title and amount required.', false); return; }
     setSaving(true);
     const { data, error } = await supabase.from('investments').insert([{
-      title: title.trim(), category, description: description.trim()||null,
-      invested_amount: parseFloat(amount), currency,
+      title: title.trim(), category, description: description.trim() || null,
+      invested_amount: parseFloat(amount), currency: 'USD',
       return_amount: returnAmount ? parseFloat(returnAmount) : null,
-      return_date: returnDate || null,
-      status: 'active',
-      created_by: 'admin',
+      return_date: returnDate || null, status: 'active', created_by: 'admin',
     }]).select().single();
     setSaving(false);
     if (error) { showToast(`Failed: ${error.message}`, false); return; }
     setInvestments(prev => [data, ...prev]);
-    setTitle(''); setAmount(''); setDesc(''); setReturn(''); setReturnDate('');
-    showToast(`✓ Investment "${data.title}" recorded.`);
+    setTitle(''); setAmount(''); setDesc(''); setReturn(''); setRetDate('');
+    showToast(`✓ "${data.title}" recorded.`);
   }
 
-  async function distributeReturns(inv: any) {
-    if (!inv.return_amount) { showToast('Enter the return amount first.', false); return; }
-    if (!confirm(`Distribute returns for "${inv.title}"?\n\n70% ($${(inv.return_amount * 0.7).toFixed(2)}) split among eligible members.\n30% ($${(inv.return_amount * 0.3).toFixed(2)}) reinvested.\n\nThis cannot be undone.`)) return;
+  async function updateReturn(inv: any, retAmt: number) {
+    const { error } = await supabase.from('investments').update({ return_amount: retAmt }).eq('id', inv.id);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    setInvestments(prev => prev.map(i => i.id === inv.id ? {...i, return_amount: retAmt} : i));
+    showToast('Return amount saved. Preview then distribute when ready.');
+  }
+
+  async function distributeWeighted(inv: any) {
+    if (!inv.return_amount) { showToast('Save the return amount first.', false); return; }
+    const eligible = memberStats.filter(m => m.active && m.status === 'approved');
+    if (eligible.length === 0) { showToast('No active eligible members found.', false); return; }
+
+    const pool70   = inv.return_amount * 0.70;
+    const reserve  = inv.return_amount * 0.30;
+    const totalPts = eligible.reduce((s: number, m: any) => s + m.tier.points, 0);
+    const perPoint = pool70 / totalPts;
+
+    if (!confirm(
+      `Distribute returns for "${inv.title}"?\n\n` +
+      `Total return: $${inv.return_amount.toLocaleString()}\n` +
+      `Member pool (70%): $${pool70.toFixed(2)}\n` +
+      `Chapter reserve (30%): $${reserve.toFixed(2)}\n` +
+      `Eligible members: ${eligible.length}\n` +
+      `Total weight points: ${totalPts}\n` +
+      `Value per point: $${perPoint.toFixed(2)}\n\n` +
+      `This cannot be undone.`
+    )) return;
 
     setDistributing(inv.id);
+    const now = new Date().toISOString();
 
-    // Get members who have at least one approved dues payment
-    const { data: duesPayers } = await supabase.from('dues_payments')
-      .select('member_id').eq('status', 'approved').not('member_id', 'is', null);
-
-    const eligibleIds = [...new Set((duesPayers ?? []).map((d: any) => d.member_id))];
-    const eligibleMembers = members.filter(m => m.status === 'approved' && eligibleIds.includes(m.id));
-
-    if (eligibleMembers.length === 0) {
-      showToast('No eligible members found. Members must have at least one approved dues payment.', false);
-      setDistributing(null); return;
-    }
-
-    const memberPool   = inv.return_amount * 0.70;
-    const shareEach    = memberPool / eligibleMembers.length;
-    const now          = new Date().toISOString();
-
-    // Insert individual return records for each member
-    const returnRows = eligibleMembers.map(m => ({
+    // Insert weighted return record for each eligible member
+    const returnRows = eligible.map((m: any) => ({
       investment_id: inv.id, member_id: m.id,
-      member_name: m.full_name, share_amount: shareEach,
-      currency: inv.currency, distributed_at: now,
+      member_name: m.full_name, tier: m.tier.name,
+      points: m.tier.points, share_amount: perPoint * m.tier.points,
+      currency: 'USD', distributed_at: now,
     }));
 
     const { error: retErr } = await supabase.from('member_returns').insert(returnRows);
-    if (retErr) { showToast(`Failed to record returns: ${retErr.message}`, false); setDistributing(null); return; }
+    if (retErr) { showToast(`Failed: ${retErr.message}`, false); setDistributing(null); return; }
 
     // Update investment status
     await supabase.from('investments').update({
-      status: 'returned', member_share_each: shareEach,
-      eligible_members: eligibleMembers.length, distributed_at: now,
+      status: 'returned', distributed_at: now,
+      total_points_used: totalPts, member_count_used: eligible.length,
     }).eq('id', inv.id);
 
-    // Log to activity
+    // Log to audit
     await supabase.from('activity_log').insert([{
       member_name: 'System', chapter: 'All',
-      action: `Investment returns distributed — ${inv.title}`,
-      details: `$${shareEach.toFixed(2)} each to ${eligibleMembers.length} members · 30% ($${(inv.return_amount * 0.3).toFixed(2)}) reinvested`,
+      action: `Investment distributed — ${inv.title}`,
+      details: `$${pool70.toFixed(2)} (70%) split across ${eligible.length} members (${totalPts} pts) · $${reserve.toFixed(2)} (30%) to chapter reserve`,
     }]);
 
-    setInvestments(prev => prev.map(i => i.id === inv.id
-      ? { ...i, status: 'returned', member_share_each: shareEach, eligible_members: eligibleMembers.length, distributed_at: now }
-      : i));
-    setDistributing(null);
-    showToast(`✓ $${shareEach.toFixed(2)} distributed to each of ${eligibleMembers.length} eligible members.`);
-  }
-
-  async function markReturned(inv: any, retAmount: number) {
-    await supabase.from('investments').update({ return_amount: retAmount, status: 'returned' }).eq('id', inv.id);
-    setInvestments(prev => prev.map(i => i.id === inv.id ? {...i, return_amount: retAmount, status: 'returned'} : i));
-    showToast(`Return amount recorded. Click Distribute to send shares to members.`);
+    setInvestments(prev => prev.map(i =>
+      i.id === inv.id ? {...i, status:'returned', distributed_at:now, total_points_used:totalPts, member_count_used:eligible.length} : i
+    ));
+    setDistributing(null); setShowPreview(null);
+    showToast(`✓ Distributed: $${pool70.toFixed(2)} across ${eligible.length} members. $${reserve.toFixed(2)} to chapter reserve.`);
   }
 
   const CATEGORIES = ['Stock Market','Transportation','Entertainment','Real Estate','Other'];
 
+  // Eligible member stats summary
+  const activeMembers   = memberStats.filter(m => m.active);
+  const inactiveMembers = memberStats.filter(m => !m.active);
+  const totalPoints     = activeMembers.reduce((s, m) => s + m.tier.points, 0);
+
   return (
     <div className="space-y-8">
+
+      {/* Distribution Preview Modal */}
+      {showPreview && previewRows.length > 0 && (
+        <div className="fixed inset-0 bg-slate-900/95 z-50 flex flex-col backdrop-blur-sm overflow-hidden">
+          <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
+            <div>
+              <h3 className="font-black text-slate-900 uppercase text-sm">Distribution Preview</h3>
+              <p className="text-xs text-slate-400 font-bold">{previewRows.length} active members · {previewRows.reduce((s,r)=>s+r.points,0)} total points</p>
+            </div>
+            <button onClick={() => setShowPreview(null)} className="text-slate-400 hover:text-red-600 p-2 rounded-xl">
+              <XCircle size={20}/>
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6">
+            {/* Tier summary */}
+            <div className="grid grid-cols-4 gap-3 mb-6">
+              {INVEST_TIERS.map(t => {
+                const count = previewRows.filter(r => r.tier === t.name).length;
+                return (
+                  <div key={t.name} className={`${t.bg} border ${t.border} rounded-2xl p-4 text-center`}>
+                    <p className={`font-black text-lg ${t.color}`}>{count}</p>
+                    <p className={`text-xs font-black ${t.color} uppercase`}>{t.name}</p>
+                    <p className="text-slate-500 text-[10px] font-bold">{t.points}pt each</p>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Member table */}
+            <div className="bg-slate-50 rounded-2xl overflow-hidden border border-slate-200">
+              <div className="grid grid-cols-5 gap-2 px-4 py-3 bg-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                <span className="col-span-2">Member</span><span>Tier</span><span>Points</span><span className="text-right">Share</span>
+              </div>
+              {previewRows.map((r, i) => {
+                const tier = INVEST_TIERS.find(t => t.name === r.tier) ?? INVEST_TIERS[INVEST_TIERS.length-1];
+                return (
+                  <div key={r.id} className={`grid grid-cols-5 gap-2 px-4 py-3 ${i < previewRows.length-1 ? 'border-b border-slate-100' : ''} hover:bg-white transition-all`}>
+                    <div className="col-span-2">
+                      <p className="font-black text-slate-800 text-sm truncate">{r.name}</p>
+                      <p className="text-[10px] text-slate-400 font-bold">{r.chapter}</p>
+                    </div>
+                    <span className={`text-xs font-black ${tier.color} self-center`}>{r.tier}</span>
+                    <span className="text-xs font-black text-slate-600 self-center">{r.points}pt</span>
+                    <span className="text-sm font-black text-green-700 text-right self-center">${r.share.toFixed(2)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="bg-white border-t border-slate-200 px-6 py-4 flex justify-between items-center shrink-0">
+            <div className="text-sm font-bold text-slate-600">
+              Total distributed: <strong className="text-green-700">${previewRows.reduce((s,r)=>s+r.share,0).toFixed(2)}</strong>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowPreview(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-black uppercase px-6 py-3 rounded-2xl text-sm transition-all">
+                Cancel
+              </button>
+              <button onClick={() => {
+                const inv = investments.find(i => i.id === showPreview);
+                if (inv) distributeWeighted(inv);
+              }} disabled={!!distributing}
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase px-8 py-3 rounded-2xl text-sm transition-all disabled:opacity-50">
+                {distributing ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
+                Confirm & Distribute
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-3xl font-black uppercase italic text-slate-800">Investment Portfolio</h2>
+          <h2 className="text-3xl font-black uppercase italic text-slate-800">Chapter Growth Fund</h2>
           <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-            Record investments · distribute returns · 70% members / 30% reinvested
+            70% weighted to members · 30% chapter reserve · Tier-based distribution
           </p>
         </div>
         <Link href="/investments" className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-5 py-3 rounded-2xl transition-all">
@@ -3609,60 +3746,106 @@ function InvestmentsTab({ showToast, isHeadAdmin, members, config }: {
         </Link>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label:'Total Invested', value:`$${investments.reduce((s,i)=>s+i.invested_amount,0).toLocaleString()}`, bg:'bg-blue-600' },
-          { label:'Total Returned', value:`$${investments.filter(i=>i.status==='returned').reduce((s,i)=>s+(i.return_amount??0),0).toLocaleString()}`, bg:'bg-green-600' },
-          { label:'Active',         value:String(investments.filter(i=>i.status==='active').length), bg:'bg-amber-600' },
-          { label:'Completed',      value:String(investments.filter(i=>i.status==='returned').length), bg:'bg-slate-700' },
-        ].map(s => (
-          <div key={s.label} className={`${s.bg} text-white rounded-3xl p-5 text-center shadow-lg`}>
-            <p className="text-2xl font-black">{s.value}</p>
-            <p className="text-[10px] font-bold uppercase tracking-widest opacity-80 mt-1">{s.label}</p>
+      {/* Member eligibility overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <Card>
+          <SectionTitle>Active Members ({activeMembers.length}) — Eligible</SectionTitle>
+          <p className="text-xs text-slate-400 font-bold mb-4">Paid dues within last 90 days · Total pool weight: <strong className="text-slate-700">{totalPoints} points</strong></p>
+          {loading ? <div className="flex justify-center py-6"><Loader2 className="animate-spin text-slate-400" size={24}/></div> : (
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {activeMembers.map((m: any) => (
+                <div key={m.id} className={`flex items-center justify-between p-3 rounded-2xl ${m.tier.bg} border ${m.tier.border}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl overflow-hidden bg-slate-200 shrink-0">
+                      {m.photo_url ? <img src={m.photo_url} className="w-full h-full object-cover" alt={m.full_name}/> :
+                        <div className="w-full h-full flex items-center justify-center bg-slate-300"><span className="font-black text-slate-500 text-xs">{m.full_name.charAt(0)}</span></div>}
+                    </div>
+                    <div>
+                      <p className="font-black text-slate-800 text-sm">{m.full_name}</p>
+                      <p className="text-[10px] text-slate-500 font-bold">{m.totalLRD.toLocaleString()} LRD total</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className={`${m.tier.pill} text-white text-[10px] font-black uppercase px-2 py-1 rounded-lg`}>{m.tier.name}</span>
+                    <p className={`text-[10px] font-black ${m.tier.color} mt-0.5`}>{m.tier.points}pt</p>
+                  </div>
+                </div>
+              ))}
+              {activeMembers.length === 0 && <p className="text-slate-400 text-sm font-bold text-center py-4">No active members found.</p>}
+            </div>
+          )}
+        </Card>
+
+        <Card>
+          <SectionTitle>Paused Members ({inactiveMembers.length})</SectionTitle>
+          <p className="text-xs text-slate-400 font-bold mb-4">No approved dues in 90+ days — excluded from distributions</p>
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {inactiveMembers.map((m: any) => (
+              <div key={m.id} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200 opacity-60">
+                <div>
+                  <p className="font-black text-slate-800 text-sm">{m.full_name}</p>
+                  <p className="text-[10px] text-slate-400 font-bold">
+                    Last dues: {m.lastDate ? new Date(m.lastDate).toLocaleDateString() : 'Never'}
+                  </p>
+                </div>
+                <span className="bg-slate-400 text-white text-[10px] font-black uppercase px-2 py-1 rounded-lg">Paused</span>
+              </div>
+            ))}
+            {inactiveMembers.length === 0 && <p className="text-green-600 text-sm font-bold text-center py-4">✓ All members are active!</p>}
           </div>
-        ))}
+        </Card>
       </div>
 
-      {/* Record new investment */}
+      {/* Record investment */}
       <Card accent="green">
         <SectionTitle>Record New Investment</SectionTitle>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div className="md:col-span-2">
-            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Investment Title *</label>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Title *</label>
             <input value={title} onChange={e=>setTitle(e.target.value)}
-              placeholder="e.g. Tech Stock Portfolio Q1 2026, Shuttle Bus Route..."
+              placeholder="e.g. Tech Stock Portfolio Q2, Harbel Shuttle Bus Route..."
               className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
           </div>
           <div>
             <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Category</label>
             <select value={category} onChange={e=>setCategory(e.target.value)}
               className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none">
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Amount Invested *</label>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Capital Invested (USD) *</label>
             <input type="number" value={amount} onChange={e=>setAmount(e.target.value)}
-              placeholder="0.00" className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
-          </div>
-          <div>
-            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Return Amount (if known)</label>
-            <input type="number" value={returnAmount} onChange={e=>setReturn(e.target.value)}
-              placeholder="0.00 — fill in when return is received"
+              placeholder="0.00"
               className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
           </div>
           <div>
-            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Return Date</label>
-            <input type="date" value={returnDate} onChange={e=>setReturnDate(e.target.value)}
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Return Amount (fill when received)</label>
+            <input type="number" value={returnAmount} onChange={e=>setReturn(e.target.value)}
+              placeholder="0.00"
+              className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
+          </div>
+          <div>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Expected Return Date</label>
+            <input type="date" value={returnDate} onChange={e=>setRetDate(e.target.value)}
               className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
           </div>
           <div className="md:col-span-2">
-            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Description (optional)</label>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Description</label>
             <textarea value={description} onChange={e=>setDesc(e.target.value)} rows={2}
-              placeholder="Brief description of this investment..."
+              placeholder="Brief description..."
               className="w-full border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-4 font-bold outline-none resize-none"/>
           </div>
+        </div>
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-4">
+          <p className="text-green-800 font-black text-xs uppercase tracking-widest">Distribution Formula</p>
+          <p className="text-green-700 text-xs font-bold mt-1 leading-relaxed">
+            When you distribute: 70% of return ÷ total weight points × each member's points.
+            Currently <strong>{totalPoints} total points</strong> across <strong>{activeMembers.length} active members</strong>.
+            {totalPoints > 0 && returnAmount && (
+              <span> At ${returnAmount}: pool = <strong>${(parseFloat(returnAmount)*0.7).toFixed(2)}</strong> · per point = <strong>${(parseFloat(returnAmount)*0.7/totalPoints).toFixed(2)}</strong></span>
+            )}
+          </p>
         </div>
         <button onClick={recordInvestment} disabled={saving}
           className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase px-8 py-4 rounded-2xl transition-all disabled:opacity-50">
@@ -3671,75 +3854,71 @@ function InvestmentsTab({ showToast, isHeadAdmin, members, config }: {
         </button>
       </Card>
 
-      {/* Distribution formula info */}
-      <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-5 flex gap-4 items-start">
-        <div className="text-2xl shrink-0">📊</div>
-        <div>
-          <p className="font-black text-green-800 uppercase text-sm">Distribution Formula</p>
-          <p className="text-green-700 text-xs font-bold mt-1 leading-relaxed">
-            When you click <strong>Distribute Returns</strong> on an investment: 70% of the return is split equally among all
-            active members who have <strong>at least one approved dues payment</strong>. 30% is noted as reinvested.
-            Each member's share is recorded in their account and visible in the Investments page.
-          </p>
-        </div>
-      </div>
-
-      {/* Investments list */}
+      {/* Portfolio list */}
       <Card>
-        <SectionTitle>All Investments ({investments.length})</SectionTitle>
-        {loading ? (
-          <div className="flex justify-center py-12"><Loader2 className="animate-spin text-slate-400" size={32}/></div>
-        ) : investments.length === 0 ? (
-          <p className="text-slate-400 font-bold text-sm text-center py-8">No investments recorded yet.</p>
-        ) : investments.map(inv => (
-          <div key={inv.id} className="border-2 border-slate-100 rounded-2xl overflow-hidden mb-3">
+        <SectionTitle>Portfolio ({investments.length} investments)</SectionTitle>
+        {loading ? <div className="flex justify-center py-8"><Loader2 className="animate-spin text-slate-400" size={28}/></div>
+        : investments.length === 0 ? <p className="text-slate-400 font-bold text-sm text-center py-8">No investments recorded yet.</p>
+        : investments.map(inv => (
+          <div key={inv.id} className="border-2 border-slate-100 rounded-2xl mb-3 overflow-hidden">
             <div className="p-5">
-              <div className="flex items-start justify-between gap-4 mb-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg text-white ${
-                      inv.category==='Stock Market'?'bg-blue-600':inv.category==='Transportation'?'bg-amber-600':
-                      inv.category==='Entertainment'?'bg-purple-600':inv.category==='Real Estate'?'bg-green-600':'bg-slate-600'
-                    }`}>{inv.category}</span>
-                    <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${
-                      inv.status==='returned'?'bg-green-50 text-green-700 border-green-200':
-                      inv.status==='active'  ?'bg-blue-50 text-blue-700 border-blue-200':
-                      'bg-amber-50 text-amber-700 border-amber-200'}`}>{inv.status}</span>
-                  </div>
+              <div className="flex items-start gap-3 mb-3">
+                <span className={`text-[10px] font-black text-white uppercase px-2.5 py-1 rounded-lg shrink-0 ${
+                  inv.category==='Stock Market'?'bg-blue-600':inv.category==='Transportation'?'bg-amber-600':
+                  inv.category==='Entertainment'?'bg-purple-600':inv.category==='Real Estate'?'bg-green-600':'bg-slate-600'}`}>
+                  {inv.category}
+                </span>
+                <div className="flex-1 min-w-0">
                   <p className="font-black text-slate-800 uppercase">{inv.title}</p>
-                  {inv.description && <p className="text-xs text-slate-500 font-bold mt-0.5">{inv.description}</p>}
-                  <div className="flex flex-wrap gap-4 mt-2 text-xs font-bold text-slate-500">
+                  {inv.description && <p className="text-xs text-slate-500 font-bold">{inv.description}</p>}
+                  <div className="flex flex-wrap gap-3 mt-1.5 text-xs font-bold text-slate-500">
                     <span>Invested: <strong className="text-slate-800">${inv.invested_amount.toLocaleString()}</strong></span>
                     {inv.return_amount && <span>Return: <strong className="text-green-700">${inv.return_amount.toLocaleString()}</strong></span>}
-                    {inv.member_share_each && <span>Per member: <strong className="text-green-700">${inv.member_share_each.toFixed(2)}</strong></span>}
-                    {inv.eligible_members && <span>To <strong>{inv.eligible_members}</strong> members</span>}
+                    {inv.return_amount && inv.invested_amount && (
+                      <span className="text-green-600">
+                        +{((inv.return_amount - inv.invested_amount)/inv.invested_amount*100).toFixed(1)}% ROI
+                      </span>
+                    )}
+                    {inv.member_count_used && <span>{inv.member_count_used} members · {inv.total_points_used} pts</span>}
                   </div>
                 </div>
+                <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border shrink-0 ${
+                  inv.status==='returned'?'bg-green-50 text-green-700 border-green-200':
+                  inv.status==='active'  ?'bg-blue-50 text-blue-700 border-blue-200':
+                  'bg-amber-50 text-amber-700 border-amber-200'}`}>{inv.status}</span>
               </div>
 
-              {/* Return input + distribute */}
               {inv.status !== 'returned' && (
-                <div className="flex gap-3 flex-wrap mt-3 pt-3 border-t border-slate-100">
+                <div className="flex gap-2 flex-wrap pt-3 border-t border-slate-100">
                   <div className="flex gap-2 flex-1 min-w-0">
-                    <input
-                      type="number"
-                      placeholder="Enter actual return amount..."
+                    <input type="number" id={`ret-${inv.id}`}
                       defaultValue={inv.return_amount ?? ''}
-                      id={`ret-${inv.id}`}
-                      className="flex-1 border-2 border-slate-200 focus:border-green-600 rounded-2xl px-4 py-2.5 font-bold outline-none text-sm min-w-0"/>
+                      placeholder="Actual return amount..."
+                      className="flex-1 border-2 border-slate-200 focus:border-green-600 rounded-2xl px-4 py-2.5 font-bold outline-none text-sm"/>
                     <button onClick={() => {
                       const el = document.getElementById(`ret-${inv.id}`) as HTMLInputElement;
-                      if (!el?.value) { showToast('Enter return amount first.', false); return; }
-                      markReturned(inv, parseFloat(el.value));
-                    }} className="bg-slate-700 hover:bg-slate-600 text-white font-black uppercase text-xs px-4 py-2.5 rounded-2xl transition-all shrink-0">
+                      if (!el?.value) { showToast('Enter return amount.', false); return; }
+                      updateReturn(inv, parseFloat(el.value));
+                    }} className="bg-slate-700 hover:bg-slate-600 text-white font-black uppercase text-xs px-4 py-2.5 rounded-2xl shrink-0">
                       Save
                     </button>
                   </div>
-                  <button
-                    onClick={() => distributeReturns(inv)}
-                    disabled={!inv.return_amount || distributing === inv.id}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase text-xs px-5 py-2.5 rounded-2xl transition-all disabled:opacity-50 shrink-0">
-                    {distributing === inv.id ? <Loader2 size={13} className="animate-spin"/> : <TrendingUp size={13}/>}
+                  <button onClick={() => {
+                    const el = document.getElementById(`ret-${inv.id}`) as HTMLInputElement;
+                    const retAmt = parseFloat(el?.value ?? '') || inv.return_amount;
+                    if (!retAmt) { showToast('Save return amount first.', false); return; }
+                    buildPreview({...inv, return_amount: retAmt}, retAmt);
+                  }} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs px-4 py-2.5 rounded-2xl shrink-0">
+                    Preview Split
+                  </button>
+                  <button onClick={() => {
+                    const el = document.getElementById(`ret-${inv.id}`) as HTMLInputElement;
+                    const retAmt = parseFloat(el?.value ?? '') || inv.return_amount;
+                    if (!retAmt) { showToast('Save return amount first.', false); return; }
+                    distributeWeighted({...inv, return_amount: retAmt});
+                  }} disabled={!inv.return_amount || distributing === inv.id}
+                    className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white font-black uppercase text-xs px-4 py-2.5 rounded-2xl shrink-0 disabled:opacity-50">
+                    {distributing === inv.id ? <Loader2 size={12} className="animate-spin"/> : <CheckCircle2 size={12}/>}
                     Distribute 70/30
                   </button>
                 </div>
@@ -3748,7 +3927,7 @@ function InvestmentsTab({ showToast, isHeadAdmin, members, config }: {
               {inv.status === 'returned' && inv.distributed_at && (
                 <div className="mt-3 pt-3 border-t border-slate-100">
                   <p className="text-xs text-green-600 font-bold">
-                    ✓ Distributed on {new Date(inv.distributed_at).toLocaleDateString()} · ${inv.member_share_each?.toFixed(2)} per member · {inv.eligible_members} members
+                    ✓ Distributed {new Date(inv.distributed_at).toLocaleDateString()} · {inv.member_count_used} members · {inv.total_points_used} pts
                   </p>
                 </div>
               )}
