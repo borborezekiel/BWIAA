@@ -105,10 +105,24 @@ export default function MemberDashboard() {
         if (get('org_name')) setOrgName(get('org_name'));
       }
 
-      const { data: mem } = await supabase.from('members')
+     let mem: any = null;
+      const { data: m1 } = await supabase.from('members')
         .select('*').eq('auth_user_id', user.id).maybeSingle();
+      if (m1) {
+        mem = m1;
+      } else {
+        // 2. Fallback: find by email (handles legacy accounts where auth_user_id is NULL)
+        const { data: m2 } = await supabase.from('members')
+          .select('*').eq('email', user.email?.trim().toLowerCase() ?? '').maybeSingle();
+        if (m2) {
+          mem = m2;
+          // 3. Link auth_user_id so future lookups use the fast path
+          if (!m2.auth_user_id) {
+            await supabase.from('members').update({ auth_user_id: user.id }).eq('id', m2.id);
+          }
+        }
+      }
       if (!mem) {
-        // If user is an admin but not a member, redirect to register WITH notice
         router.push('/members/register');
         return;
       }

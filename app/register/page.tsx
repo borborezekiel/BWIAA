@@ -92,15 +92,44 @@ export default function RegisterPage() {
       setCfgLoaded(true);
     });
 
-    // Verify user is an active member before allowing candidate registration
+    // ── FIX: Look up member by auth_user_id first, then fall back to email.
+    // The old .or().maybeSingle() would throw if both columns matched different rows.
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) { setMemberCheck('not-member'); return; }
-      const { data: mem } = await supabase.from('members').select('id,status')
-        .or(`auth_user_id.eq.${user.id},email.eq.${user.email?.toLowerCase()}`)
+
+      // 1. Try by auth_user_id (fast path — already linked)
+      let mem: { id: string; status: string; auth_user_id: string | null } | null = null;
+      const { data: m1 } = await supabase
+        .from('members')
+        .select('id, status, auth_user_id')
+        .eq('auth_user_id', user.id)
         .maybeSingle();
-      if (!mem) { setMemberCheck('not-member'); return; }
-      if (mem.status === 'pending') { setMemberCheck('pending'); return; }
-      if (mem.status !== 'approved') { setMemberCheck('not-member'); return; }
+
+      if (m1) {
+        mem = m1;
+      } else {
+        // 2. Fallback: find by email (handles legacy accounts where auth_user_id is NULL)
+        const { data: m2 } = await supabase
+          .from('members')
+          .select('id, status, auth_user_id')
+          .eq('email', user.email?.trim().toLowerCase() ?? '')
+          .maybeSingle();
+
+        if (m2) {
+          mem = m2;
+          // 3. Link auth_user_id so future lookups use the fast path
+          if (!m2.auth_user_id) {
+            await supabase
+              .from('members')
+              .update({ auth_user_id: user.id })
+              .eq('id', m2.id);
+          }
+        }
+      }
+
+      if (!mem)                        { setMemberCheck('not-member'); return; }
+      if (mem.status === 'pending')    { setMemberCheck('pending');    return; }
+      if (mem.status !== 'approved')   { setMemberCheck('not-member'); return; }
       setMemberCheck('ok');
     });
   }, []);
