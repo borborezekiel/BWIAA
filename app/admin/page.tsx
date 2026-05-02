@@ -1651,6 +1651,52 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
   const [transferChapter, setTransferChapter] = useState('');
   const [transferring, setTransferring]       = useState(false);
 
+  // ── Duplicate detection ───────────────────────────────────────────────────
+  const [dupChecking, setDupChecking] = useState(false);
+  const [dupResults, setDupResults]   = useState<{
+    sameName: Member[];
+    sameId: Member[];
+    samePhone: Member[];
+    hasDues: { member_name: string; amount: number; currency: string; period: string }[];
+  } | null>(null);
+
+  async function runDuplicateCheck(m: Member) {
+    setDupChecking(true); setDupResults(null);
+    const nameParts = m.full_name.toLowerCase().split(' ').filter(Boolean);
+
+    const [{ data: allMembers }, { data: duesData }] = await Promise.all([
+      supabase.from('members').select('id,full_name,email,phone,id_number,status,chapter').neq('id', m.id),
+      supabase.from('dues_payments').select('member_name,amount,currency,period,status').eq('status','approved'),
+    ]);
+
+    const others = allMembers ?? [];
+
+    // Same name — match if 2+ words overlap
+    const sameName = others.filter(o => {
+      const oParts = o.full_name.toLowerCase().split(' ').filter(Boolean);
+      return nameParts.filter(p => oParts.includes(p)).length >= 2;
+    });
+
+    // Same ID number
+    const sameId = m.id_number?.trim()
+      ? others.filter(o => o.id_number?.trim().toLowerCase() === m.id_number.trim().toLowerCase())
+      : [];
+
+    // Same phone
+    const samePhone = m.phone?.trim()
+      ? others.filter(o => o.phone?.trim() === m.phone?.trim())
+      : [];
+
+    // Dues paid under similar name on ANY record
+    const hasDues = (duesData ?? []).filter(d => {
+      const dParts = d.member_name.toLowerCase().split(' ').filter(Boolean);
+      return nameParts.filter(p => dParts.includes(p)).length >= 2;
+    });
+
+    setDupResults({ sameName, sameId, samePhone, hasDues });
+    setDupChecking(false);
+  }
+
   const visible = members.filter(m => {
     const chapterMatch = isHeadAdmin || m.chapter === myChapter;
     const statusMatch  = filter === 'all' || m.status === filter;
@@ -1751,7 +1797,106 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
               ))}
             </div>
             {selected.status==='pending' && (
-              <div className="space-y-3">
+              <div className="space-y-4">
+
+                {/* ── Duplicate Check Panel ── */}
+                <div className="border-2 border-slate-200 rounded-2xl overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 bg-slate-50">
+                    <div className="flex items-center gap-2">
+                      <Search size={14} className="text-slate-500"/>
+                      <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Duplicate Check</p>
+                      <p className="text-[10px] text-slate-400 font-bold">— run before approving</p>
+                    </div>
+                    <button
+                      onClick={() => runDuplicateCheck(selected)}
+                      disabled={dupChecking}
+                      className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-700 text-white font-black uppercase text-[10px] px-4 py-2 rounded-xl transition-all disabled:opacity-50">
+                      {dupChecking ? <Loader2 size={11} className="animate-spin"/> : <Search size={11}/>}
+                      {dupChecking ? 'Scanning...' : 'Scan Now'}
+                    </button>
+                  </div>
+
+                  {dupResults && (
+                    <div className="p-4 space-y-3">
+                      {/* No issues */}
+                      {dupResults.sameName.length === 0 && dupResults.sameId.length === 0 && dupResults.samePhone.length === 0 && dupResults.hasDues.length === 0 && (
+                        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl p-3">
+                          <CheckCircle2 size={16} className="text-green-600 shrink-0"/>
+                          <p className="text-xs font-black text-green-700">No duplicates found. Safe to approve.</p>
+                        </div>
+                      )}
+
+                      {/* Same name matches */}
+                      {dupResults.sameName.length > 0 && (
+                        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+                          <p className="text-[10px] font-black text-orange-700 uppercase tracking-widest mb-2">⚠ Similar Name Found ({dupResults.sameName.length})</p>
+                          {dupResults.sameName.map(o => (
+                            <div key={o.id} className="flex items-center justify-between py-1.5 border-b border-orange-100 last:border-0">
+                              <div>
+                                <p className="text-xs font-black text-slate-800">{o.full_name}</p>
+                                <p className="text-[10px] text-slate-500 font-bold">{o.email} · {o.chapter}</p>
+                              </div>
+                              <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${o.status==='approved'?'bg-green-100 text-green-700':o.status==='pending'?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}`}>{o.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Same ID number */}
+                      {dupResults.sameId.length > 0 && (
+                        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-3">
+                          <p className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-2">🚨 Same ID Number ({dupResults.sameId.length}) — Strong Duplicate Signal</p>
+                          {dupResults.sameId.map(o => (
+                            <div key={o.id} className="flex items-center justify-between py-1.5 border-b border-red-100 last:border-0">
+                              <div>
+                                <p className="text-xs font-black text-slate-800">{o.full_name}</p>
+                                <p className="text-[10px] text-slate-500 font-bold">{o.email} · {o.chapter}</p>
+                              </div>
+                              <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${o.status==='approved'?'bg-green-100 text-green-700':o.status==='pending'?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}`}>{o.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Same phone */}
+                      {dupResults.samePhone.length > 0 && (
+                        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+                          <p className="text-[10px] font-black text-orange-700 uppercase tracking-widest mb-2">⚠ Same Phone Number ({dupResults.samePhone.length})</p>
+                          {dupResults.samePhone.map(o => (
+                            <div key={o.id} className="flex items-center justify-between py-1.5 border-b border-orange-100 last:border-0">
+                              <div>
+                                <p className="text-xs font-black text-slate-800">{o.full_name}</p>
+                                <p className="text-[10px] text-slate-500 font-bold">{o.email} · {o.chapter}</p>
+                              </div>
+                              <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${o.status==='approved'?'bg-green-100 text-green-700':o.status==='pending'?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}`}>{o.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Dues under same name on other records */}
+                      {dupResults.hasDues.length > 0 && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                          <p className="text-[10px] font-black text-blue-700 uppercase tracking-widest mb-2">💰 Dues Paid Under This Name ({dupResults.hasDues.length} records)</p>
+                          <p className="text-[10px] text-blue-600 font-bold mb-2">Payment history exists — may need to transfer to this record after approval.</p>
+                          {dupResults.hasDues.slice(0,5).map((d,i) => (
+                            <div key={i} className="flex items-center justify-between py-1 border-b border-blue-100 last:border-0">
+                              <p className="text-[10px] font-black text-slate-700">{d.member_name} · {d.period}</p>
+                              <p className="text-[10px] font-black text-green-700">{d.currency}{d.amount.toLocaleString()}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!dupResults && !dupChecking && (
+                    <div className="px-4 pb-3 pt-1">
+                      <p className="text-[10px] text-slate-400 font-bold">Click Scan Now to check for duplicate names, ID numbers, phone numbers and existing dues payments before approving.</p>
+                    </div>
+                  )}
+                </div>
+
                 <button onClick={()=>approveMember(selected)} disabled={processing} className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50">{processing?<Loader2 size={16} className="animate-spin"/>:<CheckCircle2 size={16}/>} Approve Membership</button>
                 <div className="flex gap-2">
                   <input value={rejReason} onChange={e=>setRejReason(e.target.value)} placeholder="Rejection reason (required)..." className="flex-1 border-2 border-slate-200 focus:border-red-600 rounded-2xl px-4 py-3 font-bold outline-none text-sm"/>
@@ -1837,7 +1982,7 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
         <SectionTitle>Members ({visible.length})</SectionTitle>
         <div className="space-y-3">
           {visible.map(m=>(
-            <div key={m.id} onClick={()=>{setSelected(m);setRejReason('');}} className="flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl cursor-pointer transition-all border-2 border-transparent hover:border-slate-200">
+            <div key={m.id} onClick={()=>{setSelected(m);setRejReason('');setDupResults(null);}} className="flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl cursor-pointer transition-all border-2 border-transparent hover:border-slate-200">
               <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-200 shrink-0">{m.photo_url?<img src={m.photo_url} className="w-full h-full object-cover" alt={m.full_name}/>:<div className="w-full h-full flex items-center justify-center"><span className="font-black text-slate-400">{m.full_name.charAt(0)}</span></div>}</div>
               <div className="flex-1 min-w-0"><p className="font-black text-slate-800 truncate">{m.full_name}</p><p className="text-xs text-slate-400 font-bold uppercase truncate">{m.chapter} · Class of {m.year_graduated}</p><p className="text-[10px] text-slate-400 font-bold">{new Date(m.created_at).toLocaleDateString()} · <span className="font-mono text-red-500">{m.id.slice(0,8).toUpperCase()}</span></p></div>
               <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border shrink-0 ${statusBadge(m.status)}`}>{m.status}</span>
