@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import {
   ShieldCheck, LogOut, Loader2, BarChart2, Users, UserCheck,
   UserX, List, Settings, PlusCircle, Trash2, Trophy, Activity,
-  CheckCircle2, XCircle, Crown, Download, Printer,
+  CheckCircle2, XCircle, Terminal, Crown, Download, Printer,
   FileText, Sliders, Search, CreditCard, DollarSign, Key, Calendar,
   MapPin, Bell, TrendingUp, ChevronRight, Lock, Eye, EyeOff,
 } from 'lucide-react';
