@@ -4,7 +4,8 @@ import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   Vote, ShieldCheck, LogOut, Loader2, CheckCircle2,
-  AlertCircle, Fingerprint, Activity, Terminal, XCircle, Users
+  AlertCircle, Fingerprint, Activity, Terminal, XCircle, Users,
+  FileText,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -39,19 +40,11 @@ const DEFAULT_CONFIG: ElectionConfig = {
   ],
 };
 
-// ─── Constants ────────────────────────────────────────────────────────────────
 const HEAD_ADMIN_EMAIL = "ezekielborbor17@gmail.com";
 const CHAPTERS = [
-  "Harbel Chapter",
-  "Montserrado Chapter",
-  "Grand Bassa Chapter",
-  "Nimba Chapter",
-  "Weala Branch",
-  "Robertsport Branch",
-  "LAC Branch",
-  "Bong Chapter",
-  "Paynesville Branch",
-  "Mother Chapter",
+  "Harbel Chapter","Montserrado Chapter","Grand Bassa Chapter","Nimba Chapter",
+  "Weala Branch","Robertsport Branch","LAC Branch","Bong Chapter",
+  "Paynesville Branch","Mother Chapter",
 ];
 
 export default function BWIAAElection2026() {
@@ -69,19 +62,52 @@ export default function BWIAAElection2026() {
   const [timeLeft, setTimeLeft]       = useState('');
   const [votingClosed, setVotingClosed] = useState(false);
   const [electionConfig, setElectionConfig] = useState<ElectionConfig>(DEFAULT_CONFIG);
+  // ── NEW: phase + member state ────────────────────────────────────────────────
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [isApprovedMember, setIsApprovedMember] = useState(false);
 
   // ── Init ────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (user) { setUser(user); await loadVoterProfile(user); }
+        if (user) {
+          setUser(user);
+          await loadVoterProfile(user);
+
+          // ── NEW: check if this user is an approved member ──────────────────
+          // Try auth_user_id first, fall back to email
+          let mem: any = null;
+          const { data: m1 } = await supabase.from('members')
+            .select('id, status, auth_user_id')
+            .eq('auth_user_id', user.id).maybeSingle();
+          if (m1) {
+            mem = m1;
+          } else {
+            const { data: m2 } = await supabase.from('members')
+              .select('id, status, auth_user_id')
+              .eq('email', user.email?.toLowerCase() ?? '').maybeSingle();
+            if (m2) {
+              mem = m2;
+              // Auto-link auth_user_id if missing
+              if (!m2.auth_user_id) {
+                await supabase.from('members').update({ auth_user_id: user.id }).eq('id', m2.id);
+              }
+            }
+          }
+          setIsApprovedMember(mem?.status === 'approved');
+        }
+
         // Fetch all settings
         const { data: settings } = await supabase.from('election_settings').select('*');
         if (settings) {
           const get = (k: string) => settings.find((r: any) => r.key === k)?.value;
           const dl = get('voting_deadline');
           if (dl) setDeadline(dl);
+
+          // ── NEW: read registration_open phase ──────────────────────────────
+          setRegistrationOpen(get('registration_open') === 'true');
+
           const merged = { ...DEFAULT_CONFIG };
           if (get('org_name'))        merged.org_name        = get('org_name');
           if (get('election_title'))  merged.election_title  = get('election_title');
@@ -122,7 +148,6 @@ export default function BWIAAElection2026() {
     checkAccess(user.email);
   }, [user]);
 
-  // Deadline countdown + auto-archive when it hits zero
   useEffect(() => {
     if (!deadline) return;
     const tick = async () => {
@@ -130,20 +155,15 @@ export default function BWIAAElection2026() {
       if (diff <= 0) {
         setTimeLeft('VOTING CLOSED');
         setVotingClosed(true);
-
-        // Auto-archive: only if not already archived for this deadline
         const archiveKey = `archived_${deadline}`;
         if (!localStorage.getItem(archiveKey)) {
           localStorage.setItem(archiveKey, '1');
           try {
-            // Fetch all votes and candidates to compute winners
             const [{ data: allVotes }, { data: allCandidates }] = await Promise.all([
               supabase.from('votes').select('*'),
               supabase.from('candidates').select('*'),
             ]);
             if (!allVotes || !allCandidates) return;
-
-            // Group by chapter + position, find winner
             const grouped: Record<string, Record<string, Record<string, number>>> = {};
             allVotes.forEach((v: any) => {
               if (!grouped[v.chapter]) grouped[v.chapter] = {};
@@ -151,12 +171,10 @@ export default function BWIAAElection2026() {
               const curr = grouped[v.chapter][v.position_name][v.candidate_name] ?? 0;
               grouped[v.chapter][v.position_name][v.candidate_name] = curr + 1;
             });
-
             const year = new Date().getFullYear();
             const { data: settings } = await supabase.from('election_settings').select('*');
             const orgName = settings?.find((r: any) => r.key === 'org_name')?.value ?? 'BWIAA';
             const electionTitle = settings?.find((r: any) => r.key === 'election_title')?.value ?? 'Election';
-
             const historyRows: any[] = [];
             Object.entries(grouped).forEach(([chapter, positions]) => {
               Object.entries(positions).forEach(([position, candidates]) => {
@@ -164,28 +182,13 @@ export default function BWIAAElection2026() {
                 const winnerName = Object.entries(candidates).sort((a, b) => b[1] - a[1])[0]?.[0];
                 const winnerVotes = candidates[winnerName] ?? 0;
                 const winnerCand = allCandidates.find((c: any) => c.full_name === winnerName && c.chapter === chapter);
-                historyRows.push({
-                  election_year:    year,
-                  election_name:    `${orgName} ${electionTitle} ${year}`,
-                  chapter,
-                  position_name:    position,
-                  winner_name:      winnerName,
-                  winner_photo_url: winnerCand?.photo_url ?? null,
-                  total_votes:      total,
-                  winner_votes:     winnerVotes,
-                  archived_by:      'system',
-                });
+                historyRows.push({ election_year: year, election_name: `${orgName} ${electionTitle} ${year}`, chapter, position_name: position, winner_name: winnerName, winner_photo_url: winnerCand?.photo_url ?? null, total_votes: total, winner_votes: winnerVotes, archived_by: 'system' });
               });
             });
-
             if (historyRows.length > 0) {
-              await supabase.from('election_history').upsert(historyRows, {
-                onConflict: 'election_year,chapter,position_name',
-              });
+              await supabase.from('election_history').upsert(historyRows, { onConflict: 'election_year,chapter,position_name' });
             }
-          } catch (e) {
-            console.error('Auto-archive error:', e);
-          }
+          } catch (e) { console.error('Auto-archive error:', e); }
         }
         return;
       }
@@ -227,8 +230,6 @@ export default function BWIAAElection2026() {
 
   async function checkAccess(email: string) {
     const lowerEmail = email.toLowerCase();
-
-    // ★ Head admin bypass — also check multi-head-admins from settings
     const { data: haSetting } = await supabase
       .from('election_settings').select('value').eq('key', 'head_admins').maybeSingle();
     let headAdmins: string[] = [HEAD_ADMIN_EMAIL.toLowerCase()];
@@ -236,7 +237,6 @@ export default function BWIAAElection2026() {
     if (headAdmins.includes(lowerEmail)) return;
 
     try {
-      // 1. Blacklist check first
       const { data: blocked } = await supabase
         .from('blacklisted_voters').select('email, reason').eq('email', lowerEmail).maybeSingle();
       if (blocked) {
@@ -244,42 +244,31 @@ export default function BWIAAElection2026() {
         setErrorMessage(`ACCESS DENIED: This email has been blocked. Reason: ${blocked.reason}. Contact the Election Committee.`);
         return;
       }
-
-      // 2. Whitelist check — ALWAYS enforced, even if roster is empty
       const { count, error: countError } = await supabase
         .from('eligible_voters').select('*', { count: 'exact', head: true });
-
-      // If we can't read the roster at all, deny access (fail closed — not open)
       if (countError) {
         await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
         setErrorMessage('ACCESS DENIED: Unable to verify voter eligibility. Contact your administrator.');
         return;
       }
-
-      // Roster is empty — nobody gets in except head admins (already handled above)
       if (!count || count === 0) {
         await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
-        setErrorMessage('ACCESS DENIED: The voter roster has not been set up yet. Contact your chapter administrator to be added to the roster.');
+        setErrorMessage('ACCESS DENIED: The voter roster has not been set up yet. Contact your chapter administrator.');
         return;
       }
-
-      // Roster has entries — voter must be on it
       const { data: found } = await supabase
         .from('eligible_voters').select('email, chapter').eq('email', lowerEmail).maybeSingle();
       if (!found) {
         await supabase.auth.signOut(); localStorage.clear(); setUser(null); setMyChapter(null);
-        setErrorMessage(`ACCESS DENIED: ${email} is not on the official voter roster. Contact your chapter administrator to be added.`);
+        setErrorMessage(`ACCESS DENIED: ${email} is not on the official voter roster. Contact your chapter administrator.`);
         return;
       }
-
-      // 3. ★ Auto-assign chapter from roster
       if (found.chapter && !myChapter) {
         setMyChapter(found.chapter);
         const { data: { user: u } } = await supabase.auth.getUser();
         if (u) {
           await supabase.from('voter_profiles').upsert(
-            [{ id: u.id, home_chapter: found.chapter }],
-            { onConflict: 'id' }
+            [{ id: u.id, home_chapter: found.chapter }], { onConflict: 'id' }
           );
         }
       }
@@ -291,11 +280,8 @@ export default function BWIAAElection2026() {
   }
 
   async function handleChapterSelect(chapter: string) {
-    // No class year needed — approved members have the right to vote
-    // Class year will be pulled from their member profile if available
     const { data: { user: u } } = await supabase.auth.getUser();
     if (u) {
-      // Try to get class year from member profile
       const { data: mem } = await supabase.from('members')
         .select('year_graduated, chapter').eq('email', u.email?.toLowerCase() ?? '').maybeSingle();
       const classYear = mem?.year_graduated ? String(mem.year_graduated) : new Date().getFullYear().toString();
@@ -343,7 +329,6 @@ export default function BWIAAElection2026() {
     window.location.href = window.location.origin;
   }
 
-  // ── Derived ──────────────────────────────────────────────────────────────────
   const positionMap = useMemo(() => {
     const map: Record<string, Candidate[]> = {};
     candidates
@@ -360,12 +345,8 @@ export default function BWIAAElection2026() {
     [votes, user]
   );
 
-  // ── TALLY: national scope so counter is always live from vote #1 ─────────────
-  // The old version filtered to `v.chapter === myChapter` which returned 0
-  // whenever no one from the same chapter had voted yet. Switched to national.
   const tallyVotes = votes;
 
-  // ── Loading ──────────────────────────────────────────────────────────────────
   if (loading) return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white gap-4">
       <Loader2 className="animate-spin text-red-600" size={48} />
@@ -373,7 +354,7 @@ export default function BWIAAElection2026() {
     </div>
   );
 
-  // ── Chapter selection ─────────────────────────────────────────────────────────
+  // ── Chapter selection (not yet logged in / no profile) ────────────────────────
   if (!myChapter) {
     return (
       <div className="min-h-screen bg-slate-950 p-6 flex flex-col items-center justify-center">
@@ -392,7 +373,6 @@ export default function BWIAAElection2026() {
         </h1>
         <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mb-2">{electionConfig.election_title}</p>
 
-        {/* Member Portal shortcut */}
         <Link href="/members" className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase tracking-widest px-5 py-2.5 rounded-xl transition-all mb-10">
           <Users size={13}/> Member Portal — Dues, Events & Account
         </Link>
@@ -408,7 +388,7 @@ export default function BWIAAElection2026() {
           ))}
         </div>
 
-        {/* ── Candidate Registration Section ── */}
+        {/* Candidate Registration Section */}
         <div className="w-full max-w-5xl mt-16">
           <div className="flex items-center gap-4 mb-8">
             <div className="flex-1 h-px bg-white/10"/>
@@ -425,8 +405,6 @@ export default function BWIAAElection2026() {
                 <Vote size={16}/> Apply to Run
               </Link>
             </div>
-
-            {/* Fee schedule */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
               {electionConfig.positions_fees.map(({ position, fee }) => (
                 <div key={position} className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
@@ -435,19 +413,10 @@ export default function BWIAAElection2026() {
                 </div>
               ))}
             </div>
-
-            {/* EC Guidelines summary */}
             <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
               <p className="text-white/60 text-[10px] font-black uppercase tracking-widest mb-4">EC Guidelines</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {[
-                  "Registration of Candidates (Timeline Required)",
-                  "Accreditation of Voters",
-                  "Certification of Qualified Candidates",
-                  "Screening via Class Name, Year Graduated, Sponsor & Principal",
-                  "Voting shall be by secret ballot",
-                  "Results announced same day",
-                ].map(g => (
+                {["Registration of Candidates (Timeline Required)","Accreditation of Voters","Certification of Qualified Candidates","Screening via Class Name, Year Graduated, Sponsor & Principal","Voting shall be by secret ballot","Results announced same day"].map(g => (
                   <div key={g} className="flex items-start gap-2">
                     <CheckCircle2 size={12} className="text-green-400 shrink-0 mt-0.5"/>
                     <p className="text-white/50 text-xs font-bold leading-tight">{g}</p>
@@ -455,18 +424,10 @@ export default function BWIAAElection2026() {
                 ))}
               </div>
             </div>
-
-            {/* Check application status */}
             <div className="mt-6 flex flex-col sm:flex-row gap-3">
-              <Link href="/register/status" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">
-                Check Application Status
-              </Link>
-              <Link href="/members" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">
-                Member Portal
-              </Link>
-              <Link href="/history" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">
-                Election History
-              </Link>
+              <Link href="/register/status" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">Check Application Status</Link>
+              <Link href="/members" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">Member Portal</Link>
+              <Link href="/history" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">Election History</Link>
             </div>
           </div>
         </div>
@@ -507,12 +468,8 @@ export default function BWIAAElection2026() {
               </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setConfirm(null)} disabled={casting}
-                className="flex-1 bg-slate-100 text-slate-700 font-black py-4 rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50">
-                Go Back
-              </button>
-              <button onClick={castBallot} disabled={casting}
-                className="flex-1 bg-red-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+              <button onClick={() => setConfirm(null)} disabled={casting} className="flex-1 bg-slate-100 text-slate-700 font-black py-4 rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50">Go Back</button>
+              <button onClick={castBallot} disabled={casting} className="flex-1 bg-red-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest hover:bg-red-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                 {casting ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
                 {casting ? 'Submitting...' : 'Cast Vote'}
               </button>
@@ -549,14 +506,22 @@ export default function BWIAAElection2026() {
               <span className="text-[10px] text-red-600 font-bold">{myChapter ?? '—'} • CLASS OF {myClass ?? '—'}</span>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
             {deadline && (
               <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${votingClosed ? 'bg-red-600 text-white' : 'bg-slate-900 text-white'}`}>
                 <Activity size={12}/>
                 {votingClosed ? 'VOTING CLOSED' : timeLeft}
               </div>
             )}
-            {/* Member Portal — distinct green button, always visible */}
+
+            {/* ── NEW: Apply for Office button — only shows when registration is open AND user is approved member ── */}
+            {registrationOpen && isApprovedMember && (
+              <Link href="/register"
+                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-widest px-4 py-2.5 rounded-xl transition-all shadow-md">
+                <FileText size={13}/> Apply for Office
+              </Link>
+            )}
+
             <Link href="/members/dashboard"
               className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white font-black text-[10px] uppercase tracking-widest px-3 py-2 rounded-xl transition-all">
               <Users size={12}/> Member Portal
@@ -570,7 +535,27 @@ export default function BWIAAElection2026() {
         </div>
       </header>
 
-      {/* Voting closed full banner */}
+      {/* ── NEW: Apply for Office banner — prominent strip below header ── */}
+      {registrationOpen && isApprovedMember && (
+        <div className="bg-slate-900 text-white px-6 py-4">
+          <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="bg-red-600 rounded-xl p-2.5 shrink-0">
+                <FileText size={20} className="text-white"/>
+              </div>
+              <div>
+                <p className="font-black uppercase text-sm">Candidate Registration is Open</p>
+                <p className="text-white/50 text-xs font-bold mt-0.5">You are an approved member — submit your candidacy application now.</p>
+              </div>
+            </div>
+            <Link href="/register"
+              className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-8 py-3 rounded-2xl text-sm transition-all shrink-0 flex items-center gap-2">
+              Apply Now →
+            </Link>
+          </div>
+        </div>
+      )}
+
       {votingClosed && (
         <div className="bg-red-600 text-white text-center py-4 px-6 font-black uppercase tracking-widest text-sm">
           ⛔ Voting has closed — The election deadline has passed. No further ballots can be accepted.
@@ -590,7 +575,6 @@ export default function BWIAAElection2026() {
                   </span>
                 )}
               </div>
-              {/* Responsive grid: 2 cols on mobile, 3+ on larger screens */}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 md:gap-5">
                 {candObjs.map(cand => {
                   const posVotes = tallyVotes.filter(v => v.position_name === posTitle);
@@ -601,26 +585,19 @@ export default function BWIAAElection2026() {
                     <button key={cand.id} onClick={() => selectCandidate(posTitle, cand.full_name)}
                       disabled={hasVoted || votingClosed}
                       className={`relative flex flex-col items-center p-4 md:p-6 rounded-3xl border-2 transition-all overflow-hidden text-center
-                        ${hasVoted || votingClosed
-                          ? 'border-slate-100 cursor-not-allowed bg-slate-50/50 opacity-70'
-                          : 'border-slate-100 hover:border-red-600 bg-white active:scale-95 hover:shadow-xl'}`}>
-                      {/* Photo */}
+                        ${hasVoted || votingClosed ? 'border-slate-100 cursor-not-allowed bg-slate-50/50 opacity-70' : 'border-slate-100 hover:border-red-600 bg-white active:scale-95 hover:shadow-xl'}`}>
                       <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl overflow-hidden bg-slate-100 mb-3 border-2 border-slate-200 shrink-0">
                         {cand.photo_url
                           ? <img src={cand.photo_url} alt={cand.full_name} className="w-full h-full object-cover"/>
                           : <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-200 to-slate-300">
                               <span className="text-xl md:text-3xl font-black text-slate-500">{cand.full_name.charAt(0)}</span>
-                            </div>
-                        }
+                            </div>}
                       </div>
-                      {/* Name */}
                       <p className="font-black text-slate-800 text-xs md:text-sm uppercase leading-tight mb-2">{cand.full_name}</p>
-                      {/* Live tally */}
                       <div className="flex items-center gap-1">
                         <span className="text-xl md:text-3xl font-black text-red-600">{count}</span>
                         <span className="text-[9px] text-slate-400 uppercase tracking-widest font-bold leading-tight text-left">National<br/>Tally</span>
                       </div>
-                      {/* Progress bar */}
                       <div className="absolute bottom-0 left-0 w-full h-1 bg-slate-100">
                         <div className="h-full bg-red-400 transition-all duration-1000" style={{ width: `${percent}%` }}/>
                       </div>
@@ -631,10 +608,10 @@ export default function BWIAAElection2026() {
             </section>
           );
         })}
+
         {Object.keys(positionMap).length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 px-6">
             <div className="bg-white rounded-[3rem] p-10 md:p-14 max-w-lg w-full text-center shadow-xl border-b-8 border-yellow-400">
-              {/* Animated waiting indicator */}
               <div className="relative w-24 h-24 mx-auto mb-8">
                 <div className="absolute inset-0 rounded-full border-4 border-yellow-200 animate-ping opacity-40"/>
                 <div className="absolute inset-2 rounded-full border-4 border-yellow-300 animate-ping opacity-30" style={{ animationDelay: '0.3s' }}/>
@@ -642,47 +619,24 @@ export default function BWIAAElection2026() {
                   <span className="text-2xl">⏳</span>
                 </div>
               </div>
-
-              <h2 className="text-2xl font-black uppercase italic text-slate-900 mb-3">
-                Ballot Not Ready Yet
-              </h2>
+              <h2 className="text-2xl font-black uppercase italic text-slate-900 mb-3">Ballot Not Ready Yet</h2>
               <p className="text-slate-500 font-bold text-sm leading-relaxed mb-8">
-                Candidates for the <span className="text-red-600 font-black">{myChapter}</span> chapter
-                have not been finalised yet. Your ballot will appear here once the Election Committee
-                has confirmed all candidates for your chapter.
+                Candidates for the <span className="text-red-600 font-black">{myChapter}</span> chapter have not been finalised yet. Your ballot will appear here once the Election Committee has confirmed all candidates for your chapter.
               </p>
-
-              {/* Voter info card */}
               <div className="bg-slate-50 rounded-2xl p-5 mb-6 text-left space-y-2 border border-slate-100">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Your Registration</p>
-                <div className="flex justify-between">
-                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Chapter</span>
-                  <span className="text-xs font-black text-slate-800">{myChapter ?? '—'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Class Year</span>
-                  <span className="text-xs font-black text-slate-800">{myClass ?? '—'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Email</span>
-                  <span className="text-xs font-black text-slate-800">{user?.email}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Status</span>
-                  <span className="text-xs font-black text-green-600">✓ Verified Voter</span>
-                </div>
+                <div className="flex justify-between"><span className="text-xs font-black text-slate-400 uppercase tracking-widest">Chapter</span><span className="text-xs font-black text-slate-800">{myChapter ?? '—'}</span></div>
+                <div className="flex justify-between"><span className="text-xs font-black text-slate-400 uppercase tracking-widest">Class Year</span><span className="text-xs font-black text-slate-800">{myClass ?? '—'}</span></div>
+                <div className="flex justify-between"><span className="text-xs font-black text-slate-400 uppercase tracking-widest">Email</span><span className="text-xs font-black text-slate-800">{user?.email}</span></div>
+                <div className="flex justify-between"><span className="text-xs font-black text-slate-400 uppercase tracking-widest">Status</span><span className="text-xs font-black text-green-600">✓ Verified Voter</span></div>
               </div>
-
               {deadline && !votingClosed && (
                 <div className="bg-slate-900 rounded-2xl p-4 mb-4">
                   <p className="text-white/50 text-[10px] font-black uppercase tracking-widest mb-1">Election Countdown</p>
                   <p className="text-red-500 font-black text-2xl tabular-nums">{timeLeft}</p>
                 </div>
               )}
-
-              <p className="text-xs text-slate-400 font-bold">
-                This page will update automatically when candidates are added. You can check back later or contact your chapter administrator.
-              </p>
+              <p className="text-xs text-slate-400 font-bold">This page will update automatically when candidates are added. You can check back later or contact your chapter administrator.</p>
             </div>
           </div>
         )}
