@@ -1652,11 +1652,12 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
   const [transferring, setTransferring]       = useState(false);
 
   // ── Duplicate detection ───────────────────────────────────────────────────
+  type DupMember = { id: string; full_name: string; email: string; phone: string | null; id_number: string; status: string; chapter: string; };
   const [dupChecking, setDupChecking] = useState(false);
   const [dupResults, setDupResults]   = useState<{
-    sameName: Member[];
-    sameId: Member[];
-    samePhone: Member[];
+    sameName: DupMember[];
+    sameId: DupMember[];
+    samePhone: DupMember[];
     hasDues: { member_name: string; amount: number; currency: string; period: string }[];
   } | null>(null);
 
