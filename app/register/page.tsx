@@ -92,44 +92,33 @@ export default function RegisterPage() {
       setCfgLoaded(true);
     });
 
-    // ── FIX: Look up member by auth_user_id first, then fall back to email.
-    // The old .or().maybeSingle() would throw if both columns matched different rows.
+    // Verify user is an active member before allowing candidate registration
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) { setMemberCheck('not-member'); return; }
 
-      // 1. Try by auth_user_id (fast path — already linked)
-      let mem: { id: string; status: string; auth_user_id: string | null } | null = null;
-      const { data: m1 } = await supabase
-        .from('members')
-        .select('id, status, auth_user_id')
-        .eq('auth_user_id', user.id)
-        .maybeSingle();
+      // Try auth_user_id first, then fall back to email (handles null auth_user_id)
+      let mem: any = null;
 
+      const { data: m1 } = await supabase.from('members').select('id,status,auth_user_id')
+        .eq('auth_user_id', user.id).maybeSingle();
       if (m1) {
         mem = m1;
       } else {
-        // 2. Fallback: find by email (handles legacy accounts where auth_user_id is NULL)
-        const { data: m2 } = await supabase
-          .from('members')
-          .select('id, status, auth_user_id')
-          .eq('email', user.email?.trim().toLowerCase() ?? '')
-          .maybeSingle();
-
+        // Fallback: find by email — covers members registered before FK fix
+        const { data: m2 } = await supabase.from('members').select('id,status,auth_user_id')
+          .eq('email', user.email?.toLowerCase() ?? '').maybeSingle();
         if (m2) {
           mem = m2;
-          // 3. Link auth_user_id so future lookups use the fast path
+          // Auto-link auth_user_id so future lookups work
           if (!m2.auth_user_id) {
-            await supabase
-              .from('members')
-              .update({ auth_user_id: user.id })
-              .eq('id', m2.id);
+            await supabase.from('members').update({ auth_user_id: user.id }).eq('id', m2.id);
           }
         }
       }
 
-      if (!mem)                        { setMemberCheck('not-member'); return; }
-      if (mem.status === 'pending')    { setMemberCheck('pending');    return; }
-      if (mem.status !== 'approved')   { setMemberCheck('not-member'); return; }
+      if (!mem) { setMemberCheck('not-member'); return; }
+      if (mem.status === 'pending') { setMemberCheck('pending'); return; }
+      if (mem.status !== 'approved') { setMemberCheck('not-member'); return; }
       setMemberCheck('ok');
     });
   }, []);

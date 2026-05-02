@@ -15,9 +15,15 @@ function useAuth() {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) { setOk(false); return; }
       setUserEmail(user.email ?? '');
-      const { data: mem } = await supabase.from('members').select('id,status')
-        .or(`auth_user_id.eq.${user.id},email.eq.${user.email?.toLowerCase()}`)
-        .maybeSingle();
+      // Two-query lookup handles null auth_user_id
+      let mem: any = null;
+      const { data: m1 } = await supabase.from('members').select('id,status,auth_user_id')
+        .eq('auth_user_id', user.id).maybeSingle();
+      if (m1) { mem = m1; } else {
+        const { data: m2 } = await supabase.from('members').select('id,status,auth_user_id')
+          .eq('email', user.email?.toLowerCase() ?? '').maybeSingle();
+        if (m2) { mem = m2; if (!m2.auth_user_id) await supabase.from('members').update({ auth_user_id: user.id }).eq('id', m2.id); }
+      }
       const { data: adm } = await supabase.from('election_admins').select('email')
         .eq('email', user.email?.toLowerCase() ?? '').maybeSingle();
       const { data: ha } = await supabase.from('election_settings').select('value').eq('key','head_admins').maybeSingle();
