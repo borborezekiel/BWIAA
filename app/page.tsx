@@ -436,7 +436,17 @@ export default function BWIAAElection2026() {
           .anim-5 { animation: fadeUp 0.7s ease 0.6s forwards; opacity: 0; }
           .anim-6 { animation: fadeUp 0.7s ease 0.75s forwards; opacity: 0; }
           .ticker-wrap { overflow: hidden; white-space: nowrap; }
-          .ticker-inner { display: inline-block; animation: ticker 28s linear infinite; }
+          .ticker-inner {
+            display: inline-block;
+            animation-name: ticker;
+            animation-timing-function: linear;
+            animation-iteration-count: infinite;
+            /* duration is set via inline style — do NOT set it here */
+            will-change: transform;
+            -webkit-font-smoothing: antialiased;
+            backface-visibility: hidden;
+            transform: translateZ(0);
+          }
           .shimmer-text {
             background: linear-gradient(90deg, var(--gold) 0%, var(--gold-light) 40%, #fff8dc 50%, var(--gold-light) 60%, var(--gold) 100%);
             background-size: 200% auto;
@@ -497,14 +507,25 @@ export default function BWIAAElection2026() {
         {/* ── Live Announcements Ticker — speed & messages controlled from Admin Settings ── */}
         <div className="bg-[#D4A017] py-2.5">
           <div className="ticker-wrap">
-            <div className="ticker-inner font-oswald font-bold text-black text-sm tracking-widest uppercase"
-              style={{ animationDuration: tickerDuration }}>
+            <div
+              className="font-oswald font-bold text-black text-sm tracking-widest uppercase"
+              style={{
+                display: 'inline-block',
+                whiteSpace: 'nowrap',
+                animationName: 'ticker',
+                animationDuration: tickerDuration,
+                animationTimingFunction: 'linear',
+                animationIterationCount: 'infinite',
+                willChange: 'transform',
+                WebkitFontSmoothing: 'antialiased',
+                backfaceVisibility: 'hidden',
+                transform: 'translateZ(0)',
+              }}>
               {tickerMessages.map((a, i) => (
-                <span key={i} className="mx-12">{a}</span>
+                <span key={i} style={{ marginRight: '3rem' }}>{a}</span>
               ))}
-              {/* Duplicate for seamless loop */}
               {tickerMessages.map((a, i) => (
-                <span key={`b${i}`} className="mx-12">{a}</span>
+                <span key={`b${i}`} style={{ marginRight: '3rem' }}>{a}</span>
               ))}
             </div>
           </div>

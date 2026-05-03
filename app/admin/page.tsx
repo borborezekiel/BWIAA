@@ -1662,9 +1662,13 @@ function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases
             <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
               <div style={{
                 display: 'inline-block',
-                animation: `ticker ${tickerSpd === 'slow' ? '45s' : tickerSpd === 'fast' ? '15s' : '28s'} linear infinite`,
+                animationName: 'ticker',
+                animationDuration: tickerSpd === 'slow' ? '45s' : tickerSpd === 'fast' ? '15s' : '28s',
+                animationTimingFunction: 'linear',
+                animationIterationCount: 'infinite',
                 fontFamily: 'sans-serif', fontWeight: 700, fontSize: '13px',
                 textTransform: 'uppercase', letterSpacing: '0.1em', color: '#000',
+                willChange: 'transform', backfaceVisibility: 'hidden', transform: 'translateZ(0)',
               }}>
                 {tickerMsgs.map((m, i) => <span key={i} style={{ marginRight: '3rem' }}>{m}</span>)}
                 {tickerMsgs.map((m, i) => <span key={`b${i}`} style={{ marginRight: '3rem' }}>{m}</span>)}
