@@ -65,6 +65,18 @@ export default function BWIAAElection2026() {
   // ── NEW: phase + member state ────────────────────────────────────────────────
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [isApprovedMember, setIsApprovedMember] = useState(false);
+  // ── Ticker ───────────────────────────────────────────────────────────────────
+  const [tickerMessages, setTickerMessages] = useState<string[]>([
+    "🐯 Welcome to the Official BWIAA 2026 National Alumni Portal",
+    "⭐ One Legacy. One Family. One Future.",
+    "🗳️ Select your chapter below to cast your vote",
+    "📋 Candidate Registration is Now Open — Approved Members Apply Now",
+    "🌐 Visit bwiaa.vercel.app — Stay Connected · Get Involved · Make an Impact",
+    "🐯 Stronger Together. Tigers Forever.",
+    "📣 Results will be announced the same day as voting closes",
+  ]);
+  const [tickerSpeed, setTickerSpeed] = useState<'slow'|'medium'|'fast'>('medium');
+  const tickerDuration = tickerSpeed === 'slow' ? '45s' : tickerSpeed === 'fast' ? '15s' : '28s';
 
   // ── Init ────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -108,6 +120,14 @@ export default function BWIAAElection2026() {
           // ── NEW: read registration_open phase ──────────────────────────────
           setRegistrationOpen(get('registration_open') === 'true');
 
+          // ── Load ticker announcements & speed from settings ────────────────
+          if (get('ticker_announcements')) {
+            try { setTickerMessages(JSON.parse(get('ticker_announcements'))); } catch {}
+          }
+          if (get('ticker_speed')) {
+            setTickerSpeed(get('ticker_speed') as 'slow'|'medium'|'fast');
+          }
+
           const merged = { ...DEFAULT_CONFIG };
           if (get('org_name'))        merged.org_name        = get('org_name');
           if (get('election_title'))  merged.election_title  = get('election_title');
@@ -122,6 +142,7 @@ export default function BWIAAElection2026() {
       finally { setLoading(false); }
     };
     init();
+    trackVisit();
     refreshVotes();
     fetchCandidates();
 
@@ -208,6 +229,17 @@ export default function BWIAAElection2026() {
     const { data: profile } = await supabase
       .from('voter_profiles').select('home_chapter, class_year').eq('id', u.id).maybeSingle();
     if (profile) { setMyChapter(profile.home_chapter); setMyClass(profile.class_year); }
+  }
+
+  async function trackVisit() {
+    try {
+      const isMember = !!(await supabase.auth.getUser()).data.user;
+      await supabase.from('site_visits').insert([{
+        page: '/',
+        referrer: document.referrer || null,
+        is_member: isMember,
+      }]);
+    } catch {} // non-blocking — never fail silently to user
   }
 
   async function fetchCandidates() {
@@ -462,30 +494,16 @@ export default function BWIAAElection2026() {
           </div>
         )}
 
-        {/* ── Live Announcements Ticker ── */}
+        {/* ── Live Announcements Ticker — speed & messages controlled from Admin Settings ── */}
         <div className="bg-[#D4A017] py-2.5">
           <div className="ticker-wrap">
-            <div className="ticker-inner font-oswald font-bold text-black text-sm tracking-widest uppercase">
-              {[
-                "🐯 Welcome to the Official BWIAA 2026 National Alumni Portal",
-                "⭐ One Legacy. One Family. One Future.",
-                "🗳️ Select your chapter below to cast your vote",
-                "📋 Candidate Registration is Now Open — Approved Members Apply Now",
-                "🌐 Visit bwiaa.vercel.app — Stay Connected · Get Involved · Make an Impact",
-                "🐯 Stronger Together. Tigers Forever.",
-                "📣 Results will be announced the same day as voting closes",
-              ].map((a, i) => (
+            <div className="ticker-inner font-oswald font-bold text-black text-sm tracking-widest uppercase"
+              style={{ animationDuration: tickerDuration }}>
+              {tickerMessages.map((a, i) => (
                 <span key={i} className="mx-12">{a}</span>
               ))}
               {/* Duplicate for seamless loop */}
-              {[
-                "🐯 Welcome to the Official BWIAA 2026 National Alumni Portal",
-                "⭐ One Legacy. One Family. One Future.",
-                "🗳️ Select your chapter below to cast your vote",
-                "📋 Candidate Registration is Now Open — Approved Members Apply Now",
-                "🌐 Visit bwiaa.vercel.app — Stay Connected · Get Involved · Make an Impact",
-                "🐯 Stronger Together. Tigers Forever.",
-              ].map((a, i) => (
+              {tickerMessages.map((a, i) => (
                 <span key={`b${i}`} className="mx-12">{a}</span>
               ))}
             </div>

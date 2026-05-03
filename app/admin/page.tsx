@@ -354,6 +354,41 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
   const uniqueVoters = new Set(scopedVotes.map(v => v.voter_id)).size;
   const [timeLeft, setTimeLeft]         = useState('');
   const [votingClosed, setVotingClosed] = useState(false);
+  const [visitStats, setVisitStats]     = useState<{
+    total: number; today: number; thisWeek: number;
+    members: number; byDay: { date: string; count: number }[];
+  } | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isHeadAdmin) return;
+    setStatsLoading(true);
+    (async () => {
+      const now     = new Date();
+      const todayStr  = now.toISOString().slice(0,10);
+      const weekAgo   = new Date(now.getTime() - 7 * 86400000).toISOString();
+
+      const { data: all }  = await supabase.from('site_visits').select('visited_at, is_member');
+      if (!all) { setStatsLoading(false); return; }
+
+      const total    = all.length;
+      const today    = all.filter(v => v.visited_at.slice(0,10) === todayStr).length;
+      const thisWeek = all.filter(v => v.visited_at >= weekAgo).length;
+      const members  = all.filter(v => v.is_member).length;
+
+      // Last 7 days breakdown
+      const byDay: { date: string; count: number }[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const d   = new Date(now.getTime() - i * 86400000);
+        const ds  = d.toISOString().slice(0,10);
+        const lbl = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+        byDay.push({ date: lbl, count: all.filter(v => v.visited_at.slice(0,10) === ds).length });
+      }
+
+      setVisitStats({ total, today, thisWeek, members, byDay });
+      setStatsLoading(false);
+    })();
+  }, [isHeadAdmin]);
 
   useEffect(() => {
     if (!deadline) { setTimeLeft(''); return; }
@@ -391,6 +426,84 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
           </div>
         ))}
       </div>
+
+      {/* ── Visitor Statistics (head admin only) ── */}
+      {isHeadAdmin && (
+        <div className="bg-white rounded-[2.5rem] p-8 shadow-xl border-b-8 border-blue-200">
+          <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+            <h3 className="text-xl font-black uppercase italic border-l-8 border-blue-500 pl-5">
+              Website Visitor Statistics
+            </h3>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Live · bwiaa.vercel.app</span>
+          </div>
+          {statsLoading ? (
+            <div className="flex items-center justify-center py-8 gap-3">
+              <Loader2 className="animate-spin text-blue-500" size={24}/>
+              <p className="text-slate-400 font-bold text-sm uppercase tracking-widest">Loading stats...</p>
+            </div>
+          ) : visitStats ? (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                {[
+                  { label: 'Total Visits',    value: visitStats.total,    color: 'bg-blue-600' },
+                  { label: 'Today',           value: visitStats.today,    color: 'bg-green-600' },
+                  { label: 'This Week',       value: visitStats.thisWeek, color: 'bg-purple-600' },
+                  { label: 'Member Visits',   value: visitStats.members,  color: 'bg-orange-500' },
+                ].map(s => (
+                  <div key={s.label} className={`${s.color} text-white rounded-2xl p-5 text-center`}>
+                    <p className="text-3xl font-black">{s.value.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-80 mt-1">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* 7-day bar chart */}
+              <div>
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Last 7 Days</p>
+                <div className="flex items-end gap-2 h-28">
+                  {(() => {
+                    const max = Math.max(...visitStats.byDay.map(d => d.count), 1);
+                    return visitStats.byDay.map((d, i) => {
+                      const pct = Math.round((d.count / max) * 100);
+                      const isToday = i === visitStats.byDay.length - 1;
+                      return (
+                        <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
+                          <p className="text-[10px] font-black text-slate-700">{d.count > 0 ? d.count : ''}</p>
+                          <div className="w-full rounded-t-xl transition-all duration-700 min-h-[4px]"
+                            style={{
+                              height: `${Math.max(pct, 4)}%`,
+                              background: isToday ? '#3b82f6' : '#cbd5e1',
+                            }}/>
+                          <p className="text-[9px] text-slate-400 font-bold text-center leading-tight">{d.date}</p>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+
+              {/* Guest vs member ratio */}
+              <div className="mt-6 pt-5 border-t border-slate-100">
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Visitor Type Breakdown</p>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden flex">
+                    <div className="h-full bg-orange-500 transition-all duration-700"
+                      style={{ width: `${visitStats.total > 0 ? Math.round((visitStats.members/visitStats.total)*100) : 0}%` }}/>
+                    <div className="h-full bg-blue-500 flex-1"/>
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0 text-xs font-bold">
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 bg-orange-500 rounded-full inline-block"/> Members {visitStats.total > 0 ? Math.round((visitStats.members/visitStats.total)*100) : 0}%</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-500 rounded-full inline-block"/> Guests {visitStats.total > 0 ? Math.round(((visitStats.total-visitStats.members)/visitStats.total)*100) : 0}%</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-slate-400 font-bold text-sm text-center py-6">No visit data yet. Stats will appear once visitors land on the site.</p>
+          )}
+        </div>
+      )}
 
       {/* Countdown */}
       {deadline && (
@@ -1310,6 +1423,37 @@ function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases
   const [newHA, setNewHA]           = useState('');
   const [haSaving, setHaSaving]     = useState(false);
   const [phaseSaving, setPhaseSaving] = useState(false);
+  // ── Ticker state ─────────────────────────────────────────────────────────────
+  const [tickerMsgs, setTickerMsgs]       = useState<string[]>([]);
+  const [newMsg, setNewMsg]               = useState('');
+  const [tickerSpd, setTickerSpd]         = useState<'slow'|'medium'|'fast'>('medium');
+  const [tickerSaving, setTickerSaving]   = useState(false);
+
+  useEffect(() => {
+    supabase.from('election_settings').select('key,value')
+      .in('key', ['ticker_announcements','ticker_speed'])
+      .then(({ data }) => {
+        if (!data) return;
+        const get = (k: string) => data.find(r => r.key === k)?.value;
+        if (get('ticker_announcements')) {
+          try { setTickerMsgs(JSON.parse(get('ticker_announcements')!)); } catch {}
+        }
+        if (get('ticker_speed')) {
+          setTickerSpd(get('ticker_speed') as 'slow'|'medium'|'fast');
+        }
+      });
+  }, []);
+
+  async function saveTicker() {
+    setTickerSaving(true);
+    const { error } = await supabase.from('election_settings').upsert([
+      { key: 'ticker_announcements', value: JSON.stringify(tickerMsgs) },
+      { key: 'ticker_speed',         value: tickerSpd },
+    ], { onConflict: 'key' });
+    setTickerSaving(false);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    showToast('✓ Ticker updated — changes are live on the public page immediately.');
+  }
 
   useEffect(() => {
     supabase.from('election_settings').select('value').eq('key','head_admins').maybeSingle()
@@ -1451,6 +1595,89 @@ function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases
             <strong className="text-white">Integrity rules:</strong> Voting requires registration open + deadline set · Results require voting open · Turning off voting also turns off results · Nobody votes before the countdown starts · Results announced on election day.
           </p>
         </div>
+      </Card>
+
+      {/* ── Ticker / Announcements Control ── */}
+      <Card accent="slate">
+        <SectionTitle>📣 Live Ticker & Announcements</SectionTitle>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6 -mt-2">
+          Edit the scrolling announcements on the public landing page. Changes go live instantly.
+        </p>
+
+        {/* Speed control */}
+        <div className="mb-6">
+          <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Ticker Speed</p>
+          <div className="flex gap-3">
+            {(['slow','medium','fast'] as const).map(s => (
+              <button key={s} onClick={() => setTickerSpd(s)}
+                className={`flex-1 py-3 rounded-2xl border-2 font-black text-xs uppercase tracking-widest transition-all
+                  ${tickerSpd === s ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+                {s === 'slow' ? '🐢 Slow' : s === 'fast' ? '⚡ Fast' : '🚶 Medium'}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-400 font-bold mt-2">
+            Slow = 45s · Medium = 28s · Fast = 15s per loop
+          </p>
+        </div>
+
+        {/* Message list */}
+        <div className="mb-4">
+          <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Announcements ({tickerMsgs.length})</p>
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {tickerMsgs.map((msg, i) => (
+              <div key={i} className="flex items-center gap-3 bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
+                <span className="text-xs font-black text-slate-300 w-5 shrink-0">{i+1}.</span>
+                <input value={msg} onChange={e => {
+                  const updated = [...tickerMsgs]; updated[i] = e.target.value; setTickerMsgs(updated);
+                }} className="flex-1 bg-transparent font-bold text-sm text-slate-700 outline-none"/>
+                <button onClick={() => setTickerMsgs(prev => prev.filter((_,idx) => idx !== i))}
+                  className="text-red-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-all shrink-0">
+                  <Trash2 size={14}/>
+                </button>
+              </div>
+            ))}
+            {tickerMsgs.length === 0 && (
+              <p className="text-slate-400 font-bold text-sm text-center py-4">No announcements — add one below.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Add new message */}
+        <div className="flex gap-3 mb-6">
+          <input value={newMsg} onChange={e => setNewMsg(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && newMsg.trim()) { setTickerMsgs(prev => [...prev, newMsg.trim()]); setNewMsg(''); } }}
+            placeholder="Type new announcement (emoji OK 🐯)..."
+            className="flex-1 border-2 border-dashed border-slate-200 focus:border-slate-700 rounded-2xl px-5 py-3 font-bold outline-none text-sm"/>
+          <button onClick={() => { if (newMsg.trim()) { setTickerMsgs(prev => [...prev, newMsg.trim()]); setNewMsg(''); } }}
+            className="bg-slate-900 text-white font-black uppercase px-5 py-3 rounded-2xl text-xs hover:bg-slate-700 transition-all flex items-center gap-2 shrink-0">
+            <PlusCircle size={14}/> Add
+          </button>
+        </div>
+
+        {/* Live preview */}
+        {tickerMsgs.length > 0 && (
+          <div className="bg-[#D4A017] rounded-2xl py-2.5 px-4 mb-6 overflow-hidden">
+            <p className="text-[10px] font-black text-black/50 uppercase tracking-widest mb-1">Preview</p>
+            <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+              <div style={{
+                display: 'inline-block',
+                animation: `ticker ${tickerSpd === 'slow' ? '45s' : tickerSpd === 'fast' ? '15s' : '28s'} linear infinite`,
+                fontFamily: 'sans-serif', fontWeight: 700, fontSize: '13px',
+                textTransform: 'uppercase', letterSpacing: '0.1em', color: '#000',
+              }}>
+                {tickerMsgs.map((m, i) => <span key={i} style={{ marginRight: '3rem' }}>{m}</span>)}
+                {tickerMsgs.map((m, i) => <span key={`b${i}`} style={{ marginRight: '3rem' }}>{m}</span>)}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <button onClick={saveTicker} disabled={tickerSaving}
+          className="bg-slate-900 hover:bg-slate-700 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-2 transition-all disabled:opacity-50">
+          {tickerSaving ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
+          {tickerSaving ? 'Saving...' : 'Save & Publish Ticker'}
+        </button>
       </Card>
 
       {/* ── Organisation Branding ── */}
