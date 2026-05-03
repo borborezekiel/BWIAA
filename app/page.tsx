@@ -354,80 +354,415 @@ export default function BWIAAElection2026() {
     </div>
   );
 
-  // ── Chapter selection (not yet logged in / no profile) ────────────────────────
+  // ── Landing page (not yet logged in / no chapter profile) ───────────────────
   if (!myChapter) {
     return (
-      <div className="min-h-screen bg-slate-950 p-6 flex flex-col items-center justify-center">
+      <div className="min-h-screen bg-[#0a0a00] text-white overflow-x-hidden">
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700;900&display=swap');
+          :root {
+            --gold: #D4A017;
+            --gold-light: #F5C842;
+            --gold-dark: #8B6914;
+            --black: #0a0a00;
+            --black2: #111100;
+          }
+          .font-bebas { font-family: 'Bebas Neue', sans-serif; }
+          .font-oswald { font-family: 'Oswald', sans-serif; }
+          .text-gold { color: var(--gold); }
+          .text-gold-light { color: var(--gold-light); }
+          .bg-gold { background-color: var(--gold); }
+          .border-gold { border-color: var(--gold); }
+
+          @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(40px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes fadeIn {
+            from { opacity: 0; } to { opacity: 1; }
+          }
+          @keyframes ticker {
+            from { transform: translateX(100%); }
+            to   { transform: translateX(-100%); }
+          }
+          @keyframes pulse-gold {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(212,160,23,0.5); }
+            50%       { box-shadow: 0 0 0 16px rgba(212,160,23,0); }
+          }
+          @keyframes shimmer {
+            0%   { background-position: -200% center; }
+            100% { background-position: 200% center; }
+          }
+          @keyframes roar {
+            0%,100% { transform: scale(1); }
+            50%      { transform: scale(1.03); }
+          }
+          .anim-1 { animation: fadeUp 0.7s ease forwards; }
+          .anim-2 { animation: fadeUp 0.7s ease 0.15s forwards; opacity: 0; }
+          .anim-3 { animation: fadeUp 0.7s ease 0.3s forwards; opacity: 0; }
+          .anim-4 { animation: fadeUp 0.7s ease 0.45s forwards; opacity: 0; }
+          .anim-5 { animation: fadeUp 0.7s ease 0.6s forwards; opacity: 0; }
+          .anim-6 { animation: fadeUp 0.7s ease 0.75s forwards; opacity: 0; }
+          .ticker-wrap { overflow: hidden; white-space: nowrap; }
+          .ticker-inner { display: inline-block; animation: ticker 28s linear infinite; }
+          .shimmer-text {
+            background: linear-gradient(90deg, var(--gold) 0%, var(--gold-light) 40%, #fff8dc 50%, var(--gold-light) 60%, var(--gold) 100%);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 3s linear infinite;
+          }
+          .tiger-pulse { animation: roar 4s ease-in-out infinite; }
+          .chapter-btn {
+            transition: all 0.25s ease;
+            border: 1px solid rgba(212,160,23,0.2);
+            background: rgba(212,160,23,0.04);
+          }
+          .chapter-btn:hover {
+            border-color: var(--gold);
+            background: rgba(212,160,23,0.12);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 32px rgba(212,160,23,0.2);
+          }
+          .social-btn { transition: all 0.2s ease; }
+          .social-btn:hover { transform: translateY(-2px); filter: brightness(1.2); }
+          .gold-divider {
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--gold), var(--gold-light), var(--gold), transparent);
+          }
+          .stripe-bg {
+            background-image: repeating-linear-gradient(
+              -45deg,
+              transparent,
+              transparent 20px,
+              rgba(212,160,23,0.03) 20px,
+              rgba(212,160,23,0.03) 40px
+            );
+          }
+          .fee-card {
+            border: 1px solid rgba(212,160,23,0.2);
+            background: rgba(212,160,23,0.05);
+            transition: all 0.2s;
+          }
+          .fee-card:hover {
+            border-color: var(--gold);
+            background: rgba(212,160,23,0.1);
+          }
+        `}</style>
+
+        {/* ── Error Modal ── */}
         {errorMessage && (
-          <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
-            <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-red-600">
-              <XCircle size={64} className="text-red-600 mx-auto mb-6" />
-              <h2 className="text-2xl font-black uppercase italic mb-4">Access Denied</h2>
-              <p className="text-slate-500 mb-8 font-medium leading-relaxed">{errorMessage}</p>
-              <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 text-white font-black py-5 rounded-2xl uppercase tracking-widest">Understood</button>
+          <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
+            <div className="bg-[#111100] border-2 border-red-600 p-10 rounded-3xl max-w-md w-full text-center shadow-2xl">
+              <XCircle size={56} className="text-red-500 mx-auto mb-5" />
+              <h2 className="font-bebas text-4xl text-white mb-3 tracking-wider">Access Denied</h2>
+              <p className="text-white/60 mb-8 font-oswald leading-relaxed">{errorMessage}</p>
+              <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 hover:bg-red-700 text-white font-oswald font-bold py-4 rounded-2xl uppercase tracking-widest transition-all">Understood</button>
             </div>
           </div>
         )}
-        <h1 className="text-white text-5xl md:text-7xl font-black mb-4 tracking-tighter uppercase italic text-center">
-          {electionConfig.org_name} <span className="text-red-600">{electionConfig.election_year}</span>
-        </h1>
-        <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mb-2">{electionConfig.election_title}</p>
 
-        <Link href="/members" className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase tracking-widest px-5 py-2.5 rounded-xl transition-all mb-10">
-          <Users size={13}/> Member Portal — Dues, Events & Account
-        </Link>
-
-        <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-6">Select Your Chapter to Vote</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 w-full max-w-5xl">
-          {CHAPTERS.map(c => (
-            <button key={c} onClick={() => handleChapterSelect(c)}
-              className="group bg-slate-900 border border-white/5 hover:border-red-600 p-8 rounded-[2.5rem] text-white font-black transition-all flex flex-col items-center gap-4 hover:bg-slate-800">
-              <Vote size={28} className="text-red-600" />
-              <span className="text-xs uppercase tracking-widest text-center leading-relaxed">{c}</span>
-            </button>
-          ))}
+        {/* ── Live Announcements Ticker ── */}
+        <div className="bg-[#D4A017] py-2.5">
+          <div className="ticker-wrap">
+            <div className="ticker-inner font-oswald font-bold text-black text-sm tracking-widest uppercase">
+              {[
+                "🐯 Welcome to the Official BWIAA 2026 National Alumni Portal",
+                "⭐ One Legacy. One Family. One Future.",
+                "🗳️ Select your chapter below to cast your vote",
+                "📋 Candidate Registration is Now Open — Approved Members Apply Now",
+                "🌐 Visit bwiaa.vercel.app — Stay Connected · Get Involved · Make an Impact",
+                "🐯 Stronger Together. Tigers Forever.",
+                "📣 Results will be announced the same day as voting closes",
+              ].map((a, i) => (
+                <span key={i} className="mx-12">{a}</span>
+              ))}
+              {/* Duplicate for seamless loop */}
+              {[
+                "🐯 Welcome to the Official BWIAA 2026 National Alumni Portal",
+                "⭐ One Legacy. One Family. One Future.",
+                "🗳️ Select your chapter below to cast your vote",
+                "📋 Candidate Registration is Now Open — Approved Members Apply Now",
+                "🌐 Visit bwiaa.vercel.app — Stay Connected · Get Involved · Make an Impact",
+                "🐯 Stronger Together. Tigers Forever.",
+              ].map((a, i) => (
+                <span key={`b${i}`} className="mx-12">{a}</span>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Candidate Registration Section */}
-        <div className="w-full max-w-5xl mt-16">
-          <div className="flex items-center gap-4 mb-8">
-            <div className="flex-1 h-px bg-white/10"/>
-            <p className="text-white/40 text-xs font-black uppercase tracking-widest">Or</p>
-            <div className="flex-1 h-px bg-white/10"/>
-          </div>
-          <div className="bg-white/5 border border-white/10 rounded-[3rem] p-8 md:p-12">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-              <div>
-                <h2 className="text-white text-2xl font-black uppercase italic">Run for Office</h2>
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">{electionConfig.org_name} {electionConfig.election_year} Candidate Registration</p>
+        {/* ── Hero Section ── */}
+        <div className="relative stripe-bg">
+          {/* Gold corner accents */}
+          <div className="absolute top-0 left-0 w-32 h-32 border-t-4 border-l-4 border-gold opacity-30"/>
+          <div className="absolute top-0 right-0 w-32 h-32 border-t-4 border-r-4 border-gold opacity-30"/>
+
+          <div className="max-w-6xl mx-auto px-6 pt-12 pb-16">
+            {/* Nav bar */}
+            <div className="flex items-center justify-between mb-14 anim-1">
+              <div className="flex items-center gap-4">
+                {/* BWI crest placeholder */}
+                <div className="w-14 h-14 rounded-full border-2 border-gold flex items-center justify-center bg-[#D4A017]/10 tiger-pulse">
+                  <span className="font-bebas text-gold text-xl tracking-wider">BWI</span>
+                </div>
+                <div>
+                  <p className="font-bebas text-gold tracking-[0.2em] text-sm">BOOKER WASHINGTON INSTITUTE</p>
+                  <p className="font-oswald text-white/50 text-xs tracking-widest uppercase">Alumni Association</p>
+                </div>
               </div>
-              <Link href="/register" className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-8 py-4 rounded-2xl text-sm transition-all flex items-center gap-2 shrink-0">
-                <Vote size={16}/> Apply to Run
-              </Link>
+              <div className="flex items-center gap-3">
+                <Link href="/members"
+                  className="font-oswald font-semibold text-xs uppercase tracking-widest px-4 py-2.5 rounded-xl border border-gold/40 text-gold hover:bg-gold/10 transition-all">
+                  Member Portal
+                </Link>
+                <Link href="/admin"
+                  className="font-oswald font-semibold text-xs uppercase tracking-widest px-4 py-2.5 rounded-xl bg-white/5 text-white/50 hover:text-white border border-white/10 transition-all">
+                  Admin
+                </Link>
+              </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-              {electionConfig.positions_fees.map(({ position, fee }) => (
-                <div key={position} className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center">
-                  <p className="text-red-400 font-black text-lg">{electionConfig.currency_symbol}{fee.toLocaleString()}</p>
-                  <p className="text-white/50 text-[10px] font-bold uppercase tracking-widest leading-tight mt-1">{position}</p>
+
+            {/* Hero content */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+              <div>
+                <div className="anim-1">
+                  <p className="font-oswald font-bold text-gold tracking-[0.3em] text-sm uppercase mb-4">
+                    Official National Portal
+                  </p>
+                </div>
+                <h1 className="anim-2">
+                  <span className="font-bebas block text-[5rem] md:text-[7rem] leading-none tracking-wider shimmer-text">
+                    BWIAA
+                  </span>
+                  <span className="font-bebas block text-[5rem] md:text-[7rem] leading-none tracking-wider text-white">
+                    2026
+                  </span>
+                </h1>
+                <p className="font-bebas text-3xl md:text-4xl text-gold-light tracking-widest mt-2 anim-3">
+                  {electionConfig.election_title}
+                </p>
+
+                <div className="gold-divider my-8 anim-3"/>
+
+                <div className="space-y-3 anim-4">
+                  {["One Legacy. One Family. One Future.",
+                    "The official home of the Booker Washington Institute Alumni Association.",
+                    "Stay connected. Get involved. Make an impact."].map((t, i) => (
+                    <p key={i} className={`font-oswald ${i === 0 ? 'text-gold font-bold text-xl' : 'text-white/60 text-sm'} leading-relaxed`}>{t}</p>
+                  ))}
+                </div>
+
+                {/* Social links */}
+                <div className="flex items-center gap-3 mt-8 anim-5">
+                  <p className="font-oswald text-white/30 text-xs uppercase tracking-widest">Follow Us:</p>
+                  {[
+                    { label: 'WhatsApp', color: 'bg-[#25D366]', href: 'https://wa.me/', icon: (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.528 5.855L0 24l6.305-1.508A11.954 11.954 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.002-1.366l-.358-.214-3.742.895.953-3.641-.234-.374A9.818 9.818 0 1112 21.818z"/></svg>
+                    )},
+                    { label: 'Facebook', color: 'bg-[#1877F2]', href: 'https://facebook.com/', icon: (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                    )},
+                    { label: 'Instagram', color: 'bg-gradient-to-br from-[#833ab4] via-[#fd1d1d] to-[#fcb045]', href: 'https://instagram.com/', icon: (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+                    )},
+                  ].map(s => (
+                    <a key={s.label} href={s.href} target="_blank" rel="noopener noreferrer"
+                      className={`social-btn ${s.color} w-9 h-9 rounded-xl flex items-center justify-center shadow-lg`}
+                      title={s.label}>
+                      {s.icon}
+                    </a>
+                  ))}
+                  <a href="https://bwiaa.vercel.app" target="_blank" rel="noopener noreferrer"
+                    className="social-btn flex items-center gap-2 border border-gold/40 text-gold font-oswald font-bold text-xs uppercase tracking-widest px-4 py-2 rounded-xl hover:bg-gold/10 transition-all">
+                    🌐 bwiaa.vercel.app
+                  </a>
+                </div>
+              </div>
+
+              {/* Right: Chapter voting grid */}
+              <div className="anim-4">
+                <p className="font-oswald font-semibold text-white/40 text-xs uppercase tracking-[0.3em] mb-5 text-center">
+                  Select Your Chapter to Vote
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {CHAPTERS.map((c, i) => (
+                    <button key={c} onClick={() => handleChapterSelect(c)}
+                      className="chapter-btn rounded-2xl p-4 flex flex-col items-center gap-3 text-center group"
+                      style={{ animationDelay: `${i * 0.05}s` }}>
+                      <div className="w-10 h-10 rounded-xl bg-gold/10 border border-gold/30 flex items-center justify-center group-hover:bg-gold/20 transition-all">
+                        <Vote size={18} className="text-gold"/>
+                      </div>
+                      <span className="font-oswald font-semibold text-white/80 text-xs uppercase tracking-wider leading-tight group-hover:text-gold transition-all">{c}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-center text-white/20 font-oswald text-xs mt-5 tracking-widest uppercase">
+                  Voting is by secret ballot · One member, one vote
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="gold-divider"/>
+        </div>
+
+        {/* ── Pillars Section ── */}
+        <div className="bg-[#0d0d00] py-16 anim-5">
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              {[
+                { icon: '👥', title: 'Stay Connected', desc: 'Reconnect with old friends and meet fellow Tigers.' },
+                { icon: '📅', title: 'Get Involved',   desc: 'Join events, programs, and initiatives that make a difference.' },
+                { icon: '🎓', title: 'Empower Futures', desc: 'Support scholarships and mentorship for the next generation.' },
+                { icon: '📣', title: 'Stay Informed',  desc: 'Get the latest updates, news, and chapter announcements.' },
+              ].map(p => (
+                <div key={p.title} className="text-center group">
+                  <div className="text-4xl mb-4 group-hover:scale-110 transition-transform inline-block">{p.icon}</div>
+                  <p className="font-oswald font-bold text-gold uppercase tracking-widest text-sm mb-2">{p.title}</p>
+                  <p className="font-oswald text-white/40 text-xs leading-relaxed">{p.desc}</p>
                 </div>
               ))}
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-              <p className="text-white/60 text-[10px] font-black uppercase tracking-widest mb-4">EC Guidelines</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {["Registration of Candidates (Timeline Required)","Accreditation of Voters","Certification of Qualified Candidates","Screening via Class Name, Year Graduated, Sponsor & Principal","Voting shall be by secret ballot","Results announced same day"].map(g => (
-                  <div key={g} className="flex items-start gap-2">
-                    <CheckCircle2 size={12} className="text-green-400 shrink-0 mt-0.5"/>
-                    <p className="text-white/50 text-xs font-bold leading-tight">{g}</p>
+          </div>
+        </div>
+
+        <div className="gold-divider"/>
+
+        {/* ── Chapters Grid ── */}
+        <div className="bg-[#0a0a00] py-16 stripe-bg">
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="text-center mb-10 anim-5">
+              <h2 className="font-bebas text-5xl tracking-widest text-white">
+                Our Chapters. <span className="text-gold">Our Strength.</span>
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-6">
+              {CHAPTERS.map(c => (
+                <div key={c} className="flex items-center gap-2 bg-gold/5 border border-gold/20 rounded-xl px-4 py-3">
+                  <CheckCircle2 size={12} className="text-gold shrink-0"/>
+                  <span className="font-oswald font-semibold text-white/70 text-xs uppercase tracking-wide">{c}</span>
+                </div>
+              ))}
+            </div>
+            <div className="text-center mt-10">
+              <p className="font-bebas text-3xl md:text-4xl text-white tracking-wider">
+                We Are More Than a Network.
+              </p>
+              <p className="font-bebas text-2xl md:text-3xl text-gold tracking-wider mt-1">
+                We Are a Movement. We Are BWIAA.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="gold-divider"/>
+
+        {/* ── Run for Office Section ── */}
+        <div className="bg-[#0d0d00] py-16">
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
+              <div>
+                <h2 className="font-bebas text-5xl md:text-6xl text-white tracking-wider leading-tight mb-4">
+                  Lead. Serve.<br/><span className="text-gold">Make History.</span>
+                </h2>
+                <p className="font-oswald text-white/50 mb-8 leading-relaxed">
+                  Run for office in BWIAA 2026 and be part of shaping the future of our association.
+                </p>
+                <Link href="/register"
+                  className="inline-flex items-center gap-3 bg-gold hover:bg-gold-light text-black font-oswald font-bold uppercase tracking-widest px-8 py-4 rounded-2xl transition-all text-sm"
+                  style={{ animation: 'pulse-gold 2s ease-in-out infinite' }}>
+                  <FileText size={18}/> Apply to Run
+                </Link>
+                <div className="mt-8 space-y-2">
+                  {["Make your voice count","Support your chapter and community","Build leadership and lifelong skills","Leave a legacy that inspires"].map(w => (
+                    <div key={w} className="flex items-center gap-3">
+                      <CheckCircle2 size={14} className="text-gold shrink-0"/>
+                      <p className="font-oswald text-white/60 text-sm">{w}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="font-oswald font-bold text-white/30 text-xs uppercase tracking-[0.3em] mb-4">Registration Fees</p>
+                <div className="grid grid-cols-2 gap-3 mb-8">
+                  {electionConfig.positions_fees.map(({ position, fee }) => (
+                    <div key={position} className="fee-card rounded-2xl p-4 text-center">
+                      <p className="font-bebas text-3xl text-gold tracking-wider">{electionConfig.currency_symbol}{fee.toLocaleString()}</p>
+                      <p className="font-oswald font-semibold text-white/50 text-[10px] uppercase tracking-widest leading-tight mt-1">{position}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* EC Guidelines */}
+                <div className="border border-gold/20 rounded-2xl p-6 bg-gold/3">
+                  <p className="font-oswald font-bold text-gold text-xs uppercase tracking-[0.3em] mb-4">EC Guidelines</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {["Registration of Candidates (Timeline Required)","Certification of Qualified Candidates","Voting shall be by secret ballot","Accreditation of Voters","Screening via Class Name, Year Graduated, Sponsor & Principal","Results announced same day"].map(g => (
+                      <div key={g} className="flex items-start gap-2">
+                        <CheckCircle2 size={11} className="text-gold shrink-0 mt-0.5"/>
+                        <p className="font-oswald text-white/40 text-xs leading-tight">{g}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
               </div>
             </div>
-            <div className="mt-6 flex flex-col sm:flex-row gap-3">
-              <Link href="/register/status" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">Check Application Status</Link>
-              <Link href="/members" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">Member Portal</Link>
-              <Link href="/history" className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-black uppercase px-6 py-4 rounded-2xl text-xs text-center transition-all tracking-widest">Election History</Link>
+          </div>
+        </div>
+
+        <div className="gold-divider"/>
+
+        {/* ── Quick Links ── */}
+        <div className="bg-[#0a0a00] py-10">
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {[
+                { href: '/register/status', label: 'Check Application Status', icon: '📋' },
+                { href: '/members',         label: 'Member Portal',            icon: '👤' },
+                { href: '/history',         label: 'Election History',         icon: '🏆' },
+              ].map(l => (
+                <Link key={l.href} href={l.href}
+                  className="flex items-center gap-4 border border-gold/20 hover:border-gold/60 bg-gold/3 hover:bg-gold/8 rounded-2xl px-6 py-5 transition-all group">
+                  <span className="text-2xl group-hover:scale-110 transition-transform">{l.icon}</span>
+                  <span className="font-oswald font-semibold text-white/60 group-hover:text-gold text-sm uppercase tracking-widest transition-all">{l.label}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Footer ── */}
+        <div className="gold-divider"/>
+        <div className="bg-[#050500] py-10">
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="text-center md:text-left">
+                <p className="font-bebas text-3xl text-gold tracking-widest">BWIAA 2026</p>
+                <p className="font-oswald text-white/30 text-xs uppercase tracking-widest mt-1">Booker Washington Institute Alumni Association</p>
+              </div>
+              <div className="flex items-center gap-4">
+                {[
+                  { label: 'WhatsApp', color: '#25D366', href: 'https://wa.me/' },
+                  { label: 'Facebook', color: '#1877F2', href: 'https://facebook.com/' },
+                  { label: 'Instagram', color: '#E1306C', href: 'https://instagram.com/' },
+                ].map(s => (
+                  <a key={s.label} href={s.href} target="_blank" rel="noopener noreferrer"
+                    className="font-oswald font-semibold text-xs uppercase tracking-widest px-4 py-2 rounded-xl border border-white/10 hover:border-white/30 text-white/40 hover:text-white transition-all">
+                    {s.label}
+                  </a>
+                ))}
+              </div>
+              <div className="text-center md:text-right">
+                <p className="font-bebas text-xl text-gold/60 tracking-widest">Stronger Together.</p>
+                <p className="font-bebas text-xl text-gold tracking-widest">Tigers Forever. 🐯</p>
+              </div>
+            </div>
+            <div className="border-t border-white/5 mt-8 pt-6 text-center">
+              <p className="font-oswald text-white/20 text-xs tracking-widest uppercase">
+                Join Today · Be Part of Something Bigger Than Yourself · 🌐 bwiaa.vercel.app
+              </p>
             </div>
           </div>
         </div>
