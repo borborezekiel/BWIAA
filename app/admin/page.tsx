@@ -1617,7 +1617,7 @@ function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases
             ))}
           </div>
           <p className="text-[10px] text-slate-400 font-bold mt-2">
-            Slow = 45s · Medium = 28s · Fast = 15s per loop
+            Slow = 90s · Medium = 60s · Fast = 35s per loop
           </p>
         </div>
 
@@ -1663,7 +1663,7 @@ function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases
               <div style={{
                 display: 'inline-block',
                 animationName: 'ticker',
-                animationDuration: tickerSpd === 'slow' ? '45s' : tickerSpd === 'fast' ? '15s' : '28s',
+                animationDuration: tickerSpd === 'slow' ? '90s' : tickerSpd === 'fast' ? '35s' : '60s',
                 animationTimingFunction: 'linear',
                 animationIterationCount: 'infinite',
                 fontFamily: 'sans-serif', fontWeight: 700, fontSize: '13px',

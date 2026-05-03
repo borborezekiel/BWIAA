@@ -76,7 +76,7 @@ export default function BWIAAElection2026() {
     "📣 Results will be announced the same day as voting closes",
   ]);
   const [tickerSpeed, setTickerSpeed] = useState<'slow'|'medium'|'fast'>('medium');
-  const tickerDuration = tickerSpeed === 'slow' ? '45s' : tickerSpeed === 'fast' ? '15s' : '28s';
+  const tickerDuration = tickerSpeed === 'slow' ? '90s' : tickerSpeed === 'fast' ? '35s' : '60s';
 
   // ── Init ────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -233,13 +233,17 @@ export default function BWIAAElection2026() {
 
   async function trackVisit() {
     try {
-      const isMember = !!(await supabase.auth.getUser()).data.user;
-      await supabase.from('site_visits').insert([{
+      // Get user safely — anon users return null, that's fine
+      const { data: { user: visitUser } } = await supabase.auth.getUser();
+      const { error } = await supabase.from('site_visits').insert([{
         page: '/',
-        referrer: document.referrer || null,
-        is_member: isMember,
+        referrer: typeof document !== 'undefined' ? (document.referrer || null) : null,
+        is_member: !!visitUser,
       }]);
-    } catch {} // non-blocking — never fail silently to user
+      if (error) console.warn('Visit tracking error:', error.message, error.code);
+    } catch (e) {
+      console.warn('Visit tracking exception:', e);
+    }
   }
 
   async function fetchCandidates() {
