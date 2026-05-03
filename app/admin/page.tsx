@@ -354,9 +354,10 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
   const uniqueVoters = new Set(scopedVotes.map(v => v.voter_id)).size;
   const [timeLeft, setTimeLeft]         = useState('');
   const [votingClosed, setVotingClosed] = useState(false);
-  const [visitStats, setVisitStats]     = useState<{
+  const [visitStats, setVisitStats] = useState<{
     total: number; today: number; thisWeek: number;
     members: number; byDay: { date: string; count: number }[];
+    recent: any[];
   } | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
@@ -364,11 +365,15 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
     if (!isHeadAdmin) return;
     setStatsLoading(true);
     (async () => {
-      const now     = new Date();
-      const todayStr  = now.toISOString().slice(0,10);
-      const weekAgo   = new Date(now.getTime() - 7 * 86400000).toISOString();
+      const now      = new Date();
+      const todayStr = now.toISOString().slice(0,10);
+      const weekAgo  = new Date(now.getTime() - 7 * 86400000).toISOString();
 
-      const { data: all }  = await supabase.from('site_visits').select('visited_at, is_member');
+      const { data: all } = await supabase
+        .from('site_visits')
+        .select('visited_at,is_member,ip_address,country,city,region,device_type,device_brand,browser,os,screen_res,timezone,language')
+        .order('visited_at', { ascending: false })
+        .limit(500);
       if (!all) { setStatsLoading(false); return; }
 
       const total    = all.length;
@@ -376,16 +381,15 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
       const thisWeek = all.filter(v => v.visited_at >= weekAgo).length;
       const members  = all.filter(v => v.is_member).length;
 
-      // Last 7 days breakdown
       const byDay: { date: string; count: number }[] = [];
       for (let i = 6; i >= 0; i--) {
-        const d   = new Date(now.getTime() - i * 86400000);
-        const ds  = d.toISOString().slice(0,10);
+        const d  = new Date(now.getTime() - i * 86400000);
+        const ds = d.toISOString().slice(0,10);
         const lbl = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
         byDay.push({ date: lbl, count: all.filter(v => v.visited_at.slice(0,10) === ds).length });
       }
 
-      setVisitStats({ total, today, thisWeek, members, byDay });
+      setVisitStats({ total, today, thisWeek, members, byDay, recent: all.slice(0, 100) });
       setStatsLoading(false);
     })();
   }, [isHeadAdmin]);
@@ -496,6 +500,101 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                     <span className="flex items-center gap-1"><span className="w-3 h-3 bg-orange-500 rounded-full inline-block"/> Members {visitStats.total > 0 ? Math.round((visitStats.members/visitStats.total)*100) : 0}%</span>
                     <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-500 rounded-full inline-block"/> Guests {visitStats.total > 0 ? Math.round(((visitStats.total-visitStats.members)/visitStats.total)*100) : 0}%</span>
                   </div>
+                </div>
+              </div>
+
+              {/* Top countries */}
+              {(() => {
+                const countryCounts: Record<string,number> = {};
+                visitStats.recent.forEach(v => { if (v.country) countryCounts[v.country] = (countryCounts[v.country]??0)+1; });
+                const topCountries = Object.entries(countryCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+                return topCountries.length > 0 ? (
+                  <div className="mt-5 pt-5 border-t border-slate-100">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Top Countries</p>
+                    <div className="space-y-2">
+                      {topCountries.map(([country, count]) => (
+                        <div key={country} className="flex items-center gap-3">
+                          <p className="text-xs font-bold text-slate-700 w-32 shrink-0 truncate">{country}</p>
+                          <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.round((count/visitStats.total)*100)}%` }}/>
+                          </div>
+                          <p className="text-xs font-black text-slate-600 w-8 text-right shrink-0">{count}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Top devices */}
+              {(() => {
+                const devCounts: Record<string,number> = {};
+                visitStats.recent.forEach(v => { if (v.device_brand) devCounts[v.device_brand] = (devCounts[v.device_brand]??0)+1; });
+                const topDevs = Object.entries(devCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+                return topDevs.length > 0 ? (
+                  <div className="mt-5 pt-5 border-t border-slate-100">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Top Devices</p>
+                    <div className="flex flex-wrap gap-2">
+                      {topDevs.map(([dev, count]) => (
+                        <div key={dev} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                          <p className="text-xs font-black text-slate-700">{dev}</p>
+                          <span className="bg-blue-100 text-blue-700 text-[10px] font-black px-2 py-0.5 rounded-full">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Detailed visitor log */}
+              <div className="mt-5 pt-5 border-t border-slate-100">
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Recent Visitor Log (last 100)</p>
+                <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                  <table className="w-full text-xs min-w-[700px]">
+                    <thead className="bg-slate-900 text-white">
+                      <tr>
+                        {['Time','IP Address','Country / City','Device & Brand','Browser / OS','Screen','Type'].map(h => (
+                          <th key={h} className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visitStats.recent.map((v, i) => (
+                        <tr key={i} className={`border-b border-slate-50 ${i%2===0?'bg-white':'bg-slate-50/50'}`}>
+                          <td className="px-3 py-2.5 font-bold text-slate-500 whitespace-nowrap">
+                            {new Date(v.visited_at).toLocaleDateString()}<br/>
+                            <span className="text-[10px]">{new Date(v.visited_at).toLocaleTimeString()}</span>
+                          </td>
+                          <td className="px-3 py-2.5 font-mono font-bold text-slate-700 whitespace-nowrap">
+                            {v.ip_address ?? '—'}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="font-black text-slate-800">{v.country ?? '—'}</p>
+                            <p className="text-[10px] text-slate-400 font-bold">{v.city ?? ''}{v.region ? `, ${v.region}` : ''}</p>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="font-black text-slate-800">{v.device_brand ?? '—'}</p>
+                            <p className="text-[10px] text-slate-400 font-bold">{v.device_type ?? ''}</p>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="font-black text-slate-800">{v.browser ?? '—'}</p>
+                            <p className="text-[10px] text-slate-400 font-bold">{v.os ?? ''}</p>
+                          </td>
+                          <td className="px-3 py-2.5 text-[10px] font-bold text-slate-400 whitespace-nowrap">
+                            {v.screen_res ?? '—'}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${v.is_member ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {v.is_member ? 'Member' : 'Guest'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {visitStats.recent.length === 0 && (
+                        <tr><td colSpan={7} className="text-center py-8 text-slate-400 font-bold">No visits recorded yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </>

@@ -233,16 +233,22 @@ export default function BWIAAElection2026() {
 
   async function trackVisit() {
     try {
-      // Get user safely — anon users return null, that's fine
       const { data: { user: visitUser } } = await supabase.auth.getUser();
-      const { error } = await supabase.from('site_visits').insert([{
-        page: '/',
-        referrer: typeof document !== 'undefined' ? (document.referrer || null) : null,
-        is_member: !!visitUser,
-      }]);
-      if (error) console.warn('Visit tracking error:', error.message, error.code);
+      // Send to server-side API route — captures real IP, geo, device info
+      await fetch('/api/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          page:       window.location.pathname,
+          referrer:   document.referrer || null,
+          is_member:  !!visitUser,
+          screen_res: `${window.screen.width}x${window.screen.height}`,
+          timezone:   Intl.DateTimeFormat().resolvedOptions().timeZone,
+          language:   navigator.language,
+        }),
+      });
     } catch (e) {
-      console.warn('Visit tracking exception:', e);
+      console.warn('Visit tracking failed (non-critical):', e);
     }
   }
 
