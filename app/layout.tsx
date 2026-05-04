@@ -1,46 +1,40 @@
-import type { MetadataRoute } from "next";
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
 
-export default function manifest(): MetadataRoute.Manifest {
-  return {
-    name: "BWIAA 2026",
-    short_name: "BWIAA",
-    description:
-      "The official Booker Washington Institute Alumni Association portal. Vote, connect, and stay engaged.",
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
 
-    start_url: "/",
-    display: "standalone",
-    background_color: "#ffffff",
-    theme_color: "#D4A017",
-    orientation: "portrait",
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
 
-    icons: [
-      // Standard icons
-      {
-        src: "/icons/icon-192x192.png",
-        sizes: "192x192",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: "/icons/icon-512x512.png",
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "any",
-      },
+export const viewport: Viewport = {
+  themeColor: "#D4A017",
+  width: "device-width",
+  initialScale: 1,
+};
 
-      // Maskable versions (reuse same files)
-      {
-        src: "/icons/icon-192x192.png",
-        sizes: "192x192",
-        type: "image/png",
-        purpose: "maskable",
-      },
-      {
-        src: "/icons/icon-512x512.png",
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "maskable",
-      },
-    ],
-  };
+export const metadata: Metadata = {
+  title: "BWIAA 2026 — National Alumni Portal",
+  description:
+    "The official home of the Booker Washington Institute Alumni Association.",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable}`}
+    >
+      <body>{children}</body>
+    </html>
+  );
 }
