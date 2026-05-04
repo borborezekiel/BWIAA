@@ -4,6 +4,9 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "BWIAA 2026",
     short_name: "BWIAA",
+    description:
+      "The official Booker Washington Institute Alumni Association portal.",
+
     start_url: "/",
     display: "standalone",
     background_color: "#ffffff",
