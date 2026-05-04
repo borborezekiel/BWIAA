@@ -234,14 +234,28 @@ export default function BWIAAElection2026() {
   async function trackVisit() {
     try {
       const { data: { user: visitUser } } = await supabase.auth.getUser();
-      // Send to server-side API route — captures real IP, geo, device info
+
+      // ── Only mark as member if they are an APPROVED member ──────────────────
+      let is_approved_member = false;
+      if (visitUser) {
+        const { data: m1 } = await supabase.from('members')
+          .select('status').eq('auth_user_id', visitUser.id).maybeSingle();
+        if (m1) {
+          is_approved_member = m1.status === 'approved';
+        } else {
+          const { data: m2 } = await supabase.from('members')
+            .select('status').eq('email', visitUser.email?.toLowerCase() ?? '').maybeSingle();
+          if (m2) is_approved_member = m2.status === 'approved';
+        }
+      }
+
       await fetch('/api/track', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           page:       window.location.pathname,
           referrer:   document.referrer || null,
-          is_member:  !!visitUser,
+          is_member:  is_approved_member,
           screen_res: `${window.screen.width}x${window.screen.height}`,
           timezone:   Intl.DateTimeFormat().resolvedOptions().timeZone,
           language:   navigator.language,
@@ -782,6 +796,9 @@ export default function BWIAAElection2026() {
           </div>
         </div>
 
+        {/* ── PWA Install Prompt ── */}
+        <PWAInstallPrompt/>
+
         {/* ── Footer ── */}
         <div className="gold-divider"/>
         <div className="bg-[#050500] py-10">
@@ -822,6 +839,9 @@ export default function BWIAAElection2026() {
   // ── Main Voting Page ──────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20 text-slate-900">
+
+      {/* PWA Install Prompt — shown to logged-in users too */}
+      <PWAInstallPrompt/>
 
       {errorMessage && (
         <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
@@ -1052,6 +1072,121 @@ export default function BWIAAElection2026() {
           </div>
         </div>
       </footer>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PWA INSTALL PROMPT — shows on mobile & desktop when app is installable
+// ─────────────────────────────────────────────────────────────────────────────
+function PWAInstallPrompt() {
+  const [prompt, setPrompt]       = useState<any>(null);
+  const [show, setShow]           = useState(false);
+  const [installed, setInstalled] = useState(false);
+  const [platform, setPlatform]   = useState<'android'|'ios'|'desktop'|null>(null);
+
+  useEffect(() => {
+    // Detect platform
+    const ua = navigator.userAgent;
+    const isIOS     = /iPhone|iPad|iPod/i.test(ua);
+    const isAndroid = /Android/i.test(ua);
+    const isMobile  = isIOS || isAndroid;
+
+    // Check if already installed (standalone mode)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+      || (window.navigator as any).standalone === true;
+
+    if (isStandalone) { setInstalled(true); return; }
+
+    if (isIOS) {
+      setPlatform('ios');
+      // On iOS, show after 3 seconds — Safari doesn't fire beforeinstallprompt
+      const t = setTimeout(() => setShow(true), 3000);
+      return () => clearTimeout(t);
+    }
+
+    // Android / Desktop — listen for beforeinstallprompt
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setPrompt(e);
+      setPlatform(isAndroid ? 'android' : 'desktop');
+      // Show prompt after 4 seconds so page loads first
+      setTimeout(() => setShow(true), 4000);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // Detect successful install
+    window.addEventListener('appinstalled', () => {
+      setInstalled(true); setShow(false);
+    });
+
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  async function install() {
+    if (platform === 'ios') { setShow(false); return; }
+    if (!prompt) return;
+    prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    if (outcome === 'accepted') { setInstalled(true); }
+    setShow(false);
+  }
+
+  if (installed || !show) return null;
+
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4"
+      style={{ animation: 'fadeUp 0.4s ease forwards' }}>
+      <div className="bg-[#111100] border-2 border-[#D4A017] rounded-3xl p-5 shadow-2xl">
+        <div className="flex items-start gap-4">
+          {/* App icon */}
+          <div className="w-14 h-14 rounded-2xl bg-[#D4A017] flex items-center justify-center shrink-0 overflow-hidden">
+            <img src="/icons/icon-192x192.png" alt="BWIAA"
+              className="w-full h-full object-cover"
+              onError={e => {
+                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).parentElement!.innerHTML =
+                  '<span style="font-family:sans-serif;font-weight:900;color:#000;font-size:18px">BWI</span>';
+              }}/>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p style={{ fontFamily: 'sans-serif', fontWeight: 900, color: '#D4A017', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Install BWIAA App
+            </p>
+            <p style={{ fontFamily: 'sans-serif', fontWeight: 600, color: 'rgba(255,255,255,0.6)', fontSize: '11px', marginTop: '2px', lineHeight: 1.4 }}>
+              {platform === 'ios'
+                ? 'Tap the Share button below, then "Add to Home Screen"'
+                : 'Add to your home screen for quick access — works offline'}
+            </p>
+          </div>
+          <button onClick={() => setShow(false)}
+            style={{ color: 'rgba(255,255,255,0.3)', padding: '4px', flexShrink: 0, fontSize: '18px', lineHeight: 1 }}>
+            ✕
+          </button>
+        </div>
+
+        {platform === 'ios' ? (
+          // iOS instructions
+          <div style={{ marginTop: '12px', background: 'rgba(212,160,23,0.1)', borderRadius: '12px', padding: '12px' }}>
+            <p style={{ fontFamily: 'sans-serif', fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontWeight: 600, textAlign: 'center' }}>
+              <strong style={{ color: '#D4A017' }}>Safari only:</strong> tap{' '}
+              <span style={{ color: '#D4A017', fontSize: '16px' }}>⎙</span> Share →{' '}
+              <strong style={{ color: 'white' }}>Add to Home Screen</strong>
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+            <button onClick={() => setShow(false)}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)', fontFamily: 'sans-serif', fontWeight: 700, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '10px', borderRadius: '12px', border: 'none', cursor: 'pointer' }}>
+              Not Now
+            </button>
+            <button onClick={install}
+              style={{ flex: 2, background: '#D4A017', color: '#000', fontFamily: 'sans-serif', fontWeight: 900, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '10px', borderRadius: '12px', border: 'none', cursor: 'pointer' }}>
+              📲 Install App
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

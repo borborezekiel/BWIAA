@@ -376,20 +376,30 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
         .limit(500);
       if (!all) { setStatsLoading(false); return; }
 
-      const total    = all.length;
-      const today    = all.filter(v => v.visited_at.slice(0,10) === todayStr).length;
-      const thisWeek = all.filter(v => v.visited_at >= weekAgo).length;
-      const members  = all.filter(v => v.is_member).length;
+      const total      = all.length;
+      const today      = all.filter(v => v.visited_at.slice(0,10) === todayStr).length;
+      const thisWeek   = all.filter(v => v.visited_at >= weekAgo).length;
+      const members    = all.filter(v => v.is_member).length;
+      // Unique visitors by IP
+      const uniqueIPs  = new Set(all.map(v => v.ip_address).filter(Boolean)).size;
+      const uniqueToday = new Set(
+        all.filter(v => v.visited_at.slice(0,10) === todayStr).map(v => v.ip_address).filter(Boolean)
+      ).size;
 
-      const byDay: { date: string; count: number }[] = [];
+      const byDay: { date: string; count: number; unique: number }[] = [];
       for (let i = 6; i >= 0; i--) {
-        const d  = new Date(now.getTime() - i * 86400000);
-        const ds = d.toISOString().slice(0,10);
+        const d   = new Date(now.getTime() - i * 86400000);
+        const ds  = d.toISOString().slice(0,10);
         const lbl = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-        byDay.push({ date: lbl, count: all.filter(v => v.visited_at.slice(0,10) === ds).length });
+        const dayVisits = all.filter(v => v.visited_at.slice(0,10) === ds);
+        byDay.push({
+          date:   lbl,
+          count:  dayVisits.length,
+          unique: new Set(dayVisits.map(v => v.ip_address).filter(Boolean)).size,
+        });
       }
 
-      setVisitStats({ total, today, thisWeek, members, byDay, recent: all.slice(0, 100) });
+      setVisitStats({ total, today, thisWeek, members, uniqueIPs, uniqueToday, byDay, recent: all.slice(0, 100) } as any);
       setStatsLoading(false);
     })();
   }, [isHeadAdmin]);
@@ -448,18 +458,32 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
           ) : visitStats ? (
             <>
               {/* Summary cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                 {[
-                  { label: 'Total Visits',    value: visitStats.total,    color: 'bg-blue-600' },
-                  { label: 'Today',           value: visitStats.today,    color: 'bg-green-600' },
-                  { label: 'This Week',       value: visitStats.thisWeek, color: 'bg-purple-600' },
-                  { label: 'Member Visits',   value: visitStats.members,  color: 'bg-orange-500' },
+                  { label: 'Total Visits',      value: (visitStats as any).total,        sub: `${(visitStats as any).uniqueIPs ?? 0} unique IPs`,  color: 'bg-blue-600' },
+                  { label: "Today's Visits",    value: (visitStats as any).today,        sub: `${(visitStats as any).uniqueToday ?? 0} unique IPs`, color: 'bg-green-600' },
+                  { label: 'This Week',         value: (visitStats as any).thisWeek,     sub: 'last 7 days',                                        color: 'bg-purple-600' },
+                  { label: 'Approved Member Visits', value: (visitStats as any).members, sub: `of ${(visitStats as any).total} total visits`,       color: 'bg-orange-500' },
                 ].map(s => (
                   <div key={s.label} className={`${s.color} text-white rounded-2xl p-5 text-center`}>
                     <p className="text-3xl font-black">{s.value.toLocaleString()}</p>
                     <p className="text-[10px] font-bold uppercase tracking-widest opacity-80 mt-1">{s.label}</p>
+                    <p className="text-[10px] opacity-60 mt-1">{s.sub}</p>
                   </div>
                 ))}
+              </div>
+
+              {/* Explanation note */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3 mb-6 flex items-start gap-3">
+                <span className="text-slate-400 text-lg shrink-0">ℹ️</span>
+                <div>
+                  <p className="text-xs font-black text-slate-600 uppercase tracking-widest">How to read these numbers</p>
+                  <p className="text-xs text-slate-400 font-bold mt-1 leading-relaxed">
+                    <strong>Total Visits</strong> = every page load (same person visiting 5 times = 5 visits) ·
+                    <strong> Unique IPs</strong> = distinct devices/locations ·
+                    <strong> Member Visits</strong> = visits by approved members only (not pending/rejected)
+                  </p>
+                </div>
               </div>
 
               {/* 7-day bar chart */}
@@ -467,13 +491,17 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                 <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Last 7 Days</p>
                 <div className="flex items-end gap-2 h-28">
                   {(() => {
-                    const max = Math.max(...visitStats.byDay.map(d => d.count), 1);
-                    return visitStats.byDay.map((d, i) => {
+                    const byday = (visitStats as any).byDay as { date: string; count: number; unique: number }[];
+                    const max = Math.max(...byday.map(d => d.count), 1);
+                    return byday.map((d, i) => {
                       const pct = Math.round((d.count / max) * 100);
-                      const isToday = i === visitStats.byDay.length - 1;
+                      const isToday = i === byday.length - 1;
                       return (
                         <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
                           <p className="text-[10px] font-black text-slate-700">{d.count > 0 ? d.count : ''}</p>
+                          {d.unique > 0 && d.unique !== d.count && (
+                            <p className="text-[9px] text-blue-400 font-bold">{d.unique}u</p>
+                          )}
                           <div className="w-full rounded-t-xl transition-all duration-700 min-h-[4px]"
                             style={{
                               height: `${Math.max(pct, 4)}%`,
