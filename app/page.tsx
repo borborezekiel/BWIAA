@@ -65,6 +65,8 @@ export default function BWIAAElection2026() {
   // ── NEW: phase + member state ────────────────────────────────────────────────
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [isApprovedMember, setIsApprovedMember] = useState(false);
+  // ── Election phase ──────────────────────────────────────────────────────────────
+  const [votingOpen, setVotingOpen] = useState(false);
   // ── Ticker ───────────────────────────────────────────────────────────────────
   const [tickerMessages, setTickerMessages] = useState<string[]>([
     "🐯 Welcome to the Official BWIAA 2026 National Alumni Portal",
@@ -119,6 +121,7 @@ export default function BWIAAElection2026() {
 
           // ── NEW: read registration_open phase ──────────────────────────────
           setRegistrationOpen(get('registration_open') === 'true');
+          setVotingOpen(get('voting_open') === 'true');
 
           // ── Load ticker announcements & speed from settings ────────────────
           if (get('ticker_announcements')) {
@@ -173,45 +176,13 @@ export default function BWIAAElection2026() {
     if (!deadline) return;
     const tick = async () => {
       const diff = new Date(deadline).getTime() - Date.now();
+      const diff = new Date(deadline).getTime() - Date.now();
       if (diff <= 0) {
         setTimeLeft('VOTING CLOSED');
         setVotingClosed(true);
-        const archiveKey = `archived_${deadline}`;
-        if (!localStorage.getItem(archiveKey)) {
-          localStorage.setItem(archiveKey, '1');
-          try {
-            const [{ data: allVotes }, { data: allCandidates }] = await Promise.all([
-              supabase.from('votes').select('*'),
-              supabase.from('candidates').select('*'),
-            ]);
-            if (!allVotes || !allCandidates) return;
-            const grouped: Record<string, Record<string, Record<string, number>>> = {};
-            allVotes.forEach((v: any) => {
-              if (!grouped[v.chapter]) grouped[v.chapter] = {};
-              if (!grouped[v.chapter][v.position_name]) grouped[v.chapter][v.position_name] = {};
-              const curr = grouped[v.chapter][v.position_name][v.candidate_name] ?? 0;
-              grouped[v.chapter][v.position_name][v.candidate_name] = curr + 1;
-            });
-            const year = new Date().getFullYear();
-            const { data: settings } = await supabase.from('election_settings').select('*');
-            const orgName = settings?.find((r: any) => r.key === 'org_name')?.value ?? 'BWIAA';
-            const electionTitle = settings?.find((r: any) => r.key === 'election_title')?.value ?? 'Election';
-            const historyRows: any[] = [];
-            Object.entries(grouped).forEach(([chapter, positions]) => {
-              Object.entries(positions).forEach(([position, candidates]) => {
-                const total = Object.values(candidates).reduce((a, b) => a + b, 0);
-                const winnerName = Object.entries(candidates).sort((a, b) => b[1] - a[1])[0]?.[0];
-                const winnerVotes = candidates[winnerName] ?? 0;
-                const winnerCand = allCandidates.find((c: any) => c.full_name === winnerName && c.chapter === chapter);
-                historyRows.push({ election_year: year, election_name: `${orgName} ${electionTitle} ${year}`, chapter, position_name: position, winner_name: winnerName, winner_photo_url: winnerCand?.photo_url ?? null, total_votes: total, winner_votes: winnerVotes, archived_by: 'system' });
-              });
-            });
-            if (historyRows.length > 0) {
-              await supabase.from('election_history').upsert(historyRows, { onConflict: 'election_year,chapter,position_name' });
-            }
-          } catch (e) { console.error('Auto-archive error:', e); }
-        }
+        // Archiving handled server-side by /api/archive cron — runs every 5 min
         return;
+      }
       }
       const d = Math.floor(diff / 86400000);
       const h = Math.floor((diff % 86400000) / 3600000);
@@ -351,6 +322,10 @@ export default function BWIAAElection2026() {
   }
 
   function selectCandidate(pos: string, cand: string) {
+    if (!votingOpen) {
+      setErrorMessage('VOTING IS NOT OPEN YET. The Election Committee has not officially opened the ballot. Please check back later.');
+      return;
+    }
     if (votingClosed) {
       setErrorMessage('VOTING HAS CLOSED. The election deadline has passed. No further ballots can be cast.');
       return;
@@ -960,7 +935,12 @@ export default function BWIAAElection2026() {
         </div>
       )}
 
-      {votingClosed && (
+      {!votingOpen && !votingClosed && (
+        <div className="bg-slate-800 text-white text-center py-4 px-6 font-black uppercase tracking-widest text-sm">
+          ⏳ Voting has not opened yet — The Election Committee will announce when the ballot opens.
+        </div>
+      )}
+      {votingOpen && votingClosed && (
         <div className="bg-red-600 text-white text-center py-4 px-6 font-black uppercase tracking-widest text-sm">
           ⛔ Voting has closed — The election deadline has passed. No further ballots can be accepted.
         </div>
@@ -987,9 +967,9 @@ export default function BWIAAElection2026() {
                   const percent  = total > 0 ? (count / total) * 100 : 0;
                   return (
                     <button key={cand.id} onClick={() => selectCandidate(posTitle, cand.full_name)}
-                      disabled={hasVoted || votingClosed}
+                      disabled={hasVoted || votingClosed || !votingOpen}
                       className={`relative flex flex-col items-center p-4 md:p-6 rounded-3xl border-2 transition-all overflow-hidden text-center
-                        ${hasVoted || votingClosed ? 'border-slate-100 cursor-not-allowed bg-slate-50/50 opacity-70' : 'border-slate-100 hover:border-red-600 bg-white active:scale-95 hover:shadow-xl'}`}>
+                        ${hasVoted || votingClosed || !votingOpen ? 'border-slate-100 cursor-not-allowed bg-slate-50/50 opacity-70' : 'border-slate-100 hover:border-red-600 bg-white active:scale-95 hover:shadow-xl'}`}>
                       <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl overflow-hidden bg-slate-100 mb-3 border-2 border-slate-200 shrink-0">
                         {cand.photo_url
                           ? <img src={cand.photo_url} alt={cand.full_name} className="w-full h-full object-cover"/>
