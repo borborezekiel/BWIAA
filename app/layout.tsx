@@ -16,6 +16,7 @@ export const viewport: Viewport = {
   themeColor: "#D4A017",
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
 };
 
 export const metadata: Metadata = {
@@ -44,12 +45,13 @@ export const metadata: Metadata = {
 
   icons: {
     icon: [
-      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/web-app-manifest-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/web-app-manifest-512x512.png", sizes: "512x512", type: "image/png" },
     ],
     apple: [
-      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/web-app-manifest-192x192.png", sizes: "192x192", type: "image/png" },
     ],
+    shortcut: "/icons/web-app-manifest-192x192.png",
   },
 };
 
@@ -63,6 +65,13 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
+      <head>
+        <link rel="apple-touch-icon" href="/icons/web-app-manifest-192x192.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="BWIAA 2026" />
+      </head>
       <body>{children}</body>
     </html>
   );

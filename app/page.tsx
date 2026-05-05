@@ -1141,7 +1141,7 @@ function PWAInstallPrompt() {
         <div className="flex items-start gap-4">
           {/* App icon */}
           <div className="w-14 h-14 rounded-2xl bg-[#D4A017] flex items-center justify-center shrink-0 overflow-hidden">
-            <img src="/icons/icon-192x192.png" alt="BWIAA"
+            <img src="/icons/web-app-manifest-192x192.png" alt="BWIAA"
               className="w-full h-full object-cover"
               onError={e => {
                 (e.target as HTMLImageElement).style.display = 'none';
