@@ -6,7 +6,7 @@ import {
   User, CreditCard, Activity, LogOut, CheckCircle2, Clock,
   XCircle, Sun, Moon, Monitor, ChevronDown, ChevronUp,
   Settings, Loader2, Receipt, Lock, Key, Calendar, MapPin, Plus,
-  Download, Printer, Users, TrendingUp,
+  Download, Printer, Users, TrendingUp, Heart,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -340,6 +340,24 @@ export default function MemberDashboard() {
                   <div>
                     <p className={`font-black ${text} uppercase`}>Pay Dues</p>
                     <p className={`text-xs ${subtext} font-bold mt-0.5`}>Submit chapter dues</p>
+                  </div>
+                </Link>
+                <Link href="/donations" className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-red-400 transition-all shadow-sm`}>
+                  <div className="w-12 h-12 bg-red-600 rounded-2xl flex items-center justify-center shrink-0">
+                    <Heart size={20} className="text-white"/>
+                  </div>
+                  <div>
+                    <p className={`font-black ${text} uppercase`}>Donations</p>
+                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>Support the association</p>
+                  </div>
+                </Link>
+                <Link href="/contributions" className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-blue-400 transition-all shadow-sm`}>
+                  <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shrink-0">
+                    <Users size={20} className="text-white"/>
+                  </div>
+                  <div>
+                    <p className={`font-black ${text} uppercase`}>Solidarity</p>
+                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>Member contributions</p>
                   </div>
                 </Link>
                 <Link href="/finances" className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-red-400 transition-all shadow-sm`}>
