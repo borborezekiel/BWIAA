@@ -392,6 +392,17 @@ export default function DonationsPage() {
             ) : donations.filter(d => d.status === 'approved').map(d => {
               const isOpen = expanded === d.id;
               const dtCfg  = DONATION_TYPES.find(t => t.key === d.donation_type);
+              const details: ([string, React.ReactNode] | null)[] = [
+                ['Donor', d.donor_name],
+                ['Type', d.donor_type],
+                d.donor_organization ? ['Organization', d.donor_organization] : null,
+                d.donor_contact ? ['Contact', d.donor_contact] : null,
+                d.material_description ? ['Items', d.material_description] : null,
+                d.quantity ? ['Quantity', d.quantity] : null,
+                d.estimated_value ? ['Est. Value', `${d.estimated_value.toLocaleString()} LRD`] : null,
+                d.chapter ? ['Chapter', d.chapter] : ['Chapter', 'All Chapters'],
+                ['Date', new Date(d.created_at).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})],
+              ];
               return (
                 <div key={d.id} className="bg-white rounded-3xl overflow-hidden shadow-sm">
                   <button onClick={() => setExpanded(isOpen ? null : d.id)}
@@ -417,18 +428,8 @@ export default function DonationsPage() {
                   {isOpen && (
                     <div className="border-t border-slate-100 p-5 bg-slate-50 space-y-3">
                       <div className="grid grid-cols-2 gap-3 text-xs">
-                        {[
-                          ['Donor', d.donor_name],
-                          ['Type', d.donor_type],
-                          d.donor_organization ? ['Organization', d.donor_organization] : null,
-                          d.donor_contact ? ['Contact', d.donor_contact] : null,
-                          d.material_description ? ['Items', d.material_description] : null,
-                          d.quantity ? ['Quantity', d.quantity] : null,
-                          d.estimated_value ? ['Est. Value', `${d.estimated_value.toLocaleString()} LRD`] : null,
-                          d.chapter ? ['Chapter', d.chapter] : ['Chapter', 'All Chapters'],
-                          ['Date', new Date(d.created_at).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})],
-                        ].filter(Boolean).map(([l,v]) => (
-                          <div key={l as string} className="bg-white rounded-xl p-3 border border-slate-100">
+                        {details.filter((item): item is [string, React.ReactNode] => Boolean(item)).map(([l,v]) => (
+                          <div key={l} className="bg-white rounded-xl p-3 border border-slate-100">
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{l}</p>
                             <p className="font-black text-slate-800 mt-0.5">{v}</p>
                           </div>
@@ -450,19 +451,4 @@ export default function DonationsPage() {
     </div>
   );
 
-  async function compressImage(file: File): Promise<File> {
-    return new Promise((resolve, reject) => {
-      const img = new Image(); const url = URL.createObjectURL(file);
-      img.onload = () => {
-        const MAX = 1200; let { width, height } = img;
-        if (width > MAX || height > MAX) {
-          if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
-          else { width = Math.round(width * MAX / height); height = MAX; }
-        }
-        const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
-        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height); URL.revokeObjectURL(url);
-        canvas.toBlob(b => b ? resolve(new File([b], file.name.replace(/\.[^.]+$/,'.jpg'),{type:'image/jpeg'})) : reject(), 'image/jpeg', 0.88);
-      }; img.onerror = reject; img.src = url;
-    });
-  }
 }
