@@ -32,6 +32,17 @@ const STATUS_CFG: Record<string,{label:string;color:string;bg:string}> = {
   rejected: {label:'Rejected', color:'text-red-700',    bg:'bg-red-50 border-red-200'},
 };
 
+function formatContributionTotal(rows: Contribution[]) {
+  const totals = rows.reduce<Record<string, number>>((acc, c) => {
+    const cur = c.currency || 'LRD';
+    acc[cur] = (acc[cur] ?? 0) + c.amount;
+    return acc;
+  }, {});
+  const entries = Object.entries(totals);
+  if (entries.length === 0) return '0 LRD';
+  return entries.map(([cur, value]) => `${value.toLocaleString()} ${cur}`).join(' / ');
+}
+
 export default function ContributionsPage() {
   const [myMember, setMyMember]     = useState<Member|null>(null);
   const [authOk, setAuthOk]         = useState<boolean|null>(null);
@@ -193,8 +204,9 @@ export default function ContributionsPage() {
   // Stats for this member
   const myGiven    = contributions.filter(c => c.from_member_id === myMember?.id && c.status === 'approved');
   const myReceived = contributions.filter(c => c.to_member_id   === myMember?.id && c.status === 'approved');
-  const totalGiven    = myGiven.reduce((s,c)=>s+c.amount,0);
-  const totalReceived = myReceived.reduce((s,c)=>s+c.amount,0);
+  const myPending = contributions.filter(c => c.status === 'pending' && (c.from_member_id === myMember?.id || c.to_member_id === myMember?.id));
+  const totalGiven = formatContributionTotal(myGiven);
+  const totalReceived = formatContributionTotal(myReceived);
 
   return (
     <div className="min-h-screen bg-slate-950 pb-20">
@@ -204,7 +216,7 @@ export default function ContributionsPage() {
             <div className="bg-red-600 p-2 rounded-xl"><Users size={18} className="text-white"/></div>
             <div>
               <h1 className="text-white font-black uppercase italic text-sm">{orgName} — Solidarity Fund</h1>
-              <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Member-to-Member Contributions</p>
+              <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest">External Member-to-Member Support Records</p>
             </div>
           </div>
           <Link href="/members/dashboard" className="text-white/40 hover:text-white text-xs font-black uppercase tracking-widest">← Dashboard</Link>
@@ -213,15 +225,24 @@ export default function ContributionsPage() {
 
       <div className="max-w-3xl mx-auto px-4 pt-8 space-y-6">
         {/* My stats */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-green-900/30 border border-green-500/30 rounded-2xl p-5 text-center">
-            <p className="text-green-400 font-black text-2xl">{totalGiven.toLocaleString()}</p>
-            <p className="text-green-300/60 text-[10px] font-bold uppercase tracking-widest mt-1">You've Given (LRD)</p>
+            <p className="text-green-400 font-black text-xl">{totalGiven}</p>
+            <p className="text-green-300/60 text-[10px] font-bold uppercase tracking-widest mt-1">You've Given</p>
           </div>
           <div className="bg-blue-900/30 border border-blue-500/30 rounded-2xl p-5 text-center">
-            <p className="text-blue-400 font-black text-2xl">{totalReceived.toLocaleString()}</p>
-            <p className="text-blue-300/60 text-[10px] font-bold uppercase tracking-widest mt-1">You've Received (LRD)</p>
+            <p className="text-blue-400 font-black text-xl">{totalReceived}</p>
+            <p className="text-blue-300/60 text-[10px] font-bold uppercase tracking-widest mt-1">You've Received</p>
           </div>
+          <div className="bg-yellow-900/30 border border-yellow-500/30 rounded-2xl p-5 text-center">
+            <p className="text-yellow-400 font-black text-xl">{myPending.length}</p>
+            <p className="text-yellow-300/60 text-[10px] font-bold uppercase tracking-widest mt-1">Pending Records</p>
+          </div>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+          <p className="text-white/45 text-xs font-bold leading-relaxed">
+            Solidarity does not spend from dues, membership fees, or a member wallet. It records support paid outside the app, such as cash, mobile money, bank transfer, or another verified handoff.
+          </p>
         </div>
 
         {/* Tabs */}
@@ -379,7 +400,7 @@ export default function ContributionsPage() {
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
               <span className="text-amber-500 shrink-0 text-lg">ℹ️</span>
               <p className="text-amber-700 text-xs font-bold leading-relaxed">
-                Contributions are recorded for transparency. The recipient and administrator will be able to see this record.
+                This is an external support record, not a wallet transfer. Pay the member outside the app, then upload proof if available.
                 Submitted contributions are reviewed before appearing publicly.
               </p>
             </div>

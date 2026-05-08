@@ -36,6 +36,13 @@ interface DuesPayment {
 interface ActivityEntry {
   id: string; action: string; details: string|null; created_at: string;
 }
+interface Contribution {
+  id: string; from_member_id: string; from_member_name: string; from_chapter: string;
+  to_member_id: string; to_member_name: string; to_chapter: string;
+  amount: number; currency: string; reason: string; reason_type: string;
+  status: string; receipt_url: string | null; approved_by: string | null;
+  approved_at: string | null; created_at: string;
+}
 interface Event {
   id: string; title: string; description: string|null;
   chapter: string; event_date: string; event_time: string|null;
@@ -57,11 +64,23 @@ const DUES_STATUS: Record<string,{label:string;color:string}> = {
   rejected: {label:'Rejected', color:'text-red-600'},
 };
 
+function formatContributionTotal(rows: Contribution[]) {
+  const totals = rows.reduce<Record<string, number>>((acc, c) => {
+    const cur = c.currency || 'LRD';
+    acc[cur] = (acc[cur] ?? 0) + c.amount;
+    return acc;
+  }, {});
+  const entries = Object.entries(totals);
+  if (entries.length === 0) return '0 LRD';
+  return entries.map(([cur, value]) => `${value.toLocaleString()} ${cur}`).join(' / ');
+}
+
 export default function MemberDashboard() {
   const router = useRouter();
   const [member, setMember]             = useState<Member|null>(null);
   const [dues, setDues]                 = useState<DuesPayment[]>([]);
   const [activity, setActivity]         = useState<ActivityEntry[]>([]);
+  const [contributions, setContributions] = useState<Contribution[]>([]);
   const [loading, setLoading]           = useState(true);
   const [activeTab, setActiveTab]       = useState<'overview'|'dues'|'activity'|'events'|'id-card'|'settings'>('overview');
   const [theme, setTheme]               = useState('system');
@@ -138,6 +157,12 @@ export default function MemberDashboard() {
         .select('*').eq('member_id', mem.id).order('created_at', { ascending: false }).limit(30);
       if (a) setActivity(a);
 
+      const { data: contribs } = await supabase.from('contributions')
+        .select('*')
+        .or(`from_member_id.eq.${mem.id},to_member_id.eq.${mem.id}`)
+        .order('created_at', { ascending: false });
+      if (contribs) setContributions(contribs);
+
       // Fetch chapter-wide attendance (all members visible to all)
       const { data: chAtt } = await supabase
         .from('attendance')
@@ -201,6 +226,11 @@ export default function MemberDashboard() {
   const statusCfg = STATUS_CFG[member.status] ?? STATUS_CFG['pending'];
   const totalDues = dues.filter(d => d.status === 'approved').reduce((s,d) => s+d.amount, 0);
   const pendingDues = dues.filter(d => d.status === 'pending').length;
+  const approvedGiven = contributions.filter(c => c.from_member_id === member.id && c.status === 'approved');
+  const approvedReceived = contributions.filter(c => c.to_member_id === member.id && c.status === 'approved');
+  const pendingSolidarity = contributions.filter(c => c.status === 'pending').length;
+  const totalGiven = formatContributionTotal(approvedGiven);
+  const totalReceived = formatContributionTotal(approvedReceived);
 
   return (
     <div className={`min-h-screen ${bg} pb-20 transition-colors duration-300`}>
@@ -309,6 +339,34 @@ export default function MemberDashboard() {
                 </div>
               ))}
             </div>
+
+            {member.status === 'approved' && (
+              <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
+                  <div>
+                    <h3 className={`font-black ${text} uppercase italic text-lg`}>Solidarity Summary</h3>
+                    <p className={`text-xs ${subtext} font-bold mt-1`}>
+                      External member-to-member support records. These totals do not deduct from dues or membership fees.
+                    </p>
+                  </div>
+                  <Link href="/contributions" className="bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs px-5 py-3 rounded-2xl transition-all text-center">
+                    Open Solidarity
+                  </Link>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {[
+                    {label:'I Gave', value:totalGiven, color:'bg-green-600'},
+                    {label:'I Received', value:totalReceived, color:'bg-blue-600'},
+                    {label:'Pending Records', value:String(pendingSolidarity), color:'bg-yellow-500'},
+                  ].map(s => (
+                    <div key={s.label} className={`${s.color} text-white rounded-3xl p-5 text-center shadow`}>
+                      <p className="text-2xl font-black">{s.value}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70 mt-1">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>
               <h3 className={`font-black ${text} uppercase italic text-lg mb-6`}>Member Details</h3>
