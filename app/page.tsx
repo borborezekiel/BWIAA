@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -176,13 +176,11 @@ export default function BWIAAElection2026() {
     if (!deadline) return;
     const tick = async () => {
       const diff = new Date(deadline).getTime() - Date.now();
-      const diff = new Date(deadline).getTime() - Date.now();
       if (diff <= 0) {
         setTimeLeft('VOTING CLOSED');
         setVotingClosed(true);
         // Archiving handled server-side by /api/archive cron — runs every 5 min
         return;
-      }
       }
       const d = Math.floor(diff / 86400000);
       const h = Math.floor((diff % 86400000) / 3600000);
@@ -1186,5 +1184,3 @@ function AdminLink({ userEmail, headAdminEmail }: { userEmail: string; headAdmin
     </Link>
   );
 }
-/ /   r e d e p l o y  
- 
