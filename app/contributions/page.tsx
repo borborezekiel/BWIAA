@@ -10,8 +10,8 @@ import Link from 'next/link';
 
 interface Member { id: string; full_name: string; chapter: string; email: string; photo_url: string | null; }
 interface Contribution {
-  id: string; from_member_name: string; from_chapter: string;
-  to_member_name: string; to_chapter: string;
+  id: string; from_member_id: string; from_member_name: string; from_chapter: string;
+  to_member_id: string; to_member_name: string; to_chapter: string;
   amount: number; currency: string; reason: string; reason_type: string;
   status: string; receipt_url: string | null;
   approved_by: string | null; approved_at: string | null; created_at: string;
@@ -464,16 +464,4 @@ export default function ContributionsPage() {
     </div>
   );
 
-  async function compressImage(file: File): Promise<File> {
-    return new Promise((resolve,reject) => {
-      const img = new Image(); const url = URL.createObjectURL(file);
-      img.onload = () => {
-        const MAX = 1200; let {width,height} = img;
-        if(width>MAX||height>MAX){if(width>height){height=Math.round(height*MAX/width);width=MAX;}else{width=Math.round(width*MAX/height);height=MAX;}}
-        const canvas = document.createElement('canvas'); canvas.width=width; canvas.height=height;
-        canvas.getContext('2d')!.drawImage(img,0,0,width,height); URL.revokeObjectURL(url);
-        canvas.toBlob(b=>b?resolve(new File([b],'receipt.jpg',{type:'image/jpeg'})):reject(),'image/jpeg',0.88);
-      }; img.onerror=reject; img.src=url;
-    });
-  }
 }
