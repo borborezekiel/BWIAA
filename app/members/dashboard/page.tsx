@@ -6,12 +6,11 @@ import {
   User, CreditCard, Activity, LogOut, CheckCircle2, Clock,
   XCircle, Sun, Moon, Monitor, ChevronDown, ChevronUp,
   Settings, Loader2, Receipt, Lock, Key, Calendar, MapPin, Plus,
-  Download, Printer, Users, TrendingUp, Heart,
+  Download, Printer, Users, TrendingUp, Upload, X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-// Print styles — only ID card is visible when printing
 const PRINT_STYLES = `
   @media print {
     body > * { display: none !important; }
@@ -32,17 +31,9 @@ interface DuesPayment {
   id: string; amount: number; currency: string; period: string;
   payment_method: string; status: string; created_at: string;
   screenshot_url: string|null; notes: string|null;
+  dues_amount: number; maintenance_fee: number;
 }
-interface ActivityEntry {
-  id: string; action: string; details: string|null; created_at: string;
-}
-interface Contribution {
-  id: string; from_member_id: string; from_member_name: string; from_chapter: string;
-  to_member_id: string; to_member_name: string; to_chapter: string;
-  amount: number; currency: string; reason: string; reason_type: string;
-  status: string; receipt_url: string | null; approved_by: string | null;
-  approved_at: string | null; created_at: string;
-}
+interface ActivityEntry { id: string; action: string; details: string|null; created_at: string; }
 interface Event {
   id: string; title: string; description: string|null;
   chapter: string; event_date: string; event_time: string|null;
@@ -64,51 +55,46 @@ const DUES_STATUS: Record<string,{label:string;color:string}> = {
   rejected: {label:'Rejected', color:'text-red-600'},
 };
 
-function formatContributionTotal(rows: Contribution[]) {
-  const totals = rows.reduce<Record<string, number>>((acc, c) => {
-    const cur = c.currency || 'LRD';
-    acc[cur] = (acc[cur] ?? 0) + c.amount;
-    return acc;
-  }, {});
-  const entries = Object.entries(totals);
-  if (entries.length === 0) return '0 LRD';
-  return entries.map(([cur, value]) => `${value.toLocaleString()} ${cur}`).join(' / ');
-}
-
 export default function MemberDashboard() {
   const router = useRouter();
-  const [member, setMember]             = useState<Member|null>(null);
-  const [dues, setDues]                 = useState<DuesPayment[]>([]);
-  const [activity, setActivity]         = useState<ActivityEntry[]>([]);
-  const [contributions, setContributions] = useState<Contribution[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [activeTab, setActiveTab]       = useState<'overview'|'dues'|'activity'|'events'|'id-card'|'settings'>('overview');
-  const [theme, setTheme]               = useState('system');
-  const [isDark, setIsDark]             = useState(false);
-  const [savingTheme, setSavingTheme]   = useState(false);
-  const [expandedDues, setExpandedDues]       = useState<string|null>(null);
-  const [events, setEvents]                   = useState<Event[]>([]);
-  const [attendance, setAttendance]           = useState<Attendance[]>([]);
-  const [chapterAttendance, setChapterAtt]    = useState<{member_name:string; event_title:string; event_date:string; status:string}[]>([]);
-  const [orgName, setOrgName]                 = useState('BWIAA');
-  // Password change
-  const [curPassword, setCurPassword]   = useState('');
-  const [newPassword, setNewPassword]   = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [pwMsg, setPwMsg]               = useState('');
-  const [pwLoading, setPwLoading]       = useState(false);
+  const [member, setMember]           = useState<Member|null>(null);
+  const [dues, setDues]               = useState<DuesPayment[]>([]);
+  const [activity, setActivity]       = useState<ActivityEntry[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [activeTab, setActiveTab]     = useState<'overview'|'dues'|'activity'|'events'|'id-card'|'settings'>('overview');
+  const [theme, setTheme]             = useState('system');
+  const [isDark, setIsDark]           = useState(false);
+  const [savingTheme, setSavingTheme] = useState(false);
+  const [expandedDues, setExpandedDues] = useState<string|null>(null);
+  const [events, setEvents]           = useState<Event[]>([]);
+  const [attendance, setAttendance]   = useState<Attendance[]>([]);
+  const [chapterAttendance, setChapterAtt] = useState<{member_name:string;event_title:string;event_date:string;status:string}[]>([]);
+  const [orgName, setOrgName]         = useState('BWIAA');
 
-  // Theme engine — no Tailwind dark: classes needed
+  // Password change
+  const [newPassword, setNewPassword]         = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwMsg, setPwMsg]                     = useState('');
+  const [pwLoading, setPwLoading]             = useState(false);
+
+  // ── Profile edit state ────────────────────────────────────────────────────
+  const [profileName, setProfileName]               = useState('');
+  const [profilePhone, setProfilePhone]             = useState('');
+  const [profilePhotoFile, setProfilePhotoFile]     = useState<File|null>(null);
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState<string|null>(null);
+  const [profileMsg, setProfileMsg]                 = useState('');
+  const [profileSaving, setProfileSaving]           = useState(false);
+
   useEffect(() => {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     setIsDark(theme === 'dark' || (theme === 'system' && prefersDark));
   }, [theme]);
 
-  const bg       = isDark ? 'bg-slate-950' : 'bg-slate-50';
-  const card     = isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200';
-  const text     = isDark ? 'text-white' : 'text-slate-900';
-  const subtext  = isDark ? 'text-white/40' : 'text-slate-400';
-  const divider  = isDark ? 'border-slate-800' : 'border-slate-100';
+  const bg      = isDark ? 'bg-slate-950' : 'bg-slate-50';
+  const card    = isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200';
+  const text    = isDark ? 'text-white' : 'text-slate-900';
+  const subtext = isDark ? 'text-white/40' : 'text-slate-400';
+  const divider = isDark ? 'border-slate-800' : 'border-slate-100';
   const inputCls = isDark
     ? 'bg-slate-800 border-slate-700 text-white placeholder-white/30 focus:border-red-500'
     : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400 focus:border-red-600';
@@ -124,30 +110,25 @@ export default function MemberDashboard() {
         if (get('org_name')) setOrgName(get('org_name'));
       }
 
-      // Try auth_user_id first, then email fallback (handles null auth_user_id)
+      // Two-step lookup — auth_user_id first, email fallback
       let mem: any = null;
-      const { data: m1 } = await supabase.from('members')
-        .select('*').eq('auth_user_id', user.id).maybeSingle();
+      const { data: m1 } = await supabase.from('members').select('*').eq('auth_user_id', user.id).maybeSingle();
       if (m1) {
         mem = m1;
       } else {
-        const { data: m2 } = await supabase.from('members')
-          .select('*').eq('email', user.email?.toLowerCase() ?? '').maybeSingle();
+        const { data: m2 } = await supabase.from('members').select('*').eq('email', user.email?.toLowerCase() ?? '').maybeSingle();
         if (m2) {
           mem = m2;
-          if (!m2.auth_user_id) {
-            await supabase.from('members').update({ auth_user_id: user.id }).eq('id', m2.id);
-          }
+          if (!m2.auth_user_id) await supabase.from('members').update({ auth_user_id: user.id }).eq('id', m2.id);
         }
       }
-      if (!mem) {
-        // If user is an admin but not a member, redirect to register WITH notice
-        router.push('/members/register');
-        return;
-      }
+      if (!mem) { router.push('/members/register'); return; }
 
       setMember(mem);
       setTheme(mem.theme ?? 'system');
+      // ── Initialize profile fields ──────────────────────────────────────────
+      setProfileName(mem.full_name ?? '');
+      setProfilePhone(mem.phone ?? '');
 
       const { data: d } = await supabase.from('dues_payments')
         .select('*').eq('member_id', mem.id).order('created_at', { ascending: false });
@@ -157,19 +138,9 @@ export default function MemberDashboard() {
         .select('*').eq('member_id', mem.id).order('created_at', { ascending: false }).limit(30);
       if (a) setActivity(a);
 
-      const { data: contribs } = await supabase.from('contributions')
-        .select('*')
-        .or(`from_member_id.eq.${mem.id},to_member_id.eq.${mem.id}`)
-        .order('created_at', { ascending: false });
-      if (contribs) setContributions(contribs);
-
-      // Fetch chapter-wide attendance (all members visible to all)
-      const { data: chAtt } = await supabase
-        .from('attendance')
+      const { data: chAtt } = await supabase.from('attendance')
         .select('status, note, created_at, events(title, event_date, chapter), members(full_name)')
-        .eq('events.chapter', mem.chapter)
-        .order('created_at', { ascending: false })
-        .limit(100);
+        .eq('events.chapter', mem.chapter).order('created_at', { ascending: false }).limit(100);
       if (chAtt) {
         setChapterAtt(chAtt.map((a: any) => ({
           member_name: a.members?.full_name ?? 'Unknown',
@@ -178,13 +149,12 @@ export default function MemberDashboard() {
           status:      a.status,
         })));
       }
+
       const { data: evs } = await supabase.from('events')
         .select('*').eq('chapter', mem.chapter).order('event_date', { ascending: false });
       if (evs) setEvents(evs);
 
-      // Fetch this member's attendance records
-      const { data: att } = await supabase.from('attendance')
-        .select('*').eq('member_id', mem.id);
+      const { data: att } = await supabase.from('attendance').select('*').eq('member_id', mem.id);
       if (att) setAttendance(att);
 
       setLoading(false);
@@ -200,6 +170,60 @@ export default function MemberDashboard() {
     setSavingTheme(false);
   }
 
+  // ── Profile photo compress & select ───────────────────────────────────────
+  async function handleProfilePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return;
+    const compressed = await new Promise<File>((resolve, reject) => {
+      const img = new Image(); const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const MAX = 500; let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+          else { width = Math.round(width * MAX / height); height = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(b => b ? resolve(new File([b], 'photo.jpg', {type:'image/jpeg'})) : reject(), 'image/jpeg', 0.85);
+      }; img.onerror = reject; img.src = url;
+    });
+    setProfilePhotoFile(compressed);
+    setProfilePhotoPreview(URL.createObjectURL(compressed));
+  }
+
+  // ── Save profile ──────────────────────────────────────────────────────────
+  async function saveProfile() {
+    if (!member) return;
+    if (!profileName.trim()) { setProfileMsg('Name cannot be empty.'); return; }
+    setProfileSaving(true); setProfileMsg('');
+    try {
+      let photo_url = member.photo_url;
+      if (profilePhotoFile) {
+        const fileName = `members/${member.id}_${Date.now()}.jpg`;
+        const { data: upData, error: upErr } = await supabase.storage
+          .from('candidate-photos').upload(fileName, profilePhotoFile, { upsert: true });
+        if (upErr) throw new Error(`Photo upload failed: ${upErr.message}`);
+        photo_url = supabase.storage.from('candidate-photos').getPublicUrl(upData.path).data.publicUrl;
+      }
+      const { error } = await supabase.from('members').update({
+        full_name: profileName.trim(),
+        phone:     profilePhone.trim() || null,
+        photo_url,
+      }).eq('id', member.id);
+      if (error) throw new Error(error.message);
+      setMember(prev => prev ? { ...prev, full_name: profileName.trim(), phone: profilePhone.trim() || null, photo_url } : prev);
+      setProfilePhotoFile(null); setProfilePhotoPreview(null);
+      await supabase.from('activity_log').insert([{
+        member_id: member.id, member_name: profileName.trim(), chapter: member.chapter,
+        action: 'Profile updated', details: 'Name, phone or photo updated by member',
+      }]);
+      setProfileMsg('✓ Profile updated successfully!');
+    } catch (e: any) {
+      setProfileMsg(`Failed: ${e.message}`);
+    } finally { setProfileSaving(false); }
+  }
+
   async function changePassword() {
     if (!newPassword || newPassword.length < 8) { setPwMsg('New password must be at least 8 characters.'); return; }
     if (newPassword !== confirmPassword) { setPwMsg('Passwords do not match.'); return; }
@@ -208,7 +232,7 @@ export default function MemberDashboard() {
     setPwLoading(false);
     if (error) { setPwMsg(`Failed: ${error.message}`); return; }
     setPwMsg('✓ Password updated successfully!');
-    setCurPassword(''); setNewPassword(''); setConfirmPassword('');
+    setNewPassword(''); setConfirmPassword('');
   }
 
   async function signOut() {
@@ -223,18 +247,12 @@ export default function MemberDashboard() {
   );
   if (!member) return null;
 
-  const statusCfg = STATUS_CFG[member.status] ?? STATUS_CFG['pending'];
-  const totalDues = dues.filter(d => d.status === 'approved').reduce((s,d) => s+d.amount, 0);
+  const statusCfg  = STATUS_CFG[member.status] ?? STATUS_CFG['pending'];
+  const totalDues  = dues.filter(d => d.status === 'approved').reduce((s,d) => s + d.amount, 0);
   const pendingDues = dues.filter(d => d.status === 'pending').length;
-  const approvedGiven = contributions.filter(c => c.from_member_id === member.id && c.status === 'approved');
-  const approvedReceived = contributions.filter(c => c.to_member_id === member.id && c.status === 'approved');
-  const pendingSolidarity = contributions.filter(c => c.status === 'pending').length;
-  const totalGiven = formatContributionTotal(approvedGiven);
-  const totalReceived = formatContributionTotal(approvedReceived);
 
   return (
     <div className={`min-h-screen ${bg} pb-20 transition-colors duration-300`}>
-      {/* Print styles — only ID card shows when printing */}
       <style>{`
         @media print {
           body * { visibility: hidden !important; }
@@ -253,8 +271,7 @@ export default function MemberDashboard() {
                 ? <img src={member.photo_url} className="w-full h-full object-cover" alt={member.full_name}/>
                 : <div className="w-full h-full flex items-center justify-center bg-red-600">
                     <span className="text-white font-black text-sm">{member.full_name.charAt(0)}</span>
-                  </div>
-              }
+                  </div>}
             </div>
             <div>
               <p className={`font-black ${text} text-sm uppercase leading-tight`}>{member.full_name}</p>
@@ -266,9 +283,7 @@ export default function MemberDashboard() {
               {member.status==='approved'?<CheckCircle2 size={10}/>:member.status==='pending'?<Clock size={10}/>:<XCircle size={10}/>}
               {statusCfg.label}
             </span>
-            <Link href="/members" className={`${subtext} hover:text-red-600 text-xs font-black uppercase tracking-widest hidden md:block transition-all`}>
-              Directory
-            </Link>
+            <Link href="/members" className={`${subtext} hover:text-red-600 text-xs font-black uppercase tracking-widest hidden md:block transition-all`}>Directory</Link>
             <button onClick={signOut} className="bg-red-50 hover:bg-red-100 text-red-500 p-2.5 rounded-xl transition-all border border-red-200">
               <LogOut size={16}/>
             </button>
@@ -311,8 +326,7 @@ export default function MemberDashboard() {
                     ? <img src={member.photo_url} className="w-full h-full object-cover" alt={member.full_name}/>
                     : <div className="w-full h-full flex items-center justify-center bg-red-600">
                         <span className="text-4xl font-black text-white">{member.full_name.charAt(0)}</span>
-                      </div>
-                  }
+                      </div>}
                 </div>
                 <div className="flex-1">
                   <h2 className={`text-3xl font-black uppercase italic ${text}`}>{member.full_name}</h2>
@@ -328,10 +342,10 @@ export default function MemberDashboard() {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                {label:'Total Paid', value:`$${totalDues.toLocaleString()}`, color:'bg-green-600'},
-                {label:'Pending Dues', value:String(pendingDues), color:'bg-yellow-500'},
-                {label:'Activities', value:String(activity.length), color:'bg-blue-600'},
-                {label:'Member Since', value:new Date(member.created_at).getFullYear().toString(), color:'bg-slate-700'},
+                {label:'Total Paid',    value:`$${totalDues.toLocaleString()}`, color:'bg-green-600'},
+                {label:'Pending Dues',  value:String(pendingDues),              color:'bg-yellow-500'},
+                {label:'Activities',    value:String(activity.length),          color:'bg-blue-600'},
+                {label:'Member Since',  value:new Date(member.created_at).getFullYear().toString(), color:'bg-slate-700'},
               ].map(s => (
                 <div key={s.label} className={`${s.color} text-white rounded-3xl p-5 text-center shadow`}>
                   <p className="text-2xl font-black">{s.value}</p>
@@ -340,46 +354,18 @@ export default function MemberDashboard() {
               ))}
             </div>
 
-            {member.status === 'approved' && (
-              <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
-                  <div>
-                    <h3 className={`font-black ${text} uppercase italic text-lg`}>Solidarity Summary</h3>
-                    <p className={`text-xs ${subtext} font-bold mt-1`}>
-                      External member-to-member support records. These totals do not deduct from dues or membership fees.
-                    </p>
-                  </div>
-                  <Link href="/contributions" className="bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs px-5 py-3 rounded-2xl transition-all text-center">
-                    Open Solidarity
-                  </Link>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {[
-                    {label:'I Gave', value:totalGiven, color:'bg-green-600'},
-                    {label:'I Received', value:totalReceived, color:'bg-blue-600'},
-                    {label:'Pending Records', value:String(pendingSolidarity), color:'bg-yellow-500'},
-                  ].map(s => (
-                    <div key={s.label} className={`${s.color} text-white rounded-3xl p-5 text-center shadow`}>
-                      <p className="text-2xl font-black">{s.value}</p>
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70 mt-1">{s.label}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>
               <h3 className={`font-black ${text} uppercase italic text-lg mb-6`}>Member Details</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {[
-                  ['Member ID', member.id.slice(0,8).toUpperCase()],
-                  ['Email', member.email],
-                  ['Phone', member.phone ?? '—'],
-                  ['ID Number', member.id_number],
-                  ['Class Sponsor', member.sponsor_name],
-                  ['Principal', member.principal_name],
-                  ['Chapter', member.chapter + (member.chapter_locked ? ' 🔒' : '')],
-                  ['Approved By', member.approved_by ?? 'Pending'],
+                  ['Member ID',    member.id.slice(0,8).toUpperCase()],
+                  ['Email',        member.email],
+                  ['Phone',        member.phone ?? '—'],
+                  ['ID Number',    member.id_number],
+                  ['Class Sponsor',member.sponsor_name],
+                  ['Principal',    member.principal_name],
+                  ['Chapter',      member.chapter + (member.chapter_locked ? ' 🔒' : '')],
+                  ['Approved By',  member.approved_by ?? 'Pending'],
                 ].map(([l,v]) => (
                   <div key={l} className={`${isDark?'bg-white/5':'bg-slate-50'} rounded-2xl p-4`}>
                     <p className={`text-[10px] font-black ${subtext} uppercase tracking-widest mb-1`}>{l}</p>
@@ -391,51 +377,16 @@ export default function MemberDashboard() {
 
             {member.status === 'approved' && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Link href="/dues" className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-red-400 transition-all shadow-sm`}>
-                  <div className="w-12 h-12 bg-green-600 rounded-2xl flex items-center justify-center shrink-0">
-                    <CreditCard size={20} className="text-white"/>
-                  </div>
-                  <div>
-                    <p className={`font-black ${text} uppercase`}>Pay Dues</p>
-                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>Submit chapter dues</p>
-                  </div>
-                </Link>
-                <Link href="/donations" className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-red-400 transition-all shadow-sm`}>
-                  <div className="w-12 h-12 bg-red-600 rounded-2xl flex items-center justify-center shrink-0">
-                    <Heart size={20} className="text-white"/>
-                  </div>
-                  <div>
-                    <p className={`font-black ${text} uppercase`}>Donations</p>
-                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>Support the association</p>
-                  </div>
-                </Link>
-                <Link href="/contributions" className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-blue-400 transition-all shadow-sm`}>
-                  <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shrink-0">
-                    <Users size={20} className="text-white"/>
-                  </div>
-                  <div>
-                    <p className={`font-black ${text} uppercase`}>Solidarity</p>
-                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>Member contributions</p>
-                  </div>
-                </Link>
-                <Link href="/finances" className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-red-400 transition-all shadow-sm`}>
-                  <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shrink-0">
-                    <Receipt size={20} className="text-white"/>
-                  </div>
-                  <div>
-                    <p className={`font-black ${text} uppercase`}>Finances</p>
-                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>Chapter financial records</p>
-                  </div>
-                </Link>
-                <Link href="/investments" className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-green-400 transition-all shadow-sm`}>
-                  <div className="w-12 h-12 bg-green-700 rounded-2xl flex items-center justify-center shrink-0">
-                    <TrendingUp size={20} className="text-white"/>
-                  </div>
-                  <div>
-                    <p className={`font-black ${text} uppercase`}>Investments</p>
-                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>Portfolio & my returns</p>
-                  </div>
-                </Link>
+                {[
+                  {href:'/dues',        label:'Pay Dues',   icon:<CreditCard size={20}/>, color:'bg-green-600'},
+                  {href:'/donations',   label:'Donations',  icon:<Plus size={20}/>,       color:'bg-red-600'},
+                  {href:'/contributions',label:'Solidarity', icon:<Users size={20}/>,     color:'bg-blue-600'},
+                ].map(({href,label,icon,color}) => (
+                  <Link key={href} href={href} className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-red-400 transition-all shadow-sm`}>
+                    <div className={`w-12 h-12 ${color} rounded-2xl flex items-center justify-center shrink-0`}>{icon}</div>
+                    <div><p className={`font-black ${text} uppercase`}>{label}</p></div>
+                  </Link>
+                ))}
               </div>
             )}
           </div>
@@ -446,9 +397,7 @@ export default function MemberDashboard() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className={`font-black ${text} uppercase italic text-xl`}>My Dues History</h3>
-              <Link href="/dues" className="bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs px-5 py-3 rounded-2xl transition-all">
-                + Submit Payment
-              </Link>
+              <Link href="/dues" className="bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs px-5 py-3 rounded-2xl transition-all">+ Submit Payment</Link>
             </div>
             {dues.length === 0 ? (
               <div className={`${card} border rounded-3xl p-16 text-center shadow-sm`}>
@@ -456,8 +405,10 @@ export default function MemberDashboard() {
                 <p className={`font-black ${subtext} uppercase tracking-widest text-sm`}>No dues payments yet</p>
               </div>
             ) : dues.map(d => {
-              const cfg = DUES_STATUS[d.status] ?? DUES_STATUS['pending'];
+              const cfg   = DUES_STATUS[d.status] ?? DUES_STATUS['pending'];
               const isOpen = expandedDues === d.id;
+              const duesAmt = d.dues_amount || (d.amount - (d.maintenance_fee || 0));
+              const mFee  = d.maintenance_fee || 0;
               return (
                 <div key={d.id} className={`${card} border rounded-3xl overflow-hidden shadow-sm`}>
                   <button onClick={() => setExpandedDues(isOpen?null:d.id)}
@@ -467,11 +418,20 @@ export default function MemberDashboard() {
                       <p className={`text-xs font-bold ${cfg.color}`}>{cfg.label}</p>
                       <p className={`text-[10px] ${subtext} font-bold`}>{new Date(d.created_at).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</p>
                     </div>
-                    <p className={`font-black text-xl ${text} shrink-0`}>${d.amount.toLocaleString()}</p>
+                    <div className="text-right shrink-0">
+                      <p className={`font-black text-xl ${text}`}>{d.amount.toLocaleString()} <span className="text-xs font-bold text-slate-400">{d.currency}</span></p>
+                      {mFee > 0 && <p className="text-[10px] text-amber-600 font-bold">{duesAmt} dues + {mFee} maint.</p>}
+                    </div>
                     {isOpen?<ChevronUp size={14} className={`${subtext} shrink-0`}/>:<ChevronDown size={14} className={`${subtext} shrink-0`}/>}
                   </button>
                   {isOpen && (
                     <div className={`border-t ${divider} p-5 ${isDark?'bg-white/5':'bg-slate-50'} space-y-3`}>
+                      <div className={`bg-white border border-slate-100 rounded-2xl p-4 space-y-2`}>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Breakdown</p>
+                        <div className="flex justify-between text-xs"><span className="text-slate-500 font-bold">Dues Amount</span><span className="font-black text-slate-800">{duesAmt.toLocaleString()} {d.currency}</span></div>
+                        {mFee > 0 && <div className="flex justify-between text-xs"><span className="text-amber-600 font-bold">Maintenance Fee</span><span className="font-black text-amber-600">{mFee} {d.currency}</span></div>}
+                        <div className="flex justify-between text-xs border-t border-slate-100 pt-2"><span className="font-black text-slate-700">Total Paid</span><span className="font-black text-green-700">{d.amount.toLocaleString()} {d.currency}</span></div>
+                      </div>
                       <p className={`text-xs font-bold ${subtext}`}>{d.payment_method==='in_person'?'In Person':'Screenshot/Transfer'}</p>
                       {d.notes && <p className={`text-sm font-bold ${text} italic`}>"{d.notes}"</p>}
                       {d.screenshot_url && (
@@ -489,7 +449,6 @@ export default function MemberDashboard() {
         {/* ── ACTIVITY ── */}
         {activeTab==='activity' && (
           <div className="space-y-6">
-            {/* My personal activity */}
             <div>
               <h3 className={`font-black ${text} uppercase italic text-lg mb-3`}>My Activity History</h3>
               {activity.length === 0 ? (
@@ -512,35 +471,27 @@ export default function MemberDashboard() {
                 </div>
               )}
             </div>
-
-            {/* Chapter-wide attendance — all members see everyone */}
             <div>
               <h3 className={`font-black ${text} uppercase italic text-lg mb-3 flex items-center gap-2`}>
                 <Users size={16} className="text-red-500"/> Chapter Attendance Records
               </h3>
-              <p className={`text-xs ${subtext} font-bold mb-4`}>All members attendance is visible for transparency</p>
               {chapterAttendance.length === 0 ? (
                 <div className={`${card} border rounded-3xl p-12 text-center shadow-sm`}>
                   <p className={`font-black ${subtext} uppercase tracking-widest text-sm`}>No attendance records yet</p>
                 </div>
               ) : (
                 <div className={`${card} border rounded-3xl overflow-hidden shadow-sm`}>
-                  {/* Header */}
                   <div className={`grid grid-cols-4 gap-2 px-5 py-3 ${isDark?'bg-white/5':'bg-slate-50'} border-b ${isDark?'border-slate-800':'border-slate-100'}`}>
-                    {['Member','Event','Date','Status'].map(h => (
-                      <p key={h} className={`text-[10px] font-black uppercase tracking-widest ${subtext}`}>{h}</p>
-                    ))}
+                    {['Member','Event','Date','Status'].map(h => <p key={h} className={`text-[10px] font-black uppercase tracking-widest ${subtext}`}>{h}</p>)}
                   </div>
                   {chapterAttendance.map((a, i) => {
-                    const statusColors: Record<string,string> = {
-                      present: 'text-green-600', absent: 'text-red-500', excused: 'text-yellow-600'
-                    };
+                    const statusColors: Record<string,string> = { present:'text-green-600', absent:'text-red-500', excused:'text-yellow-600' };
                     return (
                       <div key={i} className={`grid grid-cols-4 gap-2 px-5 py-3 ${i<chapterAttendance.length-1?`border-b ${isDark?'border-slate-800':'border-slate-100'}`:''}`}>
                         <p className={`text-xs font-black ${text} truncate`}>{a.member_name}</p>
                         <p className={`text-xs font-bold ${subtext} truncate`}>{a.event_title}</p>
-                        <p className={`text-xs font-bold ${subtext}`}>{a.event_date ? new Date(a.event_date).toLocaleDateString() : '—'}</p>
-                        <p className={`text-xs font-black uppercase ${statusColors[a.status] ?? subtext}`}>{a.status}</p>
+                        <p className={`text-xs font-bold ${subtext}`}>{a.event_date?new Date(a.event_date).toLocaleDateString():'—'}</p>
+                        <p className={`text-xs font-black uppercase ${statusColors[a.status]??subtext}`}>{a.status}</p>
                       </div>
                     );
                   })}
@@ -560,149 +511,49 @@ export default function MemberDashboard() {
                   className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">
                   <Printer size={14}/> Print Card
                 </button>
-                <button onClick={() => {
-                  const w = window.open('', '_blank');
-                  if (!w) return;
-                  w.document.write(`<!DOCTYPE html><html><head>
-                    <title>${member.full_name} — BWIAA Member ID</title>
-                    <style>
-                      @page { size: 85.6mm 54mm; margin: 0; }
-                      * { margin: 0; padding: 0; box-sizing: border-box; }
-                      body { width: 85.6mm; height: 54mm; font-family: Arial, sans-serif; overflow: hidden; }
-                      .card { width: 100%; height: 100%; display: flex; flex-direction: column; }
-                      .header { background: #0f172a; padding: 6px 10px; display: flex; justify-content: space-between; align-items: center; }
-                      .header-left p:first-child { color: #ef4444; font-size: 6px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; }
-                      .header-left p:last-child { color: white; font-size: 10px; font-weight: 900; font-style: italic; text-transform: uppercase; }
-                      .status { background: #ef4444; color: white; font-size: 7px; font-weight: 900; padding: 2px 5px; border-radius: 3px; text-transform: uppercase; }
-                      .body { flex: 1; display: flex; gap: 8px; padding: 8px; background: white; }
-                      .photo { width: 44px; height: 44px; border-radius: 6px; border: 2px solid #e2e8f0; object-fit: cover; flex-shrink: 0; background: #e2e8f0; }
-                      .photo-placeholder { width: 44px; height: 44px; border-radius: 6px; border: 2px solid #e2e8f0; background: #cbd5e1; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 900; color: #94a3b8; }
-                      .info h1 { font-size: 9px; font-weight: 900; text-transform: uppercase; color: #0f172a; line-height: 1.2; }
-                      .info .chapter { font-size: 7px; color: #ef4444; font-weight: 700; text-transform: uppercase; margin-top: 1px; }
-                      .info .detail { font-size: 6.5px; color: #64748b; margin-top: 4px; line-height: 1.6; }
-                      .info .detail span { color: #0f172a; font-weight: 700; }
-                      .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 10px; display: flex; justify-content: space-between; align-items: center; }
-                      .issued { font-size: 6px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-                      .barcode { display: flex; gap: 1px; align-items: flex-end; }
-                      .bar { background: #0f172a; border-radius: 1px; width: 2px; }
-                    </style></head><body>
-                    <div class="card">
-                      <div class="header">
-                        <div class="header-left">
-                          <p>Official Member ID</p>
-                          <p>${orgName}</p>
-                        </div>
-                        <div class="status">${member.status === 'approved' ? 'ACTIVE' : 'PENDING'}</div>
-                      </div>
-                      <div class="body">
-                        ${member.photo_url
-                          ? `<img class="photo" src="${member.photo_url}" alt="${member.full_name}"/>`
-                          : `<div class="photo-placeholder">${member.full_name.charAt(0)}</div>`
-                        }
-                        <div class="info">
-                          <h1>${member.full_name}</h1>
-                          <div class="chapter">${member.chapter}</div>
-                          <div class="detail">
-                            Class: <span>${member.class_name} '${String(member.year_graduated).slice(-2)}</span><br/>
-                            ID No: <span>${member.id_number}</span><br/>
-                            Member: <span>${member.id.slice(0,8).toUpperCase()}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div class="footer">
-                        <div class="issued">Issued ${new Date(member.created_at).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'})}</div>
-                        <div class="barcode">
-                          ${member.id.slice(0,12).split('').map((c: string) => `<div class="bar" style="height:${(parseInt(c,16)%3+1)*6}px"></div>`).join('')}
-                        </div>
-                      </div>
-                    </div>
-                    <script>window.onload=()=>{window.print();}</script>
-                  </body></html>`);
-                  w.document.close();
-                }} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">
-                  <Download size={14}/> Save as PDF
-                </button>
               </div>
             </div>
-
             {member.status !== 'approved' && (
               <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-4">
-                <p className="text-yellow-800 font-black text-sm">⏳ ID card is available after your membership is approved by your chapter administrator.</p>
+                <p className="text-yellow-800 font-black text-sm">⏳ ID card available after membership approval.</p>
               </div>
             )}
-
-            {/* Card preview */}
             <div className="flex justify-center">
               <div id="member-id-card" className="rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-200" style={{width:'380px'}}>
-                {/* Header */}
                 <div className="bg-slate-900 px-6 py-4 flex items-center justify-between">
                   <div>
                     <p className="text-red-500 font-black text-[10px] uppercase tracking-widest">Official Member ID</p>
                     <p className="text-white font-black uppercase italic">{orgName}</p>
                   </div>
-                  <div className={`font-black text-[10px] uppercase px-3 py-1.5 rounded-xl tracking-widest ${member.status === 'approved' ? 'bg-green-500 text-white' : 'bg-yellow-500 text-yellow-900'}`}>
-                    {member.status === 'approved' ? '✓ ACTIVE' : 'PENDING'}
+                  <div className={`font-black text-[10px] uppercase px-3 py-1.5 rounded-xl tracking-widest ${member.status==='approved'?'bg-green-500 text-white':'bg-yellow-500 text-yellow-900'}`}>
+                    {member.status==='approved'?'✓ ACTIVE':'PENDING'}
                   </div>
                 </div>
-
-                {/* Body */}
                 <div className="bg-white p-6 flex gap-5 items-start">
                   <div className="w-24 h-24 rounded-2xl overflow-hidden bg-slate-100 shrink-0 border-2 border-slate-200">
                     {member.photo_url
                       ? <img src={member.photo_url} className="w-full h-full object-cover" alt={member.full_name}/>
-                      : <div className="w-full h-full bg-slate-200 flex items-center justify-center">
-                          <span className="text-3xl font-black text-slate-400">{member.full_name.charAt(0)}</span>
-                        </div>
-                    }
+                      : <div className="w-full h-full bg-slate-200 flex items-center justify-center"><span className="text-3xl font-black text-slate-400">{member.full_name.charAt(0)}</span></div>}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-black text-slate-900 text-base uppercase leading-tight">{member.full_name}</p>
                     <p className="text-red-600 font-bold text-xs uppercase tracking-widest mt-1">{member.chapter}</p>
                     <div className="mt-3 space-y-1.5">
-                      <div className="flex gap-2">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">Class</span>
-                        <span className="text-[10px] text-slate-800 font-black">{member.class_name} · Class of {member.year_graduated}</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">ID No.</span>
-                        <span className="text-[10px] text-slate-800 font-black font-mono">{member.id_number}</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">Member</span>
-                        <span className="text-[10px] text-slate-800 font-black font-mono">{member.id.slice(0,8).toUpperCase()}</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">Sponsor</span>
-                        <span className="text-[10px] text-slate-800 font-black">{member.sponsor_name}</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">Principal</span>
-                        <span className="text-[10px] text-slate-800 font-black">{member.principal_name}</span>
-                      </div>
+                      {[['Class',member.class_name+' · Class of '+member.year_graduated],['ID No.',member.id_number],['Member',member.id.slice(0,8).toUpperCase()]].map(([l,v])=>(
+                        <div key={l} className="flex gap-2"><span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">{l}</span><span className="text-[10px] text-slate-800 font-black font-mono">{v}</span></div>
+                      ))}
                     </div>
                   </div>
                 </div>
-
-                {/* Footer */}
                 <div className="bg-slate-50 border-t border-slate-100 px-6 py-3 flex justify-between items-center">
-                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
-                    Issued {new Date(member.created_at).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}
-                  </p>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Issued {new Date(member.created_at).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</p>
                   <div className="flex gap-px items-end">
-                    {member.id.slice(0,16).split('').map((c: string, i: number) => (
-                      <div key={i} className="bg-slate-700 rounded-sm" style={{width:'2px', height:`${(parseInt(c,16)%3+1)*7}px`}}/>
+                    {member.id.slice(0,16).split('').map((c:string,i:number)=>(
+                      <div key={i} className="bg-slate-700 rounded-sm" style={{width:'2px',height:`${(parseInt(c,16)%3+1)*7}px`}}/>
                     ))}
                   </div>
                 </div>
               </div>
-            </div>
-
-            <div className={`${isDark?'bg-white/5 border-white/10':'bg-slate-50 border-slate-200'} border rounded-2xl p-5 text-center space-y-1`}>
-              <p className={`text-sm font-black ${text}`}>How to get your physical ID card</p>
-              <p className={`text-xs font-bold ${subtext} leading-relaxed`}>
-                Click <strong>Print Card</strong> to print directly, or <strong>Save as PDF</strong> to download a PDF file
-                sized for a standard ID card (85.6mm × 54mm — same as a credit card). You can then print and laminate it.
-              </p>
             </div>
           </div>
         )}
@@ -714,91 +565,57 @@ export default function MemberDashboard() {
               <h3 className={`font-black ${text} uppercase italic text-xl`}>Chapter Events</h3>
               <span className={`text-xs font-bold ${subtext} uppercase tracking-widest`}>{member.chapter}</span>
             </div>
-
             {events.length === 0 ? (
               <div className={`${card} border rounded-3xl p-16 text-center shadow-sm`}>
                 <Calendar size={48} className={`mx-auto mb-4 ${subtext} opacity-30`}/>
                 <p className={`font-black ${subtext} uppercase tracking-widest text-sm`}>No events scheduled</p>
-                <p className={`text-xs ${subtext} font-bold mt-2`}>Your chapter administrator will post events here</p>
               </div>
             ) : events.map(ev => {
-              const myAttendance = attendance.find(a => a.event_id === ev.id);
+              const myAtt = attendance.find(a => a.event_id === ev.id);
               const isPast = new Date(ev.event_date) < new Date();
-              const STATUS_COLORS: Record<string, string> = {
-                present: 'bg-green-100 text-green-700 border-green-200',
-                absent:  'bg-red-100 text-red-700 border-red-200',
-                excused: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-              };
-              const statusColor = STATUS_COLORS[myAttendance?.status ?? ''] ?? '';
-
+              const STATUS_COLORS: Record<string,string> = { present:'bg-green-100 text-green-700 border-green-200', absent:'bg-red-100 text-red-700 border-red-200', excused:'bg-yellow-100 text-yellow-700 border-yellow-200' };
               return (
                 <div key={ev.id} className={`${card} border rounded-3xl overflow-hidden shadow-sm`}>
                   <div className="p-6">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
-                          <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg ${isPast ? (isDark?'bg-white/10 text-white/40':'bg-slate-100 text-slate-400') : 'bg-red-100 text-red-600'}`}>
-                            {isPast ? 'Past' : 'Upcoming'}
-                          </span>
-                          {myAttendance && (
-                            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${statusColor}`}>
-                              {myAttendance.status}
-                            </span>
-                          )}
+                          <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg ${isPast?isDark?'bg-white/10 text-white/40':'bg-slate-100 text-slate-400':'bg-red-100 text-red-600'}`}>{isPast?'Past':'Upcoming'}</span>
+                          {myAtt && <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border ${STATUS_COLORS[myAtt.status]??''}`}>{myAtt.status}</span>}
                         </div>
                         <h4 className={`font-black ${text} text-base uppercase`}>{ev.title}</h4>
                         {ev.description && <p className={`text-xs ${subtext} font-bold mt-1 leading-relaxed`}>{ev.description}</p>}
                         <div className={`flex flex-wrap gap-3 mt-3 text-xs ${subtext} font-bold`}>
-                          <span className="flex items-center gap-1">
-                            <Calendar size={11}/> {new Date(ev.event_date).toLocaleDateString('en-US', {weekday:'short',year:'numeric',month:'long',day:'numeric'})}
-                          </span>
+                          <span className="flex items-center gap-1"><Calendar size={11}/> {new Date(ev.event_date).toLocaleDateString('en-US',{weekday:'short',year:'numeric',month:'long',day:'numeric'})}</span>
                           {ev.event_time && <span>🕐 {ev.event_time}</span>}
-                          {ev.location && (
-                            <span className="flex items-center gap-1"><MapPin size={11}/> {ev.location}</span>
-                          )}
+                          {ev.location && <span className="flex items-center gap-1"><MapPin size={11}/> {ev.location}</span>}
                         </div>
                       </div>
                     </div>
-
-                    {/* Attendance status for past events */}
                     {isPast && (
                       <div className={`mt-4 pt-4 border-t ${isDark?'border-white/10':'border-slate-100'}`}>
                         <p className={`text-[10px] font-black ${subtext} uppercase tracking-widest mb-2`}>Your Attendance</p>
-                        {myAttendance ? (
-                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-black uppercase ${statusColor}`}>
-                            {myAttendance.status === 'present' ? <CheckCircle2 size={12}/> : myAttendance.status === 'excused' ? <Clock size={12}/> : <XCircle size={12}/>}
-                            {myAttendance.status === 'present' ? 'You were present' : myAttendance.status === 'excused' ? 'Excused absence' : 'Marked absent'}
+                        {myAtt ? (
+                          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-black uppercase ${STATUS_COLORS[myAtt.status]??''}`}>
+                            {myAtt.status==='present'?<CheckCircle2 size={12}/>:myAtt.status==='excused'?<Clock size={12}/>:<XCircle size={12}/>}
+                            {myAtt.status==='present'?'You were present':myAtt.status==='excused'?'Excused absence':'Marked absent'}
                           </div>
-                        ) : (
-                          <p className={`text-xs ${subtext} font-bold italic`}>No attendance record — contact your administrator</p>
-                        )}
-                        {myAttendance?.note && (
-                          <p className={`text-xs ${subtext} font-bold mt-2 italic`}>Note: {myAttendance.note}</p>
-                        )}
+                        ) : <p className={`text-xs ${subtext} font-bold italic`}>No attendance record — contact your administrator</p>}
                       </div>
                     )}
-
-                    {/* RSVP for upcoming events */}
-                    {!isPast && !myAttendance && (
+                    {!isPast && !myAtt && (
                       <div className={`mt-4 pt-4 border-t ${isDark?'border-white/10':'border-slate-100'}`}>
                         <p className={`text-[10px] font-black ${subtext} uppercase tracking-widest mb-2`}>Will you attend?</p>
                         <div className="flex gap-2">
                           {(['present','excused'] as const).map(status => (
                             <button key={status} onClick={async () => {
-                              const { data } = await supabase.from('attendance').insert([{
-                                event_id: ev.id, member_id: member.id, status,
-                              }]).select().single();
+                              const { data } = await supabase.from('attendance').insert([{ event_id: ev.id, member_id: member.id, status }]).select().single();
                               if (data) {
                                 setAttendance(prev => [...prev, data]);
-                                await supabase.from('activity_log').insert([{
-                                  member_id: member.id, member_name: member.full_name, chapter: member.chapter,
-                                  action: `RSVP: ${status === 'present' ? 'Attending' : 'Excused'} — ${ev.title}`,
-                                  details: ev.event_date,
-                                }]);
+                                await supabase.from('activity_log').insert([{ member_id: member.id, member_name: member.full_name, chapter: member.chapter, action: `RSVP: ${status==='present'?'Attending':'Excused'} — ${ev.title}`, details: ev.event_date }]);
                               }
-                            }} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all border
-                              ${status==='present' ? 'bg-green-600 hover:bg-green-700 text-white border-green-600' : 'border-slate-200 hover:border-yellow-400 text-slate-600 hover:text-yellow-700'}`}>
-                              {status === 'present' ? '✓ Attending' : '~ Excuse'}
+                            }} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all border ${status==='present'?'bg-green-600 hover:bg-green-700 text-white border-green-600':'border-slate-200 hover:border-yellow-400 text-slate-600 hover:text-yellow-700'}`}>
+                              {status==='present'?'✓ Attending':'~ Excuse'}
                             </button>
                           ))}
                         </div>
@@ -816,6 +633,62 @@ export default function MemberDashboard() {
           <div className="space-y-6">
             <h3 className={`font-black ${text} uppercase italic text-xl`}>Account Settings</h3>
 
+            {/* ── Edit Profile ── */}
+            <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>
+              <h4 className={`font-black ${text} uppercase tracking-widest text-sm mb-1 flex items-center gap-2`}>
+                <User size={16} className="text-red-600"/> Edit Profile
+              </h4>
+              <p className={`text-xs ${subtext} font-bold mb-5`}>Update your display name, phone number and profile photo.</p>
+              <div className="space-y-4">
+                {/* Photo */}
+                <div>
+                  <label className={`block text-xs font-black ${subtext} uppercase tracking-widest mb-3`}>Profile Photo</label>
+                  <div className="flex items-center gap-4">
+                    <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-200 shrink-0 border-2 border-slate-200">
+                      {profilePhotoPreview
+                        ? <img src={profilePhotoPreview} className="w-full h-full object-cover" alt="Preview"/>
+                        : member.photo_url
+                          ? <img src={member.photo_url} className="w-full h-full object-cover" alt={member.full_name}/>
+                          : <div className="w-full h-full flex items-center justify-center bg-red-600">
+                              <span className="text-white font-black text-2xl">{member.full_name.charAt(0)}</span>
+                            </div>}
+                    </div>
+                    <label className="flex-1 cursor-pointer flex items-center gap-3 bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-200 hover:border-red-400 rounded-2xl px-5 py-4 transition-all">
+                      <Upload size={18} className="text-slate-400 shrink-0"/>
+                      <span className="text-sm font-bold text-slate-500">{profilePhotoFile ? profilePhotoFile.name : 'Click to change photo'}</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoSelect}/>
+                    </label>
+                    {profilePhotoPreview && (
+                      <button onClick={() => { setProfilePhotoFile(null); setProfilePhotoPreview(null); }}
+                        className="text-red-400 hover:text-red-600 p-1 shrink-0"><X size={16}/></button>
+                    )}
+                  </div>
+                </div>
+                {/* Name */}
+                <div>
+                  <label className={`block text-xs font-black ${subtext} uppercase tracking-widest mb-2`}>Full Name</label>
+                  <input value={profileName} onChange={e => setProfileName(e.target.value)}
+                    placeholder="Your full name"
+                    className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
+                </div>
+                {/* Phone */}
+                <div>
+                  <label className={`block text-xs font-black ${subtext} uppercase tracking-widest mb-2`}>Phone Number</label>
+                  <input value={profilePhone} onChange={e => setProfilePhone(e.target.value)}
+                    placeholder="+231 xxx xxx xxxx"
+                    className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
+                </div>
+                {profileMsg && (
+                  <p className={`text-xs font-bold ${profileMsg.startsWith('✓') ? 'text-green-600' : 'text-red-600'}`}>{profileMsg}</p>
+                )}
+                <button onClick={saveProfile} disabled={profileSaving}
+                  className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-6 py-3 rounded-2xl text-sm transition-all disabled:opacity-50 flex items-center gap-2">
+                  {profileSaving ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
+                  Save Profile
+                </button>
+              </div>
+            </div>
+
             {/* Theme */}
             <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>
               <h4 className={`font-black ${text} uppercase tracking-widest text-sm mb-1`}>Display Theme</h4>
@@ -823,8 +696,7 @@ export default function MemberDashboard() {
               <div className="grid grid-cols-3 gap-3">
                 {[{k:'light',l:'Light',i:<Sun size={20}/>},{k:'dark',l:'Dark',i:<Moon size={20}/>},{k:'system',l:'System',i:<Monitor size={20}/>}].map(t => (
                   <button key={t.k} onClick={() => saveTheme(t.k)}
-                    className={`flex flex-col items-center gap-2 p-5 rounded-2xl border-2 transition-all
-                      ${theme===t.k ? 'border-red-600 bg-red-50' : isDark?'border-slate-700 hover:border-slate-500':'border-slate-200 hover:border-slate-300'}`}>
+                    className={`flex flex-col items-center gap-2 p-5 rounded-2xl border-2 transition-all ${theme===t.k?'border-red-600 bg-red-50':isDark?'border-slate-700 hover:border-slate-500':'border-slate-200 hover:border-slate-300'}`}>
                     <span className={theme===t.k?'text-red-600':subtext}>{t.i}</span>
                     <span className={`font-black text-xs uppercase tracking-widest ${theme===t.k?'text-red-700':subtext}`}>{t.l}</span>
                     {theme===t.k && <span className="text-[10px] text-red-500 font-black">✓ Active</span>}
@@ -839,11 +711,11 @@ export default function MemberDashboard() {
               <h4 className={`font-black ${text} uppercase tracking-widest text-sm mb-1 flex items-center gap-2`}>
                 <Key size={16} className="text-red-600"/> Change Password
               </h4>
-              <p className={`text-xs ${subtext} font-bold mb-5`}>Update your login password. Must be at least 8 characters.</p>
+              <p className={`text-xs ${subtext} font-bold mb-5`}>Must be at least 8 characters.</p>
               <div className="space-y-4">
                 {[
-                  {l:'New Password', v:newPassword, s:setNewPassword, ph:'Min 8 characters'},
-                  {l:'Confirm New Password', v:confirmPassword, s:setConfirmPassword, ph:'Repeat new password'},
+                  {l:'New Password',     v:newPassword,     s:setNewPassword,     ph:'Min 8 characters'},
+                  {l:'Confirm Password', v:confirmPassword, s:setConfirmPassword, ph:'Repeat new password'},
                 ].map(({l,v,s,ph}) => (
                   <div key={l}>
                     <label className={`block text-xs font-black ${subtext} uppercase tracking-widest mb-2`}>{l}</label>
@@ -851,9 +723,7 @@ export default function MemberDashboard() {
                       className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
                   </div>
                 ))}
-                {pwMsg && (
-                  <p className={`text-xs font-bold ${pwMsg.startsWith('✓')?'text-green-600':'text-red-600'}`}>{pwMsg}</p>
-                )}
+                {pwMsg && <p className={`text-xs font-bold ${pwMsg.startsWith('✓')?'text-green-600':'text-red-600'}`}>{pwMsg}</p>}
                 <button onClick={changePassword} disabled={pwLoading}
                   className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-6 py-3 rounded-2xl text-sm transition-all disabled:opacity-50 flex items-center gap-2">
                   {pwLoading?<Loader2 size={14} className="animate-spin"/>:<Lock size={14}/>}
@@ -862,28 +732,20 @@ export default function MemberDashboard() {
               </div>
             </div>
 
-            {/* Chapter info */}
+            {/* Chapter */}
             <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>
               <h4 className={`font-black ${text} uppercase tracking-widest text-sm mb-2`}>Chapter Assignment</h4>
               <div className={`flex items-center justify-between p-4 ${isDark?'bg-white/5':'bg-slate-50'} rounded-2xl`}>
-                <div>
-                  <p className={`font-black ${text}`}>{member.chapter}</p>
-                  <p className={`text-xs ${subtext} font-bold mt-0.5`}>Your permanent chapter</p>
-                </div>
-                <div className={`${isDark?'bg-white/10 text-white/40':'bg-slate-200 text-slate-500'} text-[10px] font-black uppercase px-3 py-1.5 rounded-xl tracking-widest`}>
-                  🔒 Locked
-                </div>
+                <div><p className={`font-black ${text}`}>{member.chapter}</p><p className={`text-xs ${subtext} font-bold mt-0.5`}>Your permanent chapter</p></div>
+                <div className={`${isDark?'bg-white/10 text-white/40':'bg-slate-200 text-slate-500'} text-[10px] font-black uppercase px-3 py-1.5 rounded-xl tracking-widest`}>🔒 Locked</div>
               </div>
-              <p className={`text-xs ${subtext} font-bold mt-3`}>
-                Contact your chapter administrator to request a transfer to another chapter.
-              </p>
+              <p className={`text-xs ${subtext} font-bold mt-3`}>Contact your chapter administrator to request a transfer.</p>
             </div>
 
             {/* Sign out */}
             <div className={`${isDark?'bg-red-950/30 border-red-900':'bg-red-50 border-red-200'} border-2 rounded-[2.5rem] p-8`}>
               <h4 className="font-black text-red-600 uppercase tracking-widest text-sm mb-3">Sign Out</h4>
-              <button onClick={signOut}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase px-6 py-3 rounded-2xl text-sm transition-all">
+              <button onClick={signOut} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase px-6 py-3 rounded-2xl text-sm transition-all">
                 <LogOut size={14}/> Sign Out of Account
               </button>
             </div>
