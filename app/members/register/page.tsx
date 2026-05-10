@@ -103,7 +103,7 @@ export default function MemberRegisterPage() {
       if (!form.email.trim() || !form.email.includes('@')) return 'Valid email required.';
       if (form.password.length < 8) return 'Password must be at least 8 characters.';
       if (form.password !== form.confirmPassword) return 'Passwords do not match.';
-      if (!form.id_number.trim()) return 'ID number required.';
+      if (!form.id_number.trim()) return 'Student ID required.';
       if (!form.photoFile) return 'Passport photo required.';
       return '';
     },
@@ -328,8 +328,8 @@ export default function MemberRegisterPage() {
                   className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
               </div>
               <div>
-                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">ID Number *</label>
-                <input value={form.id_number} onChange={e=>set('id_number',e.target.value)} placeholder="National ID / Passport"
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Student ID *</label>
+                <input value={form.id_number} onChange={e=>set('id_number',e.target.value)} placeholder="Enter your Student ID"
                   className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none"/>
               </div>
               <div>
@@ -518,7 +518,7 @@ export default function MemberRegisterPage() {
               {[
                 ['Full Name', form.full_name],
                 ['Email', form.email],
-                ['ID Number', form.id_number],
+                ['Student ID', form.id_number],
                 ['Class Name', form.class_name],
                 ['Year Graduated', form.year_graduated],
                 ['Class Sponsor', form.sponsor_name],

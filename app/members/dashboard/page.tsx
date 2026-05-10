@@ -79,7 +79,6 @@ export default function MemberDashboard() {
 
   // ── Profile edit state ────────────────────────────────────────────────────
   const [profileName, setProfileName]               = useState('');
-  const [profilePhone, setProfilePhone]             = useState('');
   const [profilePhotoFile, setProfilePhotoFile]     = useState<File|null>(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string|null>(null);
   const [profileMsg, setProfileMsg]                 = useState('');
@@ -128,7 +127,6 @@ export default function MemberDashboard() {
       setTheme(mem.theme ?? 'system');
       // ── Initialize profile fields ──────────────────────────────────────────
       setProfileName(mem.full_name ?? '');
-      setProfilePhone(mem.phone ?? '');
 
       const { data: d } = await supabase.from('dues_payments')
         .select('*').eq('member_id', mem.id).order('created_at', { ascending: false });
@@ -208,15 +206,14 @@ export default function MemberDashboard() {
       }
       const { error } = await supabase.from('members').update({
         full_name: profileName.trim(),
-        phone:     profilePhone.trim() || null,
         photo_url,
       }).eq('id', member.id);
       if (error) throw new Error(error.message);
-      setMember(prev => prev ? { ...prev, full_name: profileName.trim(), phone: profilePhone.trim() || null, photo_url } : prev);
+      setMember(prev => prev ? { ...prev, full_name: profileName.trim(), photo_url } : prev);
       setProfilePhotoFile(null); setProfilePhotoPreview(null);
       await supabase.from('activity_log').insert([{
         member_id: member.id, member_name: profileName.trim(), chapter: member.chapter,
-        action: 'Profile updated', details: 'Name, phone or photo updated by member',
+        action: 'Profile updated', details: 'Name or photo updated by member',
       }]);
       setProfileMsg('✓ Profile updated successfully!');
     } catch (e: any) {
@@ -361,7 +358,7 @@ export default function MemberDashboard() {
                   ['Member ID',    member.id.slice(0,8).toUpperCase()],
                   ['Email',        member.email],
                   ['Phone',        member.phone ?? '—'],
-                  ['ID Number',    member.id_number],
+                  ['Student ID',   member.id_number],
                   ['Class Sponsor',member.sponsor_name],
                   ['Principal',    member.principal_name],
                   ['Chapter',      member.chapter + (member.chapter_locked ? ' 🔒' : '')],
@@ -638,7 +635,7 @@ export default function MemberDashboard() {
               <h4 className={`font-black ${text} uppercase tracking-widest text-sm mb-1 flex items-center gap-2`}>
                 <User size={16} className="text-red-600"/> Edit Profile
               </h4>
-              <p className={`text-xs ${subtext} font-bold mb-5`}>Update your display name, phone number and profile photo.</p>
+              <p className={`text-xs ${subtext} font-bold mb-5`}>Update your display name and profile photo. Official school details are locked.</p>
               <div className="space-y-4">
                 {/* Photo */}
                 <div>
@@ -671,12 +668,18 @@ export default function MemberDashboard() {
                     placeholder="Your full name"
                     className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
                 </div>
-                {/* Phone */}
-                <div>
-                  <label className={`block text-xs font-black ${subtext} uppercase tracking-widest mb-2`}>Phone Number</label>
-                  <input value={profilePhone} onChange={e => setProfilePhone(e.target.value)}
-                    placeholder="+231 xxx xxx xxxx"
-                    className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[
+                    ['Phone Number', member.phone ?? 'Not provided'],
+                    ['Student ID', member.id_number],
+                    ['Class Sponsor', member.sponsor_name],
+                    ['Principal', member.principal_name],
+                  ].map(([l,v]) => (
+                    <div key={l} className={`${isDark?'bg-white/5 border-white/10':'bg-slate-50 border-slate-100'} border rounded-2xl p-4`}>
+                      <p className={`text-[10px] font-black ${subtext} uppercase tracking-widest mb-1`}>{l}</p>
+                      <p className={`font-black ${text} text-sm`}>{v}</p>
+                    </div>
+                  ))}
                 </div>
                 {profileMsg && (
                   <p className={`text-xs font-bold ${profileMsg.startsWith('✓') ? 'text-green-600' : 'text-red-600'}`}>{profileMsg}</p>
