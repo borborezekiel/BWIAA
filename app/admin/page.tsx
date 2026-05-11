@@ -358,6 +358,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
   // ── Chapter Financial Summary ─────────────────────────────────────────────
   const [financials, setFinancials] = useState<{
     chapter: string;
+    membershipFees: number;
     candidateFees: number;
     duesCollected: number;
     maintenanceFees: number;
@@ -787,7 +788,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
             {isHeadAdmin && financials.length > 1 && (
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
                 {[
-                  { label: 'Membership Fees',  value: financials.reduce((s,r)=>s+(r as any).membershipFees,0), color: 'bg-green-700'  },
+                  { label: 'Membership Fees',  value: financials.reduce((s,r)=>s+r.membershipFees,0),          color: 'bg-green-700'  },
                   { label: 'Candidate Fees',   value: financials.reduce((s,r)=>s+r.candidateFees,0),          color: 'bg-purple-600' },
                   { label: 'Annual Dues',      value: financials.reduce((s,r)=>s+r.duesCollected,0),          color: 'bg-blue-600'   },
                   { label: 'Maintenance Fund', value: financials.reduce((s,r)=>s+r.maintenanceFees,0),        color: 'bg-amber-500'  },
@@ -817,7 +818,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                     <tr key={row.chapter} className={`border-b border-slate-50 ${i%2===0?'bg-white':'bg-slate-50/50'}`}>
                       <td className="px-4 py-3 font-black text-slate-800 whitespace-nowrap">{row.chapter}</td>
                       <td className="px-4 py-3">
-                        <span className="font-black text-green-700">{(row as any).membershipFees > 0 ? (row as any).membershipFees.toLocaleString() : '—'}</span>
+                        <span className="font-black text-green-700">{row.membershipFees > 0 ? row.membershipFees.toLocaleString() : '—'}</span>
                       </td>
                       <td className="px-4 py-3">
                         <span className="font-black text-purple-700">{row.candidateFees > 0 ? row.candidateFees.toLocaleString() : '—'}</span>
@@ -843,7 +844,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                   {isHeadAdmin && financials.length > 1 && (
                     <tr className="bg-slate-900 text-white">
                       <td className="px-4 py-3 font-black uppercase tracking-widest text-[10px]">All Chapters</td>
-                      {(['membershipFees','candidateFees','duesCollected','maintenanceFees','donations','contributions'] as const).map(k => (
+                      {(['membershipFees','candidateFees','duesCollected','maintenanceFees','donations','contributions'] as (keyof typeof financials[0])[]).map(k => (
                         <td key={k} className="px-4 py-3 font-black text-white">
                           {financials.reduce((s,r)=>s+r[k],0).toLocaleString()}
                         </td>
