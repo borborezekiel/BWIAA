@@ -363,7 +363,6 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
     duesCollected: number;
     maintenanceFees: number;
     donations: number;
-    contributions: number;
     total: number;
   }[]>([]);
   const [finLoading, setFinLoading] = useState(false);
@@ -383,7 +382,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
         supabase.from('candidate_applications').select('chapter,status,registration_fee'),
         supabase.from('dues_payments').select('chapter,status,dues_amount,maintenance_fee,amount'),
         supabase.from('donations').select('chapter,status,donation_type,amount'),
-        supabase.from('contributions').select('from_chapter,status,amount'),
+        Promise.resolve({ data: [] }), // solidarity removed — member-to-member only
       ]);
 
       // Gather all chapters
@@ -398,8 +397,10 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
           .filter((a: any) => a.chapter === ch && a.status === 'approved')
           .reduce((s: number, a: any) => s + (a.registration_fee ?? 0), 0);
 
+        // Membership fees: match by chapter OR where chapter is null/empty (legacy records)
         const membershipFees = (duesData ?? [])
-          .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.period === 'Membership Registration Fee')
+          .filter((d: any) => d.status === 'approved' && d.period === 'Membership Registration Fee' &&
+            (d.chapter === ch || !d.chapter || d.chapter === ''))
           .reduce((s: number, d: any) => s + (d.amount ?? 0), 0);
 
         const duesCollected = (duesData ?? [])
@@ -414,12 +415,8 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
           .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.donation_type === 'money')
           .reduce((s: number, d: any) => s + (d.amount ?? 0), 0);
 
-        const contributions = (contribData ?? [])
-          .filter((c: any) => c.from_chapter === ch && c.status === 'approved')
-          .reduce((s: number, c: any) => s + (c.amount ?? 0), 0);
-
-        const total = membershipFees + candidateFees + duesCollected + maintenanceFees + donations + contributions;
-        return { chapter: ch, membershipFees, candidateFees, duesCollected, maintenanceFees, donations, contributions, total };
+        const total = membershipFees + candidateFees + duesCollected + maintenanceFees + donations;
+        return { chapter: ch, membershipFees, candidateFees, duesCollected, maintenanceFees, donations, total };
       });
 
       // Sort by total descending
@@ -793,7 +790,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                   { label: 'Annual Dues',      value: financials.reduce((s,r)=>s+r.duesCollected,0),          color: 'bg-blue-600'   },
                   { label: 'Maintenance Fund', value: financials.reduce((s,r)=>s+r.maintenanceFees,0),        color: 'bg-amber-500'  },
                   { label: 'Donations',        value: financials.reduce((s,r)=>s+r.donations,0),              color: 'bg-red-500'    },
-                  { label: 'Solidarity',       value: financials.reduce((s,r)=>s+r.contributions,0),          color: 'bg-teal-600'   },
+
                 ].map(s => (
                   <div key={s.label} className={`${s.color} text-white rounded-2xl p-4 text-center`}>
                     <p className="text-xl font-black">{s.value.toLocaleString()}</p>
@@ -808,7 +805,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
               <table className="w-full text-xs min-w-[700px]">
                 <thead className="bg-slate-900 text-white">
                   <tr>
-                    {['Chapter','Membership Fees','Candidate Fees','Annual Dues','Maintenance','Donations','Solidarity','Total'].map(h => (
+                    {['Chapter','Membership Fees','Candidate Fees','Annual Dues','Maintenance','Donations','Total'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -832,9 +829,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                       <td className="px-4 py-3">
                         <span className="font-black text-red-600">{row.donations > 0 ? row.donations.toLocaleString() : '—'}</span>
                       </td>
-                      <td className="px-4 py-3">
-                        <span className="font-black text-teal-700">{row.contributions > 0 ? row.contributions.toLocaleString() : '—'}</span>
-                      </td>
+
                       <td className="px-4 py-3">
                         <span className="font-black text-green-700 text-sm">{row.total.toLocaleString()} LRD</span>
                       </td>
@@ -847,7 +842,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                       {([
                         ['membershipFees','Membership'], ['candidateFees','Candidate'],
                         ['duesCollected','Dues'], ['maintenanceFees','Maintenance'],
-                        ['donations','Donations'], ['contributions','Solidarity'],
+                        ['donations','Donations'],
                       ] as [keyof typeof financials[0], string][]).map(([k]) => (
                         <td key={String(k)} className="px-4 py-3 font-black text-white">
                           {financials.reduce((s,r) => s + (r[k] as number), 0).toLocaleString()}
