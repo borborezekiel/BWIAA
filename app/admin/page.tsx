@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   ShieldCheck, LogOut, Loader2, BarChart2, Users, UserCheck,
@@ -366,6 +366,9 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
     total: number;
   }[]>([]);
   const [finLoading, setFinLoading] = useState(false);
+  // ── Visitor log pagination ────────────────────────────────────────────────
+  const [visitorPage, setVisitorPage]     = useState(1);
+  const [visitorSearch, setVisitorSearch] = useState('');
 
   useEffect(() => {
     setFinLoading(true);
@@ -643,8 +646,6 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
               {/* Detailed visitor log — paginated */}
               {(() => {
                 const PAGE_SIZE = 10;
-                const [visitorPage, setVisitorPage] = React.useState(1);
-                const [visitorSearch, setVisitorSearch] = React.useState('');
                 const filtered = visitStats.recent.filter(v =>
                   !visitorSearch ||
                   (v.ip_address ?? '').includes(visitorSearch) ||
