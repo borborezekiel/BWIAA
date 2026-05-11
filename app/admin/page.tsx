@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   ShieldCheck, LogOut, Loader2, BarChart2, Users, UserCheck,
@@ -8,7 +8,6 @@ import {
   CheckCircle2, XCircle, Terminal, Crown, Download, Printer,
   FileText, Sliders, Search, CreditCard, DollarSign, Key, Calendar,
   MapPin, Bell, TrendingUp, ChevronRight, Lock, Eye, EyeOff,
-  Heart,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -85,8 +84,7 @@ interface ElectionPhases {
 }
 
 type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" |
-           "applications" | "settings" | "members" | "dues" | "events" | "audit" | "investments" |
-           "donations" | "contributions";
+           "applications" | "settings" | "members" | "dues" | "events" | "audit" | "investments";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ADMIN COMPONENT
@@ -110,8 +108,6 @@ export default function AdminPage() {
   const [dues, setDues]                 = useState<DuesPayment[]>([]);
   const [events, setEvents]             = useState<EventRow[]>([]);
   const [auditLog, setAuditLog]         = useState<any[]>([]);
-  const [donations, setDonations]       = useState<any[]>([]);
-  const [contributions, setContributions] = useState<any[]>([]);
   const [config, setConfig]             = useState<ElectionConfig>(DEFAULT_CONFIG);
   const [phases, setPhases]             = useState<ElectionPhases>({
     registration_open: false, voting_open: false, results_announced: false,
@@ -158,7 +154,7 @@ export default function AdminPage() {
   }, [isAuthorized]);
 
   async function fetchAll() {
-    const [v, c, r, b, a, settingsRes, ap, mem, duesRes, evRes, auditRes, donationsRes, contributionsRes] = await Promise.all([
+    const [v, c, r, b, a, settingsRes, ap, mem, duesRes, evRes, auditRes] = await Promise.all([
       supabase.from('votes').select('*').order('created_at', { ascending: false }),
       supabase.from('candidates').select('*').order('position_name'),
       supabase.from('eligible_voters').select('*').order('email'),
@@ -170,8 +166,6 @@ export default function AdminPage() {
       supabase.from('dues_payments').select('*').order('created_at', { ascending: false }),
       supabase.from('events').select('*').order('event_date', { ascending: false }),
       supabase.from('activity_log').select('*').order('created_at', { ascending: false }).limit(500),
-      supabase.from('donations').select('*').order('created_at', { ascending: false }),
-      supabase.from('contributions').select('*').order('created_at', { ascending: false }),
     ]);
     if (v.data)        setVotes(v.data);
     if (c.data)        setCandidates(c.data);
@@ -183,8 +177,6 @@ export default function AdminPage() {
     if (duesRes.data)  setDues(duesRes.data);
     if (evRes.data)    setEvents(evRes.data);
     if (auditRes.data) setAuditLog(auditRes.data);
-    if (donationsRes.data)      setDonations(donationsRes.data);
-    if (contributionsRes.data)  setContributions(contributionsRes.data);
 
     if (settingsRes.data) {
       const rows = settingsRes.data as { key: string; value: string }[];
@@ -250,8 +242,6 @@ export default function AdminPage() {
     { id: "roster",       label: "Roster",       icon: UserCheck },
     { id: "members",      label: `Members${pendingMembers > 0 ? ` (${pendingMembers})` : ''}`, icon: Users },
     { id: "dues",         label: `Dues${pendingDues > 0 ? ` (${pendingDues})` : ''}`, icon: CreditCard },
-    { id: "donations",     label: "Donations",     icon: Heart },
-    { id: "contributions", label: "Solidarity",    icon: Users },
     { id: "events",       label: "Events",       icon: Calendar },
     { id: "audit",        label: "Audit Log",    icon: FileText, headOnly: true },
     { id: "investments",  label: "Investments",  icon: TrendingUp, headOnly: true },
@@ -325,7 +315,7 @@ export default function AdminPage() {
 
       {/* Content */}
       <div className="max-w-6xl mx-auto px-4 pt-10">
-        {activeTab === "overview"     && <OverviewTab votes={votes} candidates={candidates} roster={roster} admins={admins} blacklist={blacklist} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} deadline={deadline} config={config} phases={phases} dues={dues} donations={donations}/>}
+        {activeTab === "overview"     && <OverviewTab votes={votes} candidates={candidates} roster={roster} admins={admins} blacklist={blacklist} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} deadline={deadline} config={config} phases={phases}/>}
         {activeTab === "results"      && <ResultsTab votes={votes} candidates={candidates} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "candidates"   && <CandidatesTab candidates={candidates} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin}/>}
         {activeTab === "applications" && <ApplicationsTab applications={applications} setApplications={setApplications} setCandidates={setCandidates} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
@@ -333,8 +323,6 @@ export default function AdminPage() {
         {activeTab === "roster"       && <RosterTab roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} members={members}/>}
         {activeTab === "members"      && <MembersTab members={members} setMembers={setMembers} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "dues"         && <DuesTab dues={dues} setDues={setDues} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
-        {activeTab === "donations"     && <DonationsAdminTab donations={donations} setDonations={setDonations} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email ?? ''} config={config}/>}
-        {activeTab === "contributions" && <ContributionsAdminTab contributions={contributions} setContributions={setContributions} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email ?? ''} config={config}/>}
         {activeTab === "events"       && <EventsTab events={events} setEvents={setEvents} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config} members={members}/>}
         {activeTab === "audit"        && isHeadAdmin && <AuditLogTab log={auditLog} config={config}/>}
         {activeTab === "investments"  && isHeadAdmin && <InvestmentsTab showToast={showToast} isHeadAdmin={isHeadAdmin} members={members} config={config}/>}
@@ -356,16 +344,82 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: OVERVIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin, myChapter, deadline, config, phases, dues, donations }: {
+function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin, myChapter, deadline, config, phases }: {
   votes: VoteRow[]; candidates: Candidate[]; roster: EligibleVoter[];
   admins: ElectionAdmin[]; blacklist: BlacklistedVoter[];
   isHeadAdmin: boolean; myChapter: string | null; deadline: string | null;
-  config: ElectionConfig; phases: ElectionPhases; dues: DuesPayment[]; donations: any[];
+  config: ElectionConfig; phases: ElectionPhases;
 }) {
   const scopedVotes  = isHeadAdmin ? votes : votes.filter(v => v.chapter === myChapter);
   const uniqueVoters = new Set(scopedVotes.map(v => v.voter_id)).size;
   const [timeLeft, setTimeLeft]         = useState('');
   const [votingClosed, setVotingClosed] = useState(false);
+
+  // ── Chapter Financial Summary ─────────────────────────────────────────────
+  const [financials, setFinancials] = useState<{
+    chapter: string;
+    candidateFees: number;
+    duesCollected: number;
+    maintenanceFees: number;
+    donations: number;
+    contributions: number;
+    total: number;
+  }[]>([]);
+  const [finLoading, setFinLoading] = useState(false);
+
+  useEffect(() => {
+    setFinLoading(true);
+    (async () => {
+      const [
+        { data: apps },
+        { data: duesData },
+        { data: donationData },
+        { data: contribData },
+      ] = await Promise.all([
+        supabase.from('candidate_applications').select('chapter,status,registration_fee'),
+        supabase.from('dues_payments').select('chapter,status,dues_amount,maintenance_fee,amount'),
+        supabase.from('donations').select('chapter,status,donation_type,amount'),
+        supabase.from('contributions').select('from_chapter,status,amount'),
+      ]);
+
+      // Gather all chapters
+      const allChapters = new Set<string>();
+      (apps    ?? []).forEach((r: any) => r.chapter      && allChapters.add(r.chapter));
+      (duesData ?? []).forEach((r: any) => r.chapter     && allChapters.add(r.chapter));
+      (donationData ?? []).forEach((r: any) => r.chapter && allChapters.add(r.chapter));
+      (contribData ?? []).forEach((r: any) => r.from_chapter && allChapters.add(r.from_chapter));
+
+      const rows = Array.from(allChapters).map(ch => {
+        const candidateFees = (apps ?? [])
+          .filter((a: any) => a.chapter === ch && a.status === 'approved')
+          .reduce((s: number, a: any) => s + (a.registration_fee ?? 0), 0);
+
+        const duesCollected = (duesData ?? [])
+          .filter((d: any) => d.chapter === ch && d.status === 'approved')
+          .reduce((s: number, d: any) => s + (d.dues_amount ?? (d.amount - (d.maintenance_fee ?? 0))), 0);
+
+        const maintenanceFees = (duesData ?? [])
+          .filter((d: any) => d.chapter === ch && d.status === 'approved')
+          .reduce((s: number, d: any) => s + (d.maintenance_fee ?? 0), 0);
+
+        const donations = (donationData ?? [])
+          .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.donation_type === 'money')
+          .reduce((s: number, d: any) => s + (d.amount ?? 0), 0);
+
+        const contributions = (contribData ?? [])
+          .filter((c: any) => c.from_chapter === ch && c.status === 'approved')
+          .reduce((s: number, c: any) => s + (c.amount ?? 0), 0);
+
+        const total = candidateFees + duesCollected + maintenanceFees + donations + contributions;
+        return { chapter: ch, candidateFees, duesCollected, maintenanceFees, donations, contributions, total };
+      });
+
+      // Sort by total descending
+      rows.sort((a, b) => b.total - a.total);
+      setFinancials(isHeadAdmin ? rows : rows.filter(r => r.chapter === myChapter));
+      setFinLoading(false);
+    })();
+  }, [isHeadAdmin, myChapter]);
   const [visitStats, setVisitStats] = useState<{
     total: number; today: number; thisWeek: number;
     members: number; byDay: { date: string; count: number }[];
@@ -454,36 +508,6 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
       </div>
 
       {/* ── Visitor Statistics (head admin only) ── */}
-      {isHeadAdmin && (
-        <Card>
-          <SectionTitle>Maintenance Fund Balance</SectionTitle>
-          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6 -mt-2">
-            Running total of all maintenance fees collected from dues payments
-          </p>
-          <div className="bg-slate-900 rounded-2xl p-6 text-center">
-            <p className="text-white/40 text-xs font-black uppercase tracking-widest mb-2">Total Maintenance Collected</p>
-            <p className="text-5xl font-black text-green-400">
-              {dues
-                .filter(d => d.status === 'approved')
-                .reduce((s: number, d) => s + ((d as any).maintenance_fee ?? 0), 0)
-                .toLocaleString()}
-            </p>
-            <p className="text-white/30 text-sm font-bold mt-2">LRD</p>
-          </div>
-          <div className="mt-4 space-y-2">
-            {dues.filter(d => d.status === 'approved' && ((d as any).maintenance_fee ?? 0) > 0).slice(0,10).map((d: any) => (
-              <div key={d.id} className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
-                <div>
-                  <p className="font-black text-slate-800 text-sm">{d.member_name}</p>
-                  <p className="text-xs text-slate-400 font-bold">{d.chapter} · {d.period}</p>
-                </div>
-                <p className="font-black text-green-700">+{(d.maintenance_fee ?? 0).toLocaleString()} LRD</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
       {isHeadAdmin && (
         <div className="bg-white rounded-[2.5rem] p-8 shadow-xl border-b-8 border-blue-200">
           <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
@@ -616,63 +640,220 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                 ) : null;
               })()}
 
-              {/* Detailed visitor log */}
-              <div className="mt-5 pt-5 border-t border-slate-100">
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Recent Visitor Log (last 100)</p>
-                <div className="overflow-x-auto rounded-2xl border border-slate-100">
-                  <table className="w-full text-xs min-w-[700px]">
-                    <thead className="bg-slate-900 text-white">
-                      <tr>
-                        {['Time','IP Address','Country / City','Device & Brand','Browser / OS','Screen','Type'].map(h => (
-                          <th key={h} className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest whitespace-nowrap">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visitStats.recent.map((v, i) => (
-                        <tr key={i} className={`border-b border-slate-50 ${i%2===0?'bg-white':'bg-slate-50/50'}`}>
-                          <td className="px-3 py-2.5 font-bold text-slate-500 whitespace-nowrap">
-                            {new Date(v.visited_at).toLocaleDateString()}<br/>
-                            <span className="text-[10px]">{new Date(v.visited_at).toLocaleTimeString()}</span>
-                          </td>
-                          <td className="px-3 py-2.5 font-mono font-bold text-slate-700 whitespace-nowrap">
-                            {v.ip_address ?? '—'}
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <p className="font-black text-slate-800">{v.country ?? '—'}</p>
-                            <p className="text-[10px] text-slate-400 font-bold">{v.city ?? ''}{v.region ? `, ${v.region}` : ''}</p>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <p className="font-black text-slate-800">{v.device_brand ?? '—'}</p>
-                            <p className="text-[10px] text-slate-400 font-bold">{v.device_type ?? ''}</p>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <p className="font-black text-slate-800">{v.browser ?? '—'}</p>
-                            <p className="text-[10px] text-slate-400 font-bold">{v.os ?? ''}</p>
-                          </td>
-                          <td className="px-3 py-2.5 text-[10px] font-bold text-slate-400 whitespace-nowrap">
-                            {v.screen_res ?? '—'}
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${v.is_member ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {v.is_member ? 'Member' : 'Guest'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                      {visitStats.recent.length === 0 && (
-                        <tr><td colSpan={7} className="text-center py-8 text-slate-400 font-bold">No visits recorded yet.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              {/* Detailed visitor log — paginated */}
+              {(() => {
+                const PAGE_SIZE = 10;
+                const [visitorPage, setVisitorPage] = React.useState(1);
+                const [visitorSearch, setVisitorSearch] = React.useState('');
+                const filtered = visitStats.recent.filter(v =>
+                  !visitorSearch ||
+                  (v.ip_address ?? '').includes(visitorSearch) ||
+                  (v.country ?? '').toLowerCase().includes(visitorSearch.toLowerCase()) ||
+                  (v.city ?? '').toLowerCase().includes(visitorSearch.toLowerCase()) ||
+                  (v.device_brand ?? '').toLowerCase().includes(visitorSearch.toLowerCase()) ||
+                  (v.browser ?? '').toLowerCase().includes(visitorSearch.toLowerCase())
+                );
+                const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+                const pageItems  = filtered.slice((visitorPage - 1) * PAGE_SIZE, visitorPage * PAGE_SIZE);
+                return (
+                  <div className="mt-5 pt-5 border-t border-slate-100">
+                    <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                        Visitor Log — {filtered.length} records
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <input value={visitorSearch} onChange={e => { setVisitorSearch(e.target.value); setVisitorPage(1); }}
+                          placeholder="Filter by IP, country, device..."
+                          className="border-2 border-slate-200 focus:border-slate-700 rounded-xl px-4 py-2 text-xs font-bold outline-none w-52"/>
+                        {visitorSearch && (
+                          <button onClick={() => { setVisitorSearch(''); setVisitorPage(1); }}
+                            className="text-slate-400 hover:text-slate-700 text-xs font-black">✕ Clear</button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                      <table className="w-full text-xs min-w-[700px]">
+                        <thead className="bg-slate-900 text-white">
+                          <tr>
+                            {['Time','IP Address','Country / City','Device & Brand','Browser / OS','Screen','Type'].map(h => (
+                              <th key={h} className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest whitespace-nowrap">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pageItems.map((v, i) => (
+                            <tr key={i} className={`border-b border-slate-50 ${i%2===0?'bg-white':'bg-slate-50/50'}`}>
+                              <td className="px-3 py-2.5 font-bold text-slate-500 whitespace-nowrap">
+                                {new Date(v.visited_at).toLocaleDateString()}<br/>
+                                <span className="text-[10px]">{new Date(v.visited_at).toLocaleTimeString()}</span>
+                              </td>
+                              <td className="px-3 py-2.5 font-mono font-bold text-slate-700 whitespace-nowrap">{v.ip_address ?? '—'}</td>
+                              <td className="px-3 py-2.5">
+                                <p className="font-black text-slate-800">{v.country ?? '—'}</p>
+                                <p className="text-[10px] text-slate-400 font-bold">{v.city ?? ''}{v.region ? `, ${v.region}` : ''}</p>
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <p className="font-black text-slate-800">{v.device_brand ?? '—'}</p>
+                                <p className="text-[10px] text-slate-400 font-bold">{v.device_type ?? ''}</p>
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <p className="font-black text-slate-800">{v.browser ?? '—'}</p>
+                                <p className="text-[10px] text-slate-400 font-bold">{v.os ?? ''}</p>
+                              </td>
+                              <td className="px-3 py-2.5 text-[10px] font-bold text-slate-400 whitespace-nowrap">{v.screen_res ?? '—'}</td>
+                              <td className="px-3 py-2.5">
+                                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${v.is_member ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                                  {v.is_member ? 'Member' : 'Guest'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                          {pageItems.length === 0 && (
+                            <tr><td colSpan={7} className="text-center py-8 text-slate-400 font-bold">
+                              {visitorSearch ? 'No results match your filter.' : 'No visits recorded yet.'}
+                            </td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination controls */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-4 flex-wrap gap-3">
+                        <p className="text-xs text-slate-400 font-bold">
+                          Page {visitorPage} of {totalPages} · Showing {(visitorPage-1)*PAGE_SIZE+1}–{Math.min(visitorPage*PAGE_SIZE, filtered.length)} of {filtered.length}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setVisitorPage(1)} disabled={visitorPage===1}
+                            className="px-3 py-1.5 rounded-xl text-xs font-black border border-slate-200 disabled:opacity-30 hover:border-slate-400 transition-all">«</button>
+                          <button onClick={() => setVisitorPage(p => Math.max(1,p-1))} disabled={visitorPage===1}
+                            className="px-3 py-1.5 rounded-xl text-xs font-black border border-slate-200 disabled:opacity-30 hover:border-slate-400 transition-all">‹ Prev</button>
+                          {Array.from({length: Math.min(5, totalPages)}, (_, i) => {
+                            const start = Math.max(1, Math.min(visitorPage-2, totalPages-4));
+                            const pg = start + i;
+                            return pg <= totalPages ? (
+                              <button key={pg} onClick={() => setVisitorPage(pg)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-black border transition-all ${pg===visitorPage?'bg-slate-900 text-white border-slate-900':'border-slate-200 hover:border-slate-400'}`}>{pg}</button>
+                            ) : null;
+                          })}
+                          <button onClick={() => setVisitorPage(p => Math.min(totalPages,p+1))} disabled={visitorPage===totalPages}
+                            className="px-3 py-1.5 rounded-xl text-xs font-black border border-slate-200 disabled:opacity-30 hover:border-slate-400 transition-all">Next ›</button>
+                          <button onClick={() => setVisitorPage(totalPages)} disabled={visitorPage===totalPages}
+                            className="px-3 py-1.5 rounded-xl text-xs font-black border border-slate-200 disabled:opacity-30 hover:border-slate-400 transition-all">»</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </>
           ) : (
             <p className="text-slate-400 font-bold text-sm text-center py-6">No visit data yet. Stats will appear once visitors land on the site.</p>
           )}
         </div>
       )}
+
+      {/* ── Chapter Financial Summary ── */}
+      <div className="bg-white rounded-[2.5rem] p-8 shadow-xl border-b-8 border-green-400">
+        <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+          <div>
+            <h3 className="text-xl font-black uppercase italic border-l-8 border-green-500 pl-5">Chapter Financial Summary</h3>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1 pl-5">All approved payments across every revenue stream</p>
+          </div>
+          {financials.length > 0 && (
+            <div className="bg-green-600 text-white rounded-2xl px-6 py-3 text-center">
+              <p className="text-2xl font-black">{financials.reduce((s,r)=>s+r.total,0).toLocaleString()}</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">Total LRD Collected</p>
+            </div>
+          )}
+        </div>
+
+        {finLoading ? (
+          <div className="flex items-center justify-center py-10 gap-3">
+            <Loader2 className="animate-spin text-green-500" size={24}/>
+            <p className="text-slate-400 font-bold text-sm uppercase tracking-widest">Loading financials...</p>
+          </div>
+        ) : financials.length === 0 ? (
+          <p className="text-slate-400 font-bold text-sm text-center py-8">No financial records yet.</p>
+        ) : (
+          <>
+            {/* Grand total bar */}
+            {isHeadAdmin && financials.length > 1 && (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+                {[
+                  { label: 'Candidate Fees',   value: financials.reduce((s,r)=>s+r.candidateFees,0),   color: 'bg-purple-600' },
+                  { label: 'Dues Collected',   value: financials.reduce((s,r)=>s+r.duesCollected,0),   color: 'bg-blue-600'   },
+                  { label: 'Maintenance Fund', value: financials.reduce((s,r)=>s+r.maintenanceFees,0), color: 'bg-amber-500'  },
+                  { label: 'Donations',        value: financials.reduce((s,r)=>s+r.donations,0),       color: 'bg-red-500'    },
+                  { label: 'Solidarity',       value: financials.reduce((s,r)=>s+r.contributions,0),   color: 'bg-teal-600'   },
+                ].map(s => (
+                  <div key={s.label} className={`${s.color} text-white rounded-2xl p-4 text-center`}>
+                    <p className="text-xl font-black">{s.value.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-80 mt-1">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Per-chapter breakdown table */}
+            <div className="overflow-x-auto rounded-2xl border border-slate-100">
+              <table className="w-full text-xs min-w-[700px]">
+                <thead className="bg-slate-900 text-white">
+                  <tr>
+                    {['Chapter','Candidate Fees','Dues','Maintenance','Donations','Solidarity','Total'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {financials.map((row, i) => (
+                    <tr key={row.chapter} className={`border-b border-slate-50 ${i%2===0?'bg-white':'bg-slate-50/50'}`}>
+                      <td className="px-4 py-3 font-black text-slate-800 whitespace-nowrap">{row.chapter}</td>
+                      <td className="px-4 py-3">
+                        <span className="font-black text-purple-700">{row.candidateFees > 0 ? row.candidateFees.toLocaleString() : '—'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-black text-blue-700">{row.duesCollected > 0 ? row.duesCollected.toLocaleString() : '—'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-black text-amber-700">{row.maintenanceFees > 0 ? row.maintenanceFees.toLocaleString() : '—'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-black text-red-600">{row.donations > 0 ? row.donations.toLocaleString() : '—'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-black text-teal-700">{row.contributions > 0 ? row.contributions.toLocaleString() : '—'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-black text-green-700 text-sm">{row.total.toLocaleString()} LRD</span>
+                      </td>
+                    </tr>
+                  ))}
+                  {/* Totals row */}
+                  {isHeadAdmin && financials.length > 1 && (
+                    <tr className="bg-slate-900 text-white">
+                      <td className="px-4 py-3 font-black uppercase tracking-widest text-[10px]">All Chapters</td>
+                      {(['candidateFees','duesCollected','maintenanceFees','donations','contributions'] as const).map(k => (
+                        <td key={k} className="px-4 py-3 font-black text-white">
+                          {financials.reduce((s,r)=>s+r[k],0).toLocaleString()}
+                        </td>
+                      ))}
+                      <td className="px-4 py-3 font-black text-green-400 text-sm">
+                        {financials.reduce((s,r)=>s+r.total,0).toLocaleString()} LRD
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <p className="text-[10px] text-slate-300 font-bold mt-4">
+              * Only approved payments counted · Candidate fees calculated from position registration fees · Dues split shows actual dues vs maintenance fund
+            </p>
+          </>
+        )}
+      </div>
 
       {/* Countdown */}
       {deadline && (
@@ -2976,313 +3157,6 @@ function InvestmentsTab({ showToast, isHeadAdmin, members, config }: {
             </div>
           </div>
         ))}
-      </Card>
-    </div>
-  );
-}
-
-// DONATIONS ADMIN TAB
-function DonationsAdminTab({ donations, setDonations, showToast, isHeadAdmin, myChapter, adminEmail, config }: {
-  donations: any[]; setDonations: React.Dispatch<React.SetStateAction<any[]>>;
-  showToast: (m: string, ok?: boolean) => void;
-  isHeadAdmin: boolean; myChapter: string | null; adminEmail: string; config: any;
-}) {
-  const [filter, setFilter]     = useState<'pending'|'approved'|'rejected'|'all'>('pending');
-  const [selected, setSelected] = useState<any>(null);
-  const [processing, setProcessing] = useState(false);
-  const [search, setSearch]     = useState('');
-  const [viewImg, setViewImg]   = useState<string|null>(null);
-
-  const visible = donations.filter(d => {
-    const stMatch = filter === 'all' || d.status === filter;
-    const srMatch = !search || d.donor_name.toLowerCase().includes(search.toLowerCase()) ||
-      (d.purpose ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      (d.chapter ?? '').toLowerCase().includes(search.toLowerCase());
-    return stMatch && srMatch;
-  });
-
-  const pending  = donations.filter(d => d.status === 'pending').length;
-  const approved = donations.filter(d => d.status === 'approved').length;
-  const totalMoney = donations
-    .filter(d => d.status === 'approved' && d.donation_type === 'money')
-    .reduce((s: number, d: any) => s + (d.amount ?? 0), 0);
-
-  async function approve(d: any) {
-    setProcessing(true);
-    const approvedAt = new Date().toISOString();
-    const { error } = await supabase.from('donations').update({
-      status: 'approved', approved_by: adminEmail, approved_at: approvedAt,
-    }).eq('id', d.id);
-    if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
-    setDonations(prev => prev.map(x => x.id === d.id ? { ...x, status: 'approved', approved_by: adminEmail, approved_at: approvedAt } : x));
-    setSelected(null); setProcessing(false);
-    showToast(`Donation from ${d.donor_name} approved.`);
-  }
-
-  async function reject(d: any) {
-    if (!confirm(`Reject donation from ${d.donor_name}?`)) return;
-    setProcessing(true);
-    await supabase.from('donations').update({ status: 'rejected', approved_by: adminEmail, approved_at: new Date().toISOString() }).eq('id', d.id);
-    setDonations(prev => prev.map(x => x.id === d.id ? { ...x, status: 'rejected' } : x));
-    setSelected(null); setProcessing(false);
-    showToast(`${d.donor_name}'s donation rejected.`);
-  }
-
-  const DONATION_TYPE_ICONS: Record<string,string> = { money:'💵', books:'📚', food:'🍱', tools:'🔧', other:'📦' };
-  const DONOR_TYPE_COLORS: Record<string,string> = { politician:'bg-purple-100 text-purple-700', business:'bg-blue-100 text-blue-700', organization:'bg-green-100 text-green-700', ngo:'bg-teal-100 text-teal-700', alumni:'bg-red-100 text-red-700', individual:'bg-slate-100 text-slate-700' };
-  const statusBadge = (s: string) => ({ pending:'bg-yellow-100 text-yellow-700 border-yellow-200', approved:'bg-green-100 text-green-700 border-green-200', rejected:'bg-red-100 text-red-700 border-red-200' }[s] ?? 'bg-slate-100 text-slate-700');
-
-  return (
-    <div className="space-y-8">
-      {viewImg && <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={()=>setViewImg(null)}><img src={viewImg} className="max-w-full max-h-full rounded-2xl"/><button className="absolute top-4 right-4 bg-white/10 text-white p-2 rounded-full" onClick={()=>setViewImg(null)}><XCircle size={24}/></button></div>}
-
-      {selected && (
-        <div className="fixed inset-0 bg-slate-900/95 z-40 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
-          <div className="bg-white rounded-[3rem] p-8 max-w-lg w-full my-4 shadow-2xl">
-            <div className="flex items-start justify-between mb-6">
-              <div>
-                <div className="flex items-center gap-3 mb-1">
-                  <span className="text-3xl">{DONATION_TYPE_ICONS[selected.donation_type] ?? '📦'}</span>
-                  <h3 className="text-xl font-black uppercase text-slate-900">{selected.donor_name}</h3>
-                </div>
-                <span className={`inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${DONOR_TYPE_COLORS[selected.donor_type] ?? 'bg-slate-100 text-slate-700'}`}>{selected.donor_type}</span>
-                {selected.donor_organization && <p className="text-xs text-slate-400 font-bold mt-1">{selected.donor_organization}</p>}
-                <span className={`inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border mt-2 ${statusBadge(selected.status)}`}>{selected.status}</span>
-              </div>
-              <div className="text-right">
-                {selected.amount ? <p className="text-3xl font-black text-green-700">{selected.amount.toLocaleString()} <span className="text-sm font-bold text-slate-400">{selected.currency}</span></p> : <p className="font-black text-slate-700 capitalize">{selected.donation_type}</p>}
-              </div>
-              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 p-1 ml-2"><XCircle size={20}/></button>
-            </div>
-
-            <div className="bg-slate-50 rounded-2xl p-5 mb-5 space-y-1.5 text-xs">
-              {[
-                ['Donor', selected.donor_name],
-                ['Contact', selected.donor_contact ?? '—'],
-                ['Type', selected.donation_type],
-                selected.material_description ? ['Items', selected.material_description] : null,
-                selected.quantity ? ['Quantity', selected.quantity] : null,
-                selected.estimated_value ? ['Est. Value', `${selected.estimated_value.toLocaleString()} LRD`] : null,
-                ['Purpose', selected.purpose ?? '—'],
-                ['Chapter', selected.chapter ?? 'All Chapters'],
-                ['Submitted', new Date(selected.created_at).toLocaleString()],
-              ].filter((item): item is [string, React.ReactNode] => Boolean(item)).map(([l,v]) => (
-                <div key={l} className="flex justify-between py-1 border-b border-slate-100 last:border-0">
-                  <span className="font-black text-slate-400 uppercase tracking-widest">{l}</span>
-                  <span className="font-black text-slate-800 text-right max-w-[55%]">{v}</span>
-                </div>
-              ))}
-            </div>
-
-            {(selected.receipt_url || selected.photo_url) && (
-              <div className="grid grid-cols-2 gap-3 mb-5">
-                {selected.receipt_url && <div><p className="text-[10px] font-black text-slate-400 uppercase mb-2">Receipt</p><img src={selected.receipt_url} className="rounded-2xl max-h-36 w-full object-cover cursor-pointer border border-slate-200" onClick={()=>setViewImg(selected.receipt_url)}/></div>}
-                {selected.photo_url && <div><p className="text-[10px] font-black text-slate-400 uppercase mb-2">Photo</p><img src={selected.photo_url} className="rounded-2xl max-h-36 w-full object-cover cursor-pointer border border-slate-200" onClick={()=>setViewImg(selected.photo_url)}/></div>}
-              </div>
-            )}
-
-            {selected.status === 'pending' && (
-              <div className="space-y-3">
-                <button onClick={() => approve(selected)} disabled={processing}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50">
-                  {processing ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>} Approve & Publish
-                </button>
-                <button onClick={() => reject(selected)} disabled={processing}
-                  className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 border-2 border-red-200">
-                  <XCircle size={16}/> Reject
-                </button>
-              </div>
-            )}
-            {selected.status !== 'pending' && (
-              <div className={`rounded-2xl p-4 text-sm font-bold ${selected.status === 'approved' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                {selected.status === 'approved' ? `Approved by ${selected.approved_by ?? 'admin'}` : 'This donation was rejected.'}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-black uppercase italic text-slate-800">Donations</h2>
-          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">From members, politicians, businesses and all supporters</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-yellow-500 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{pending}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Pending</p></div>
-        <div className="bg-green-600 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{approved}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Approved</p></div>
-        <div className="bg-blue-600 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-2xl font-black">{totalMoney.toLocaleString()}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Total Money (LRD)</p></div>
-        <div className="bg-slate-700 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{donations.filter(d=>d.donation_type!=='money'&&d.status==='approved').length}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Material Donations</p></div>
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1"><Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donor, purpose..." className="w-full pl-10 pr-4 py-4 border-2 border-slate-200 focus:border-red-600 rounded-2xl font-bold outline-none text-sm bg-white"/></div>
-        <div className="flex gap-2">{(['pending','approved','rejected','all'] as const).map(f=><button key={f} onClick={()=>setFilter(f)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter===f?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{f}</button>)}</div>
-      </div>
-
-      <Card>
-        <SectionTitle>Donations ({visible.length})</SectionTitle>
-        <div className="space-y-3">
-          {visible.map(d => (
-            <div key={d.id} onClick={() => setSelected(d)}
-              className="flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl cursor-pointer transition-all border-2 border-transparent hover:border-slate-200">
-              <span className="text-2xl shrink-0">{DONATION_TYPE_ICONS[d.donation_type] ?? '📦'}</span>
-              <div className="flex-1 min-w-0">
-                <p className="font-black text-slate-800 truncate">{d.donor_name}</p>
-                <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${DONOR_TYPE_COLORS[d.donor_type] ?? 'bg-slate-100 text-slate-600'}`}>{d.donor_type}</span>
-                  <span className="text-[10px] text-slate-400 font-bold">{d.chapter ?? 'All Chapters'}</span>
-                </div>
-                {d.purpose && <p className="text-xs text-slate-400 font-bold truncate mt-0.5">{d.purpose}</p>}
-              </div>
-              <div className="text-right shrink-0">
-                {d.amount ? <p className="font-black text-lg text-green-700">{d.amount.toLocaleString()} <span className="text-xs text-slate-400">{d.currency}</span></p> : <p className="font-black text-sm text-slate-600 capitalize">{d.donation_type}</p>}
-                <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${statusBadge(d.status)}`}>{d.status}</span>
-              </div>
-            </div>
-          ))}
-          {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}donations.</p>}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// CONTRIBUTIONS ADMIN TAB
-function ContributionsAdminTab({ contributions, setContributions, showToast, isHeadAdmin, myChapter, adminEmail, config }: {
-  contributions: any[]; setContributions: React.Dispatch<React.SetStateAction<any[]>>;
-  showToast: (m: string, ok?: boolean) => void;
-  isHeadAdmin: boolean; myChapter: string | null; adminEmail: string; config: any;
-}) {
-  const [filter, setFilter]     = useState<'pending'|'approved'|'rejected'|'all'>('pending');
-  const [selected, setSelected] = useState<any>(null);
-  const [processing, setProcessing] = useState(false);
-
-  const REASON_EMOJIS: Record<string,string> = { hardship:'🤝', illness:'🏥', bereavement:'🕊️', education:'📚', disaster:'🆘', other:'💛' };
-
-  const pending  = contributions.filter(c => c.status === 'pending').length;
-  const approved = contributions.filter(c => c.status === 'approved').length;
-  const totalApproved = contributions.filter(c => c.status === 'approved').reduce((s: number, c: any) => s + c.amount, 0);
-
-  const visible = contributions.filter(c => filter === 'all' || c.status === filter);
-
-  async function approve(c: any) {
-    setProcessing(true);
-    const approvedAt = new Date().toISOString();
-    const { error } = await supabase.from('contributions').update({ status: 'approved', approved_by: adminEmail, approved_at: approvedAt }).eq('id', c.id);
-    if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
-    setContributions(prev => prev.map(x => x.id === c.id ? { ...x, status: 'approved', approved_by: adminEmail, approved_at: approvedAt } : x));
-    setSelected(null); setProcessing(false);
-    showToast(`Contribution from ${c.from_member_name} approved.`);
-  }
-
-  async function reject(c: any) {
-    if (!confirm(`Reject this contribution?`)) return;
-    setProcessing(true);
-    await supabase.from('contributions').update({ status: 'rejected', approved_by: adminEmail, approved_at: new Date().toISOString() }).eq('id', c.id);
-    setContributions(prev => prev.map(x => x.id === c.id ? { ...x, status: 'rejected' } : x));
-    setSelected(null); setProcessing(false);
-    showToast(`Contribution rejected.`);
-  }
-
-  const statusBadge = (s: string) => ({ pending:'bg-yellow-100 text-yellow-700 border-yellow-200', approved:'bg-green-100 text-green-700 border-green-200', rejected:'bg-red-100 text-red-700 border-red-200' }[s] ?? 'bg-slate-100 text-slate-700');
-
-  return (
-    <div className="space-y-8">
-      {selected && (
-        <div className="fixed inset-0 bg-slate-900/95 z-40 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
-          <div className="bg-white rounded-[3rem] p-8 max-w-lg w-full my-4 shadow-2xl">
-            <div className="flex items-start justify-between mb-6">
-              <div>
-                <span className="text-4xl">{REASON_EMOJIS[selected.reason_type] ?? '💛'}</span>
-                <h3 className="text-xl font-black uppercase text-slate-900 mt-2">Solidarity Contribution</h3>
-                <span className={`inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border mt-2 ${statusBadge(selected.status)}`}>{selected.status}</span>
-              </div>
-              <div className="text-right">
-                <p className="text-3xl font-black text-slate-900">{selected.amount.toLocaleString()}</p>
-                <p className="text-xs text-slate-400 font-bold">{selected.currency}</p>
-              </div>
-              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 p-1 ml-2"><XCircle size={20}/></button>
-            </div>
-
-            <div className="bg-slate-50 rounded-2xl p-5 mb-5 space-y-1.5 text-xs">
-              {[
-                ['From', `${selected.from_member_name} (${selected.from_chapter})`],
-                ['To', `${selected.to_member_name} (${selected.to_chapter})`],
-                ['Reason', selected.reason_type],
-                ['Amount', `${selected.amount.toLocaleString()} ${selected.currency}`],
-                ['Submitted', new Date(selected.created_at).toLocaleString()],
-              ].map(([l,v]) => (
-                <div key={l} className="flex justify-between py-1 border-b border-slate-100 last:border-0">
-                  <span className="font-black text-slate-400 uppercase tracking-widest">{l}</span>
-                  <span className="font-black text-slate-800 text-right max-w-[55%]">{v}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="bg-slate-50 rounded-2xl p-4 mb-5">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Message / Details</p>
-              <p className="text-sm text-slate-700 font-bold leading-relaxed">{selected.reason}</p>
-            </div>
-
-            {selected.receipt_url && <img src={selected.receipt_url} className="rounded-2xl max-h-40 w-full object-cover border border-slate-200 mb-5 cursor-pointer" onClick={()=>window.open(selected.receipt_url,'_blank')}/>}
-
-            {selected.status === 'pending' && (
-              <div className="space-y-3">
-                <button onClick={() => approve(selected)} disabled={processing}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50">
-                  {processing ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>} Approve & Publish
-                </button>
-                <button onClick={() => reject(selected)} disabled={processing}
-                  className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 transition-all border-2 border-red-200 disabled:opacity-50">
-                  <XCircle size={16}/> Reject
-                </button>
-              </div>
-            )}
-            {selected.status !== 'pending' && (
-              <div className={`rounded-2xl p-4 text-sm font-bold ${selected.status === 'approved' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                {selected.status === 'approved' ? `Approved by ${selected.approved_by ?? 'admin'}` : 'Rejected.'}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div><h2 className="text-3xl font-black uppercase italic text-slate-800">Solidarity Contributions</h2><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Member-to-member support records</p></div>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-yellow-500 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{pending}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Pending</p></div>
-        <div className="bg-green-600 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{approved}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Approved</p></div>
-        <div className="bg-slate-900 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-2xl font-black">{totalApproved.toLocaleString()}</p><p className="text-xs font-bold uppercase tracking-widest opacity-60 mt-1">Total Given (LRD)</p></div>
-      </div>
-
-      <div className="flex gap-2">{(['pending','approved','rejected','all'] as const).map(f=><button key={f} onClick={()=>setFilter(f)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter===f?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{f}</button>)}</div>
-
-      <Card>
-        <SectionTitle>Contributions ({visible.length})</SectionTitle>
-        <div className="space-y-3">
-          {visible.map(c => (
-            <div key={c.id} onClick={() => setSelected(c)}
-              className="flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl cursor-pointer transition-all border-2 border-transparent hover:border-slate-200">
-              <span className="text-2xl shrink-0">{REASON_EMOJIS[c.reason_type] ?? '💛'}</span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-black text-slate-800 text-sm">{c.from_member_name}</p>
-                  <span className="text-slate-400 text-xs">→</span>
-                  <p className="font-black text-slate-800 text-sm">{c.to_member_name}</p>
-                </div>
-                <p className="text-xs text-slate-400 font-bold">{c.reason_type} · {c.from_chapter}</p>
-                <p className="text-xs text-slate-400 font-bold truncate">{new Date(c.created_at).toLocaleDateString()}</p>
-              </div>
-              <div className="text-right shrink-0">
-                <p className="font-black text-lg text-slate-800">{c.amount.toLocaleString()} <span className="text-xs text-slate-400">{c.currency}</span></p>
-                <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${statusBadge(c.status)}`}>{c.status}</span>
-              </div>
-            </div>
-          ))}
-          {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}contributions.</p>}
-        </div>
       </Card>
     </div>
   );
