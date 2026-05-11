@@ -844,9 +844,13 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                   {isHeadAdmin && financials.length > 1 && (
                     <tr className="bg-slate-900 text-white">
                       <td className="px-4 py-3 font-black uppercase tracking-widest text-[10px]">All Chapters</td>
-                      {(['membershipFees','candidateFees','duesCollected','maintenanceFees','donations','contributions'] as (keyof typeof financials[0])[]).map(k => (
-                        <td key={k} className="px-4 py-3 font-black text-white">
-                          {financials.reduce((s,r)=>s+r[k],0).toLocaleString()}
+                      {([
+                        ['membershipFees','Membership'], ['candidateFees','Candidate'],
+                        ['duesCollected','Dues'], ['maintenanceFees','Maintenance'],
+                        ['donations','Donations'], ['contributions','Solidarity'],
+                      ] as [keyof typeof financials[0], string][]).map(([k]) => (
+                        <td key={String(k)} className="px-4 py-3 font-black text-white">
+                          {financials.reduce((s,r) => s + (r[k] as number), 0).toLocaleString()}
                         </td>
                       ))}
                       <td className="px-4 py-3 font-black text-green-400 text-sm">
