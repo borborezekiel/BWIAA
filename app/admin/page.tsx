@@ -397,12 +397,16 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
           .filter((a: any) => a.chapter === ch && a.status === 'approved')
           .reduce((s: number, a: any) => s + (a.registration_fee ?? 0), 0);
 
+        const membershipFees = (duesData ?? [])
+          .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.period === 'Membership Registration Fee')
+          .reduce((s: number, d: any) => s + (d.amount ?? 0), 0);
+
         const duesCollected = (duesData ?? [])
-          .filter((d: any) => d.chapter === ch && d.status === 'approved')
+          .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.period !== 'Membership Registration Fee')
           .reduce((s: number, d: any) => s + (d.dues_amount ?? (d.amount - (d.maintenance_fee ?? 0))), 0);
 
         const maintenanceFees = (duesData ?? [])
-          .filter((d: any) => d.chapter === ch && d.status === 'approved')
+          .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.period !== 'Membership Registration Fee')
           .reduce((s: number, d: any) => s + (d.maintenance_fee ?? 0), 0);
 
         const donations = (donationData ?? [])
@@ -413,8 +417,8 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
           .filter((c: any) => c.from_chapter === ch && c.status === 'approved')
           .reduce((s: number, c: any) => s + (c.amount ?? 0), 0);
 
-        const total = candidateFees + duesCollected + maintenanceFees + donations + contributions;
-        return { chapter: ch, candidateFees, duesCollected, maintenanceFees, donations, contributions, total };
+        const total = membershipFees + candidateFees + duesCollected + maintenanceFees + donations + contributions;
+        return { chapter: ch, membershipFees, candidateFees, duesCollected, maintenanceFees, donations, contributions, total };
       });
 
       // Sort by total descending
@@ -783,11 +787,12 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
             {isHeadAdmin && financials.length > 1 && (
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
                 {[
-                  { label: 'Candidate Fees',   value: financials.reduce((s,r)=>s+r.candidateFees,0),   color: 'bg-purple-600' },
-                  { label: 'Dues Collected',   value: financials.reduce((s,r)=>s+r.duesCollected,0),   color: 'bg-blue-600'   },
-                  { label: 'Maintenance Fund', value: financials.reduce((s,r)=>s+r.maintenanceFees,0), color: 'bg-amber-500'  },
-                  { label: 'Donations',        value: financials.reduce((s,r)=>s+r.donations,0),       color: 'bg-red-500'    },
-                  { label: 'Solidarity',       value: financials.reduce((s,r)=>s+r.contributions,0),   color: 'bg-teal-600'   },
+                  { label: 'Membership Fees',  value: financials.reduce((s,r)=>s+(r as any).membershipFees,0), color: 'bg-green-700'  },
+                  { label: 'Candidate Fees',   value: financials.reduce((s,r)=>s+r.candidateFees,0),          color: 'bg-purple-600' },
+                  { label: 'Annual Dues',      value: financials.reduce((s,r)=>s+r.duesCollected,0),          color: 'bg-blue-600'   },
+                  { label: 'Maintenance Fund', value: financials.reduce((s,r)=>s+r.maintenanceFees,0),        color: 'bg-amber-500'  },
+                  { label: 'Donations',        value: financials.reduce((s,r)=>s+r.donations,0),              color: 'bg-red-500'    },
+                  { label: 'Solidarity',       value: financials.reduce((s,r)=>s+r.contributions,0),          color: 'bg-teal-600'   },
                 ].map(s => (
                   <div key={s.label} className={`${s.color} text-white rounded-2xl p-4 text-center`}>
                     <p className="text-xl font-black">{s.value.toLocaleString()}</p>
@@ -802,7 +807,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
               <table className="w-full text-xs min-w-[700px]">
                 <thead className="bg-slate-900 text-white">
                   <tr>
-                    {['Chapter','Candidate Fees','Dues','Maintenance','Donations','Solidarity','Total'].map(h => (
+                    {['Chapter','Membership Fees','Candidate Fees','Annual Dues','Maintenance','Donations','Solidarity','Total'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -811,6 +816,9 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                   {financials.map((row, i) => (
                     <tr key={row.chapter} className={`border-b border-slate-50 ${i%2===0?'bg-white':'bg-slate-50/50'}`}>
                       <td className="px-4 py-3 font-black text-slate-800 whitespace-nowrap">{row.chapter}</td>
+                      <td className="px-4 py-3">
+                        <span className="font-black text-green-700">{(row as any).membershipFees > 0 ? (row as any).membershipFees.toLocaleString() : '—'}</span>
+                      </td>
                       <td className="px-4 py-3">
                         <span className="font-black text-purple-700">{row.candidateFees > 0 ? row.candidateFees.toLocaleString() : '—'}</span>
                       </td>
@@ -835,7 +843,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                   {isHeadAdmin && financials.length > 1 && (
                     <tr className="bg-slate-900 text-white">
                       <td className="px-4 py-3 font-black uppercase tracking-widest text-[10px]">All Chapters</td>
-                      {(['candidateFees','duesCollected','maintenanceFees','donations','contributions'] as const).map(k => (
+                      {(['membershipFees','candidateFees','duesCollected','maintenanceFees','donations','contributions'] as const).map(k => (
                         <td key={k} className="px-4 py-3 font-black text-white">
                           {financials.reduce((s,r)=>s+r[k],0).toLocaleString()}
                         </td>
