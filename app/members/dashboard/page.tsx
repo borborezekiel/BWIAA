@@ -128,6 +128,16 @@ export default function MemberDashboard() {
       }
       if (!mem) { router.push('/members/register'); return; }
 
+      // ── Strict access control — only approved members get in ───────────────
+      if (mem.status === 'pending') {
+        router.push('/members/pending');
+        return;
+      }
+      if (mem.status === 'rejected') {
+        router.push('/members/rejected');
+        return;
+      }
+
       setMember(mem);
       setTheme(mem.theme ?? 'system');
       // ── Initialize profile fields ──────────────────────────────────────────

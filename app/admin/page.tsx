@@ -397,15 +397,20 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
           .filter((a: any) => a.chapter === ch && a.status === 'approved')
           .reduce((s: number, a: any) => s + (a.registration_fee ?? 0), 0);
 
-        // Membership fees: match by chapter OR where chapter is null/empty (legacy records)
+        // Membership fees — always use `amount` (dues_amount is 0 on these records)
         const membershipFees = (duesData ?? [])
           .filter((d: any) => d.status === 'approved' && d.period === 'Membership Registration Fee' &&
             (d.chapter === ch || !d.chapter || d.chapter === ''))
           .reduce((s: number, d: any) => s + (d.amount ?? 0), 0);
 
+        // Annual dues — exclude membership fee records, use dues_amount if set else fall back to amount
         const duesCollected = (duesData ?? [])
           .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.period !== 'Membership Registration Fee')
-          .reduce((s: number, d: any) => s + (d.dues_amount ?? (d.amount - (d.maintenance_fee ?? 0))), 0);
+          .reduce((s: number, d: any) => {
+            if (d.dues_amount > 0) return s + d.dues_amount;
+            if (d.maintenance_fee > 0) return s + (d.amount - d.maintenance_fee);
+            return s + d.amount;
+          }, 0);
 
         const maintenanceFees = (duesData ?? [])
           .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.period !== 'Membership Registration Fee')
