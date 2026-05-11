@@ -79,6 +79,11 @@ export default function MemberDashboard() {
 
   // ── Profile edit state ────────────────────────────────────────────────────
   const [profileName, setProfileName]               = useState('');
+  const [profilePhone, setProfilePhone]             = useState('');
+  const [profileClassName, setProfileClassName]     = useState('');
+  const [profileYearGrad, setProfileYearGrad]       = useState('');
+  const [profileSponsor, setProfileSponsor]         = useState('');
+  const [profilePrincipal, setProfilePrincipal]     = useState('');
   const [profilePhotoFile, setProfilePhotoFile]     = useState<File|null>(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string|null>(null);
   const [profileMsg, setProfileMsg]                 = useState('');
@@ -127,6 +132,11 @@ export default function MemberDashboard() {
       setTheme(mem.theme ?? 'system');
       // ── Initialize profile fields ──────────────────────────────────────────
       setProfileName(mem.full_name ?? '');
+      setProfilePhone(mem.phone ?? '');
+      setProfileClassName(mem.class_name ?? '');
+      setProfileYearGrad(mem.year_graduated ? String(mem.year_graduated) : '');
+      setProfileSponsor(mem.sponsor_name ?? '');
+      setProfilePrincipal(mem.principal_name ?? '');
 
       const { data: d } = await supabase.from('dues_payments')
         .select('*').eq('member_id', mem.id).order('created_at', { ascending: false });
@@ -193,27 +203,54 @@ export default function MemberDashboard() {
   // ── Save profile ──────────────────────────────────────────────────────────
   async function saveProfile() {
     if (!member) return;
-    if (!profileName.trim()) { setProfileMsg('Name cannot be empty.'); return; }
+    if (!profileName.trim())                                          { setProfileMsg('Name cannot be empty.'); return; }
+    if (profileYearGrad && isNaN(parseInt(profileYearGrad)))          { setProfileMsg('Year graduated must be a number.'); return; }
     setProfileSaving(true); setProfileMsg('');
     try {
       let photo_url = member.photo_url;
+
       if (profilePhotoFile) {
+        // ── Delete old photo first to save storage ─────────────────────────
+        if (member.photo_url) {
+          try {
+            // Extract the storage path from the full URL
+            const urlParts = member.photo_url.split('/candidate-photos/');
+            if (urlParts.length > 1) {
+              const oldPath = decodeURIComponent(urlParts[1].split('?')[0]);
+              await supabase.storage.from('candidate-photos').remove([oldPath]);
+            }
+          } catch {} // deletion failure is non-critical — still upload new
+        }
+        // Upload new photo
         const fileName = `members/${member.id}_${Date.now()}.jpg`;
         const { data: upData, error: upErr } = await supabase.storage
           .from('candidate-photos').upload(fileName, profilePhotoFile, { upsert: true });
         if (upErr) throw new Error(`Photo upload failed: ${upErr.message}`);
         photo_url = supabase.storage.from('candidate-photos').getPublicUrl(upData.path).data.publicUrl;
       }
-      const { error } = await supabase.from('members').update({
-        full_name: profileName.trim(),
+
+      const updates: any = {
+        full_name:       profileName.trim(),
+        phone:           profilePhone.trim()    || null,
+        class_name:      profileClassName.trim()|| null,
+        year_graduated:  profileYearGrad        ? parseInt(profileYearGrad) : null,
+        sponsor_name:    profileSponsor.trim()  || null,
+        principal_name:  profilePrincipal.trim()|| null,
         photo_url,
-      }).eq('id', member.id);
+      };
+
+      const { error } = await supabase.from('members').update(updates).eq('id', member.id);
       if (error) throw new Error(error.message);
-      setMember(prev => prev ? { ...prev, full_name: profileName.trim(), photo_url } : prev);
+
+      setMember(prev => prev ? { ...prev, ...updates } : prev);
       setProfilePhotoFile(null); setProfilePhotoPreview(null);
+
       await supabase.from('activity_log').insert([{
-        member_id: member.id, member_name: profileName.trim(), chapter: member.chapter,
-        action: 'Profile updated', details: 'Name or photo updated by member',
+        member_id:   member.id,
+        member_name: profileName.trim(),
+        chapter:     member.chapter,
+        action:      'Profile updated',
+        details:     'Name, phone, class name, year, sponsor, principal or photo updated by member',
       }]);
       setProfileMsg('✓ Profile updated successfully!');
     } catch (e: any) {
@@ -358,7 +395,7 @@ export default function MemberDashboard() {
                   ['Member ID',    member.id.slice(0,8).toUpperCase()],
                   ['Email',        member.email],
                   ['Phone',        member.phone ?? '—'],
-                  ['Student ID',   member.id_number],
+                  ['ID Number',    member.id_number],
                   ['Class Sponsor',member.sponsor_name],
                   ['Principal',    member.principal_name],
                   ['Chapter',      member.chapter + (member.chapter_locked ? ' 🔒' : '')],
@@ -635,7 +672,7 @@ export default function MemberDashboard() {
               <h4 className={`font-black ${text} uppercase tracking-widest text-sm mb-1 flex items-center gap-2`}>
                 <User size={16} className="text-red-600"/> Edit Profile
               </h4>
-              <p className={`text-xs ${subtext} font-bold mb-5`}>Update your display name and profile photo. Official school details are locked.</p>
+              <p className={`text-xs ${subtext} font-bold mb-5`}>Update your display name, phone number and profile photo.</p>
               <div className="space-y-4">
                 {/* Photo */}
                 <div>
@@ -668,18 +705,40 @@ export default function MemberDashboard() {
                     placeholder="Your full name"
                     className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {[
-                    ['Phone Number', member.phone ?? 'Not provided'],
-                    ['Student ID', member.id_number],
-                    ['Class Sponsor', member.sponsor_name],
-                    ['Principal', member.principal_name],
-                  ].map(([l,v]) => (
-                    <div key={l} className={`${isDark?'bg-white/5 border-white/10':'bg-slate-50 border-slate-100'} border rounded-2xl p-4`}>
-                      <p className={`text-[10px] font-black ${subtext} uppercase tracking-widest mb-1`}>{l}</p>
-                      <p className={`font-black ${text} text-sm`}>{v}</p>
-                    </div>
-                  ))}
+                {/* Phone */}
+                <div>
+                  <label className={`block text-xs font-black ${subtext} uppercase tracking-widest mb-2`}>Phone Number</label>
+                  <input value={profilePhone} onChange={e => setProfilePhone(e.target.value)}
+                    placeholder="+231 xxx xxx xxxx"
+                    className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
+                </div>
+                {/* Class Name */}
+                <div>
+                  <label className={`block text-xs font-black ${subtext} uppercase tracking-widest mb-2`}>Class Name</label>
+                  <input value={profileClassName} onChange={e => setProfileClassName(e.target.value)}
+                    placeholder="e.g. Eagles, Tigers, Lions"
+                    className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
+                </div>
+                {/* Year Graduated */}
+                <div>
+                  <label className={`block text-xs font-black ${subtext} uppercase tracking-widest mb-2`}>Year Graduated</label>
+                  <input value={profileYearGrad} onChange={e => setProfileYearGrad(e.target.value)}
+                    placeholder="e.g. 2005" type="number" min="1950" max="2099"
+                    className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
+                </div>
+                {/* Sponsor */}
+                <div>
+                  <label className={`block text-xs font-black ${subtext} uppercase tracking-widest mb-2`}>Class Sponsor Name</label>
+                  <input value={profileSponsor} onChange={e => setProfileSponsor(e.target.value)}
+                    placeholder="Sponsor's full name"
+                    className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
+                </div>
+                {/* Principal */}
+                <div>
+                  <label className={`block text-xs font-black ${subtext} uppercase tracking-widest mb-2`}>Principal Name</label>
+                  <input value={profilePrincipal} onChange={e => setProfilePrincipal(e.target.value)}
+                    placeholder="Principal's full name"
+                    className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
                 </div>
                 {profileMsg && (
                   <p className={`text-xs font-bold ${profileMsg.startsWith('✓') ? 'text-green-600' : 'text-red-600'}`}>{profileMsg}</p>
