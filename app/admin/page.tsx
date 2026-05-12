@@ -2341,7 +2341,7 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
         member_id: m.id,
         type: 'membership_approved',
         title: '🎉 Membership Approved!',
-        message: `Welcome to ${config?.org_name ?? 'BWIAA'}! Your membership has been approved. You now have full access to the member portal.`,
+        message: `Welcome to BWIAA! Your membership has been approved. You now have full access to the member portal.`,
         link: '/members/dashboard',
       }]);
     }
