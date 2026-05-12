@@ -6,7 +6,7 @@ import {
   User, CreditCard, Activity, LogOut, CheckCircle2, Clock,
   XCircle, Sun, Moon, Monitor, ChevronDown, ChevronUp,
   Settings, Loader2, Receipt, Lock, Key, Calendar, MapPin, Plus,
-  Download, Printer, Users, TrendingUp, Upload, X,
+  Download, Printer, Users, TrendingUp, Upload, X, Globe,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -422,9 +422,10 @@ export default function MemberDashboard() {
             {member.status === 'approved' && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[
-                  {href:'/dues',        label:'Pay Dues',   icon:<CreditCard size={20}/>, color:'bg-green-600'},
-                  {href:'/donations',   label:'Donations',  icon:<Plus size={20}/>,       color:'bg-red-600'},
-                  {href:'/contributions',label:'Solidarity', icon:<Users size={20}/>,     color:'bg-blue-600'},
+                  {href:'/feed',         label:'Community Feed', icon:<Globe size={20}/>,      color:'bg-slate-800'},
+                  {href:'/dues',         label:'Pay Dues',       icon:<CreditCard size={20}/>, color:'bg-green-600'},
+                  {href:'/donations',    label:'Donations',      icon:<Plus size={20}/>,       color:'bg-red-600'},
+                  {href:'/contributions',label:'Solidarity',     icon:<Users size={20}/>,      color:'bg-blue-600'},
                 ].map(({href,label,icon,color}) => (
                   <Link key={href} href={href} className={`flex items-center gap-4 ${card} border rounded-3xl p-6 hover:border-red-400 transition-all shadow-sm`}>
                     <div className={`w-12 h-12 ${color} rounded-2xl flex items-center justify-center shrink-0`}>{icon}</div>

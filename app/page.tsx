@@ -179,7 +179,6 @@ export default function BWIAAElection2026() {
       if (diff <= 0) {
         setTimeLeft('VOTING CLOSED');
         setVotingClosed(true);
-        // Archiving handled server-side by /api/archive cron — runs every 5 min
         return;
       }
       const d = Math.floor(diff / 86400000);
@@ -755,6 +754,7 @@ export default function BWIAAElection2026() {
           <div className="max-w-6xl mx-auto px-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
+                { href: '/feed',            label: 'Community Feed',          icon: '🐯' },
                 { href: '/register/status', label: 'Check Application Status', icon: '📋' },
                 { href: '/members',         label: 'Member Portal',            icon: '👤' },
                 { href: '/history',         label: 'Election History',         icon: '🏆' },
