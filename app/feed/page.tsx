@@ -154,7 +154,7 @@ export default function FeedPage() {
 
   async function compressImage(file: File): Promise<File> {
     return new Promise((resolve, reject) => {
-      const img = new Image(); const url = URL.createObjectURL(file);
+      const img = new window.Image(); const url = URL.createObjectURL(file);
       img.onload = () => {
         const MAX = 1200; let { width, height } = img;
         if (width > MAX || height > MAX) {
