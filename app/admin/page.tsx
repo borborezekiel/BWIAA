@@ -1263,7 +1263,19 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
     setCandidates(prev => [...prev, cand]);
     setSelected(null);
     showToast(`✓ ${app.full_name} approved and added as ${app.position_name} candidate for ${app.chapter}.`);
-    try { await supabase.functions.invoke('notify-applicant', { body: { type: 'approved', application: { ...app, status: 'approved' } } }); } catch {}
+    // Notify member via notifications table
+    try {
+      const { data: mem } = await supabase.from('members').select('id').eq('email', app.applicant_email?.toLowerCase() ?? '').maybeSingle();
+      if (mem?.id) {
+        await supabase.from('notifications').insert([{
+          member_id: mem.id,
+          type: 'application_approved',
+          title: '🎉 Candidacy Approved!',
+          message: `Your application to run for ${app.position_name} in the ${app.chapter} has been approved. You are now an official candidate.`,
+          link: '/members/dashboard',
+        }]);
+      }
+    } catch {}
   }
 
   async function reject(app: Application) {
@@ -1283,7 +1295,19 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
     setApplications(prev => prev.map(a => a.id === app.id ? { ...a, status: 'rejected', rejection_reason: rejReason, reviewed_at: reviewedAt } : a));
     setSelected(null); setRejReason('');
     showToast(`${app.full_name}'s application rejected.`);
-    try { await supabase.functions.invoke('notify-applicant', { body: { type: 'rejected', application: { ...app, status: 'rejected', rejection_reason: rejReason.trim() } } }); } catch {}
+    // Notify member
+    try {
+      const { data: mem } = await supabase.from('members').select('id').eq('email', app.applicant_email?.toLowerCase() ?? '').maybeSingle();
+      if (mem?.id) {
+        await supabase.from('notifications').insert([{
+          member_id: mem.id,
+          type: 'application_rejected',
+          title: 'Candidacy Application Update',
+          message: `Your application for ${app.position_name} was not approved. Reason: ${rejReason.trim()}. Contact the Election Committee for more information.`,
+          link: '/members/dashboard',
+        }]);
+      }
+    } catch {}
   }
 
   function exportCSV() {
@@ -2311,6 +2335,16 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
     if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
     await supabase.from('eligible_voters').upsert([{ email:m.email, chapter:m.chapter }], { onConflict:'email' });
     await supabase.from('activity_log').insert([{ member_id:m.id, member_name:m.full_name, chapter:m.chapter, action:'Membership approved — added to voter roster', details:`Approved by ${adminEmail}` }]);
+    // Notify member
+    if (m.id) {
+      await supabase.from('notifications').insert([{
+        member_id: m.id,
+        type: 'membership_approved',
+        title: '🎉 Membership Approved!',
+        message: `Welcome to ${config?.org_name ?? 'BWIAA'}! Your membership has been approved. You now have full access to the member portal.`,
+        link: '/members/dashboard',
+      }]);
+    }
     setMembers(prev => prev.map(x => x.id===m.id ? {...x, status:'approved', approved_by:adminEmail, approved_at:approvedAt} : x));
     setSelected(null); setProcessing(false);
     showToast(`✓ ${m.full_name} approved and added to voter roster.`);
@@ -2322,6 +2356,16 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
     const { error } = await supabase.from('members').update({ status:'rejected', approved_by:adminEmail, approved_at:new Date().toISOString() }).eq('id', m.id);
     if (error) { showToast(`Failed: ${error.message}`, false); setProcessing(false); return; }
     await supabase.from('activity_log').insert([{ member_id:m.id, member_name:m.full_name, chapter:m.chapter, action:'Membership rejected', details:`Reason: ${rejReason.trim()}` }]);
+    // Notify member
+    if (m.id) {
+      await supabase.from('notifications').insert([{
+        member_id: m.id,
+        type: 'membership_rejected',
+        title: 'Membership Application Update',
+        message: `Your membership application was not approved. Reason: ${rejReason.trim()}. Please contact your chapter administrator for more information.`,
+        link: '/members/rejected',
+      }]);
+    }
     setMembers(prev => prev.map(x => x.id===m.id ? {...x, status:'rejected'} : x));
     setSelected(null); setRejReason(''); setProcessing(false);
     showToast(`${m.full_name}'s membership rejected.`);
@@ -2345,6 +2389,14 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
     await supabase.from('members').update({ status:'approved', approved_by:adminEmail, approved_at:approvedAt }).eq('id', m.id);
     await supabase.from('eligible_voters').upsert([{ email:m.email, chapter:m.chapter }], { onConflict:'email' });
     await supabase.from('activity_log').insert([{ member_id:m.id, member_name:m.full_name, chapter:m.chapter, action:'Member reactivated', details:`By ${adminEmail}` }]);
+    // Notify member
+    await supabase.from('notifications').insert([{
+      member_id: m.id,
+      type: 'membership_reactivated',
+      title: '✓ Account Reactivated',
+      message: 'Your membership has been reactivated. You now have full access to the member portal.',
+      link: '/members/dashboard',
+    }]);
     setMembers(prev => prev.map(x => x.id===m.id ? {...x, status:'approved', approved_by:adminEmail, approved_at:approvedAt} : x));
     setSelected(null); setProcessing(false);
     showToast(`${m.full_name} reactivated and added back to voter roster.`);
@@ -2624,6 +2676,16 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
     const { error } = await supabase.from('dues_payments').update({ status:'approved', approved_by:adminEmail, approved_at:approvedAt }).eq('id',d.id);
     if (error) { showToast(`Failed: ${error.message}`,false); setProcessing(false); return; }
     await supabase.from('activity_log').insert([{ member_name:d.member_name, chapter:d.chapter, action:'Dues payment approved', details:`${symbol}${d.amount} for ${d.period} approved by ${adminEmail}` }]);
+    // Notify member
+    if (d.member_id) {
+      await supabase.from('notifications').insert([{
+        member_id: d.member_id,
+        type: 'dues_approved',
+        title: '✓ Payment Approved',
+        message: `Your payment of ${d.amount.toLocaleString()} ${d.currency} for ${d.period} has been approved.`,
+        link: '/members/dashboard',
+      }]);
+    }
     setDues(prev=>prev.map(x=>x.id===d.id?{...x,status:'approved',approved_by:adminEmail,approved_at:approvedAt}:x));
     setSelected(null); setProcessing(false);
     showToast(`✓ ${symbol}${d.amount} payment from ${d.member_name} approved.`);
@@ -2633,6 +2695,16 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
     if (!confirm(`Reject payment from ${d.member_name}?`)) return;
     setProcessing(true);
     await supabase.from('dues_payments').update({ status:'rejected', approved_by:adminEmail, approved_at:new Date().toISOString() }).eq('id',d.id);
+    // Notify member
+    if (d.member_id) {
+      await supabase.from('notifications').insert([{
+        member_id: d.member_id,
+        type: 'dues_rejected',
+        title: '⚠ Payment Not Approved',
+        message: `Your payment of ${d.amount.toLocaleString()} ${d.currency} for ${d.period} was not approved. Please contact your administrator.`,
+        link: '/dues',
+      }]);
+    }
     setDues(prev=>prev.map(x=>x.id===d.id?{...x,status:'rejected'}:x));
     setSelected(null); setProcessing(false);
     showToast(`${d.member_name}'s payment rejected.`);
