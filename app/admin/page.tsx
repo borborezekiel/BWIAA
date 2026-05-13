@@ -2072,6 +2072,15 @@ function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases
         </button>
       </Card>
 
+      {/* ── Feed Settings ── */}
+      <Card accent="slate">
+        <SectionTitle>🌐 Community Feed Settings</SectionTitle>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-6 -mt-2">
+          Control what members can post. Changes go live immediately.
+        </p>
+        <FeedSettingsPanel showToast={showToast}/>
+      </Card>
+
       {/* ── Organisation Branding ── */}
       <Card>
         <SectionTitle>Organisation & Branding</SectionTitle>
@@ -3244,6 +3253,103 @@ function InvestmentsTab({ showToast, isHeadAdmin, members, config }: {
           </div>
         ))}
       </Card>
+    </div>
+  );
+}
+
+// ─── Feed Settings Panel ──────────────────────────────────────────────────────
+function FeedSettingsPanel({ showToast }: { showToast: (m: string, ok?: boolean) => void }) {
+  const [settings, setSettings] = useState({
+    feed_allow_photos:    'true',
+    feed_allow_videos:    'false',
+    feed_max_photo_mb:    '2',
+    feed_max_video_mb:    '10',
+    feed_max_post_length: '500',
+    feed_require_approval:'false',
+  });
+  const [saving, setSaving]   = useState(false);
+  const [loaded, setLoaded]   = useState(false);
+
+  useEffect(() => {
+    supabase.from('election_settings').select('key,value')
+      .in('key', ['feed_allow_photos','feed_allow_videos','feed_max_photo_mb','feed_max_video_mb','feed_max_post_length','feed_require_approval'])
+      .then(({ data }) => {
+        if (!data) return;
+        const updates: any = {};
+        data.forEach(r => { updates[r.key] = r.value; });
+        setSettings(prev => ({ ...prev, ...updates }));
+        setLoaded(true);
+      });
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    const rows = Object.entries(settings).map(([key, value]) => ({ key, value }));
+    const { error } = await supabase.from('election_settings').upsert(rows, { onConflict: 'key' });
+    setSaving(false);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    showToast('✓ Feed settings saved — live immediately.');
+  }
+
+  const toggle = (key: string) => setSettings(prev => ({ ...prev, [key]: prev[key as keyof typeof prev] === 'true' ? 'false' : 'true' }));
+  const setNum = (key: string, val: string) => setSettings(prev => ({ ...prev, [key]: val }));
+
+  if (!loaded) return <div className="flex items-center gap-2 py-4"><Loader2 size={16} className="animate-spin text-slate-400"/><p className="text-slate-400 font-bold text-sm">Loading...</p></div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="space-y-3">
+        {[
+          { key: 'feed_allow_photos',     label: '📷 Allow Photo Uploads',   sub: 'Members can attach images to posts' },
+          { key: 'feed_allow_videos',     label: '🎬 Allow Video Uploads',   sub: `Disabled recommended — videos use large storage (max ${settings.feed_max_video_mb}MB each)` },
+          { key: 'feed_require_approval', label: '🔍 Require Admin Approval',sub: 'Posts go live only after admin reviews them' },
+        ].map(({ key, label, sub }) => (
+          <div key={key} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+            <div>
+              <p className="font-black text-slate-800 text-sm">{label}</p>
+              <p className="text-xs text-slate-400 font-bold mt-0.5">{sub}</p>
+            </div>
+            <button onClick={() => toggle(key)}
+              className={`relative w-12 h-6 rounded-full transition-all ${settings[key as keyof typeof settings] === 'true' ? 'bg-green-500' : 'bg-slate-300'}`}>
+              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${settings[key as keyof typeof settings] === 'true' ? 'left-6' : 'left-0.5'}`}/>
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[
+          { key: 'feed_max_post_length', label: 'Max Post Length (chars)', min: '100', max: '2000' },
+          { key: 'feed_max_photo_mb',    label: 'Max Photo Size (MB)',     min: '1',   max: '10'   },
+          { key: 'feed_max_video_mb',    label: 'Max Video Size (MB)',     min: '5',   max: '50'   },
+        ].map(({ key, label, min, max }) => (
+          <div key={key}>
+            <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">{label}</label>
+            <input type="number" min={min} max={max}
+              value={settings[key as keyof typeof settings]}
+              onChange={e => setNum(key, e.target.value)}
+              className="w-full border-2 border-slate-200 focus:border-slate-700 rounded-2xl px-4 py-3 font-bold outline-none text-slate-800"/>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+        <span className="text-amber-500 text-lg shrink-0">⚠️</span>
+        <div>
+          <p className="text-xs font-black text-amber-700 uppercase tracking-widest">Storage Advisory</p>
+          <p className="text-xs text-amber-600 font-bold mt-1 leading-relaxed">
+            Supabase free tier includes 1GB storage shared across all uploads.
+            Keep videos disabled until storage budget is secured.
+            Photos at {settings.feed_max_photo_mb}MB max are manageable.
+          </p>
+        </div>
+      </div>
+
+      <button onClick={save} disabled={saving}
+        className="bg-slate-900 hover:bg-slate-700 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-2 transition-all disabled:opacity-50">
+        {saving ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
+        {saving ? 'Saving...' : 'Save Feed Settings'}
+      </button>
     </div>
   );
 }

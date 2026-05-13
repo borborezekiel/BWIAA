@@ -131,6 +131,18 @@ export default function MemberDashboard() {
   const [openMenu, setOpenMenu]       = useState<string|null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Feed settings (from admin)
+  const [feedAllowPhotos,   setFeedAllowPhotos]   = useState(true);
+  const [feedAllowVideos,   setFeedAllowVideos]   = useState(false);
+  const [feedMaxPhotoMb,    setFeedMaxPhotoMb]    = useState(2);
+  const [feedMaxVideoMb,    setFeedMaxVideoMb]    = useState(10);
+  const [feedMaxPostLength, setFeedMaxPostLength] = useState(500);
+  const [feedRequireApproval, setFeedRequireApproval] = useState(false);
+
+  // People search
+  const [allMembers,    setAllMembers]    = useState<{id:string;full_name:string;chapter:string;photo_url:string|null}[]>([]);
+  const [memberSearch,  setMemberSearch]  = useState('');
+
   // Notifications
   const [notifications, setNotifications]   = useState<Notification[]>([]);
   const [showNotifs, setShowNotifs]         = useState(false);
@@ -204,7 +216,7 @@ export default function MemberDashboard() {
       const [
         { data: d }, { data: a },
         { data: chAtt }, { data: evs }, { data: att },
-        { data: notifs },
+        { data: notifs }, { data: feedSettings }, { data: mems },
       ] = await Promise.all([
         supabase.from('dues_payments').select('*').eq('member_id', mem.id).order('created_at',{ascending:false}),
         supabase.from('activity_log').select('*').eq('member_id', mem.id).order('created_at',{ascending:false}).limit(30),
@@ -212,6 +224,8 @@ export default function MemberDashboard() {
         supabase.from('events').select('*').eq('chapter', mem.chapter).order('event_date',{ascending:false}),
         supabase.from('attendance').select('*').eq('member_id', mem.id),
         supabase.from('notifications').select('*').eq('member_id', mem.id).order('created_at',{ascending:false}).limit(30),
+        supabase.from('election_settings').select('key,value').in('key',['feed_allow_photos','feed_allow_videos','feed_max_photo_mb','feed_max_video_mb','feed_max_post_length','feed_require_approval']),
+        supabase.from('members').select('id,full_name,chapter,photo_url').eq('status','approved').order('full_name'),
       ]);
       if (d) setDues(d);
       if (a) setActivity(a);
@@ -219,6 +233,16 @@ export default function MemberDashboard() {
       if (evs) setEvents(evs);
       if (att) setAttendance(att);
       if (notifs) setNotifications(notifs);
+      if (feedSettings) {
+        const get = (k: string) => feedSettings.find((r: any) => r.key === k)?.value;
+        if (get('feed_allow_photos') !== undefined)    setFeedAllowPhotos(get('feed_allow_photos') !== 'false');
+        if (get('feed_allow_videos') !== undefined)    setFeedAllowVideos(get('feed_allow_videos') === 'true');
+        if (get('feed_max_photo_mb'))  setFeedMaxPhotoMb(Number(get('feed_max_photo_mb')));
+        if (get('feed_max_video_mb'))  setFeedMaxVideoMb(Number(get('feed_max_video_mb')));
+        if (get('feed_max_post_length')) setFeedMaxPostLength(Number(get('feed_max_post_length')));
+        if (get('feed_require_approval') !== undefined) setFeedRequireApproval(get('feed_require_approval') === 'true');
+      }
+      if (mems) setAllMembers(mems);
 
       await loadPosts(user.id);
       setLoading(false);
@@ -275,22 +299,48 @@ export default function MemberDashboard() {
   }
 
   // ── Feed actions ─────────────────────────────────────────────────────────────
+  const [postVideo, setPostVideo]               = useState<File|null>(null);
+  const [postVideoPreview, setPostVideoPreview] = useState<string|null>(null);
+  const [postError, setPostError]               = useState('');
+  const videoRef = useRef<HTMLInputElement>(null);
+
   async function submitPost() {
     if (!member || !postContent.trim()) return;
-    setPosting(true);
+    if (postContent.length > feedMaxPostLength) { setPostError(`Post too long — max ${feedMaxPostLength} characters.`); return; }
+    if (postPhoto && postPhoto.size > feedMaxPhotoMb * 1024 * 1024) { setPostError(`Photo too large — max ${feedMaxPhotoMb}MB.`); return; }
+    if (postVideo && postVideo.size > feedMaxVideoMb * 1024 * 1024) { setPostError(`Video too large — max ${feedMaxVideoMb}MB.`); return; }
+    setPosting(true); setPostError('');
     try {
       let photo_url: string|null = null;
+      let video_url: string|null = null;
+
       if (postPhoto) {
         const fn = `posts/${member.id}_${Date.now()}.jpg`;
         const { data: ud, error: ue } = await supabase.storage.from('candidate-photos').upload(fn, postPhoto, {upsert:true});
         if (ue) throw new Error(ue.message);
         photo_url = supabase.storage.from('candidate-photos').getPublicUrl(ud.path).data.publicUrl;
       }
-      await supabase.from('posts').insert([{ member_id: member.id, member_name: member.full_name, member_photo_url: member.photo_url, chapter: member.chapter, content: postContent.trim(), photo_url, is_pinned: false, status: 'approved' }]);
-      setPostContent(''); setPostPhoto(null); setPostPhotoPreview(null);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) await loadPosts(user.id);
-    } catch (e: any) { alert(e.message); }
+      if (postVideo) {
+        const ext = postVideo.name.split('.').pop() ?? 'mp4';
+        const fn = `posts/videos/${member.id}_${Date.now()}.${ext}`;
+        const { data: ud, error: ue } = await supabase.storage.from('candidate-photos').upload(fn, postVideo, {upsert:true});
+        if (ue) throw new Error(ue.message);
+        video_url = supabase.storage.from('candidate-photos').getPublicUrl(ud.path).data.publicUrl;
+      }
+
+      const postStatus = feedRequireApproval ? 'pending' : 'approved';
+      const { data: newPost } = await supabase.from('posts')
+        .insert([{ member_id: member.id, member_name: member.full_name, member_photo_url: member.photo_url, chapter: member.chapter, content: postContent.trim(), photo_url, video_url, is_pinned: false, status: postStatus }])
+        .select().single();
+
+      setPostContent(''); setPostPhoto(null); setPostPhotoPreview(null); setPostVideo(null); setPostVideoPreview(null);
+
+      if (newPost && postStatus === 'approved') {
+        setPosts(prev => [{ ...newPost, reactions: [], comments: [] }, ...prev]);
+      } else if (postStatus === 'pending') {
+        setPostError('Post submitted — pending admin approval before it goes live.');
+      }
+    } catch (e: any) { setPostError(e.message); }
     finally { setPosting(false); }
   }
 
@@ -298,6 +348,21 @@ export default function MemberDashboard() {
     if (!member) return;
     const post = posts.find(p => p.id === postId);
     const existing = post?.reactions?.find(r => r.member_id === member.id);
+
+    // ── Optimistic local update — no full reload ──────────────────────────────
+    setPosts(prev => prev.map(p => {
+      if (p.id !== postId) return p;
+      let reactions = [...(p.reactions ?? [])];
+      // Remove existing reaction
+      reactions = reactions.filter(r => r.member_id !== member.id);
+      // Add new reaction if different from existing
+      if (!existing || existing.reaction_type !== reactionType) {
+        reactions.push({ id: Date.now().toString(), post_id: postId, member_id: member.id, member_name: member.full_name, reaction_type: reactionType });
+      }
+      return { ...p, reactions };
+    }));
+
+    // Persist to DB
     if (existing) {
       await supabase.from('post_reactions').delete().eq('post_id', postId).eq('member_id', member.id);
       if (existing.reaction_type !== reactionType) {
@@ -306,17 +371,25 @@ export default function MemberDashboard() {
     } else {
       await supabase.from('post_reactions').insert([{ post_id: postId, member_id: member.id, member_name: member.full_name, reaction_type: reactionType }]);
     }
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) await loadPosts(user.id);
   }
 
   async function submitComment(postId: string) {
     if (!member || !commentText[postId]?.trim()) return;
     setSubmittingComment(postId);
-    await supabase.from('post_comments').insert([{ post_id: postId, member_id: member.id, member_name: member.full_name, member_photo_url: member.photo_url, chapter: member.chapter, content: commentText[postId].trim() }]);
+    const commentContent = commentText[postId].trim();
     setCommentText(prev => ({...prev, [postId]: ''}));
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) await loadPosts(user.id);
+
+    const { data: newComment, error } = await supabase.from('post_comments')
+      .insert([{ post_id: postId, member_id: member.id, member_name: member.full_name, member_photo_url: member.photo_url, chapter: member.chapter, content: commentContent }])
+      .select().single();
+
+    // Optimistic local update — add comment directly without full reload
+    if (newComment) {
+      setPosts(prev => prev.map(p => p.id === postId
+        ? { ...p, comments: [...(p.comments ?? []), newComment] }
+        : p
+      ));
+    }
     setSubmittingComment(null);
   }
 
@@ -486,6 +559,7 @@ export default function MemberDashboard() {
             {id:'events',   label:'Events',   icon:<Calendar size={13}/>},
             {id:'activity', label:'Activity', icon:<Activity size={13}/>},
             {id:'id-card',  label:'ID Card',  icon:<CreditCard size={13}/>},
+            {id:'people',   label:'People',   icon:<Users size={13}/>},
             {id:'settings', label:'Settings', icon:<Settings size={13}/>},
           ].map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id as any)}
@@ -504,23 +578,60 @@ export default function MemberDashboard() {
               <div className="flex gap-3">
                 <Avatar url={member.photo_url} name={member.full_name}/>
                 <div className="flex-1">
-                  <textarea value={postContent} onChange={e => setPostContent(e.target.value)}
+                  <textarea value={postContent} onChange={e => { setPostContent(e.target.value); setPostError(''); }}
                     placeholder={`What's on your mind, ${member.full_name.split(' ')[0]}?`}
-                    rows={3}
+                    rows={3} maxLength={feedMaxPostLength}
                     className={`w-full resize-none outline-none font-bold text-sm placeholder-slate-400 leading-relaxed bg-transparent ${text}`}/>
+
+                  {/* Character count */}
+                  {postContent.length > feedMaxPostLength * 0.8 && (
+                    <p className={`text-[10px] font-bold text-right mt-1 ${postContent.length >= feedMaxPostLength ? 'text-red-500' : 'text-slate-400'}`}>
+                      {postContent.length}/{feedMaxPostLength}
+                    </p>
+                  )}
+
+                  {/* Photo preview */}
                   {postPhotoPreview && (
                     <div className="relative mt-3 rounded-2xl overflow-hidden max-h-48">
                       <img src={postPhotoPreview} className="w-full object-cover" alt="Preview"/>
                       <button onClick={() => { setPostPhoto(null); setPostPhotoPreview(null); }} className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1"><X size={14}/></button>
                     </div>
                   )}
+
+                  {/* Video preview */}
+                  {postVideoPreview && (
+                    <div className="relative mt-3 rounded-2xl overflow-hidden">
+                      <video src={postVideoPreview} controls className="w-full rounded-2xl max-h-48"/>
+                      <button onClick={() => { setPostVideo(null); setPostVideoPreview(null); }} className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1"><X size={14}/></button>
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {postError && <p className="text-xs text-red-500 font-bold mt-2">{postError}</p>}
+
                   <div className={`flex items-center justify-between mt-3 pt-3 border-t ${divider}`}>
-                    <button onClick={() => fileRef.current?.click()} className={`flex items-center gap-2 ${subtext} hover:text-red-600 font-bold text-xs uppercase tracking-widest transition-all`}>
-                      <Image size={16}/> Photo
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {feedAllowPhotos && (
+                        <button onClick={() => fileRef.current?.click()} className={`flex items-center gap-1.5 ${subtext} hover:text-red-600 font-bold text-xs uppercase tracking-widest transition-all`}>
+                          <Image size={15}/> <span className="hidden sm:inline">Photo</span>
+                        </button>
+                      )}
+                      {feedAllowVideos && (
+                        <button onClick={() => videoRef.current?.click()} className={`flex items-center gap-1.5 ${subtext} hover:text-red-600 font-bold text-xs uppercase tracking-widest transition-all`}>
+                          <span className="text-sm">🎬</span> <span className="hidden sm:inline">Video</span>
+                        </button>
+                      )}
+                      {!feedAllowPhotos && !feedAllowVideos && (
+                        <p className={`text-[10px] ${subtext} font-bold italic`}>Media uploads disabled by admin</p>
+                      )}
+                    </div>
                     <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={async e => {
                       const file = e.target.files?.[0]; if (!file) return;
                       const c = await compressImage(file); setPostPhoto(c); setPostPhotoPreview(URL.createObjectURL(c));
+                    }}/>
+                    <input ref={videoRef} type="file" accept="video/*" className="hidden" onChange={e => {
+                      const file = e.target.files?.[0]; if (!file) return;
+                      setPostVideo(file); setPostVideoPreview(URL.createObjectURL(file));
                     }}/>
                     <button onClick={submitPost} disabled={posting || !postContent.trim()}
                       className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs px-5 py-2.5 rounded-xl transition-all disabled:opacity-40">
@@ -581,6 +692,7 @@ export default function MemberDashboard() {
                   {/* Content */}
                   <div className="px-5 pb-3"><p className={`${text} font-medium text-sm leading-relaxed whitespace-pre-wrap`}>{post.content}</p></div>
                   {post.photo_url && <div className="px-5 pb-3"><img src={post.photo_url} className="w-full rounded-2xl object-cover max-h-72 cursor-pointer" alt="Post" onClick={() => window.open(post.photo_url!,'_blank')}/></div>}
+                  {(post as any).video_url && <div className="px-5 pb-3"><video src={(post as any).video_url} controls className="w-full rounded-2xl max-h-72" preload="metadata"/></div>}
                   {/* Reaction summary */}
                   {(reactionCounts.length > 0 || commentCount > 0) && (
                     <div className={`px-5 pb-2 flex items-center gap-2 flex-wrap border-b ${divider}`}>
@@ -844,6 +956,52 @@ export default function MemberDashboard() {
                   <div className="flex gap-px items-end">{member.id.slice(0,16).split('').map((c,i) => <div key={i} className="bg-slate-700 rounded-sm" style={{width:'2px',height:`${(parseInt(c,16)%3+1)*7}px`}}/>)}</div>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── PEOPLE TAB ── */}
+        {activeTab === 'people' && (
+          <div className="space-y-4">
+            <div className={`${card} border rounded-3xl p-4 shadow-sm`}>
+              <div className="relative">
+                <input value={memberSearch} onChange={e => setMemberSearch(e.target.value)}
+                  placeholder="Search members by name or chapter..."
+                  className={`w-full border-2 rounded-2xl px-5 py-4 pl-12 font-bold outline-none ${inputCls}`}/>
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+                {memberSearch && <button onClick={() => setMemberSearch('')} className={`absolute right-4 top-1/2 -translate-y-1/2 ${subtext}`}><X size={14}/></button>}
+              </div>
+            </div>
+
+            {/* Stats */}
+            <div className={`${card} border rounded-2xl px-5 py-3 flex items-center justify-between`}>
+              <p className={`text-xs font-bold ${subtext} uppercase tracking-widest`}>{allMembers.length} approved members</p>
+              <p className={`text-xs font-bold ${subtext}`}>{[...new Set(allMembers.map(m => m.chapter))].length} chapters</p>
+            </div>
+
+            {/* Member grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {allMembers
+                .filter(m => !memberSearch || m.full_name.toLowerCase().includes(memberSearch.toLowerCase()) || m.chapter.toLowerCase().includes(memberSearch.toLowerCase()))
+                .map(m => (
+                  <div key={m.id} className={`${card} border rounded-3xl p-4 flex items-center gap-4 shadow-sm`}>
+                    <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-200 shrink-0">
+                      {m.photo_url
+                        ? <img src={m.photo_url} className="w-full h-full object-cover" alt={m.full_name}/>
+                        : <div className="w-full h-full flex items-center justify-center bg-red-600"><span className="text-white font-black text-lg">{m.full_name.charAt(0)}</span></div>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-black ${text} text-sm truncate`}>{m.full_name}</p>
+                      <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest truncate">{m.chapter}</p>
+                      {m.id === member.id && <span className="text-[9px] bg-green-100 text-green-700 font-black uppercase px-2 py-0.5 rounded-full">You</span>}
+                    </div>
+                  </div>
+                ))}
+              {allMembers.filter(m => !memberSearch || m.full_name.toLowerCase().includes(memberSearch.toLowerCase()) || m.chapter.toLowerCase().includes(memberSearch.toLowerCase())).length === 0 && (
+                <div className={`col-span-2 ${card} border rounded-3xl p-12 text-center`}>
+                  <p className={`font-black ${subtext} uppercase tracking-widest text-sm`}>No members found</p>
+                </div>
+              )}
             </div>
           </div>
         )}
