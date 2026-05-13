@@ -140,8 +140,9 @@ export default function MemberDashboard() {
   const [feedRequireApproval, setFeedRequireApproval] = useState(false);
 
   // People search
-  const [allMembers,    setAllMembers]    = useState<{id:string;full_name:string;chapter:string;photo_url:string|null}[]>([]);
-  const [memberSearch,  setMemberSearch]  = useState('');
+  const [allMembers,      setAllMembers]      = useState<{id:string;full_name:string;chapter:string;photo_url:string|null;phone:string|null;class_name:string;year_graduated:number|null;sponsor_name:string|null;principal_name:string|null;id_number:string|null;created_at:string}[]>([]);
+  const [memberSearch,    setMemberSearch]    = useState('');
+  const [selectedPerson,  setSelectedPerson]  = useState<typeof allMembers[0]|null>(null);
 
   // Notifications
   const [notifications, setNotifications]   = useState<Notification[]>([]);
@@ -225,7 +226,7 @@ export default function MemberDashboard() {
         supabase.from('attendance').select('*').eq('member_id', mem.id),
         supabase.from('notifications').select('*').eq('member_id', mem.id).order('created_at',{ascending:false}).limit(30),
         supabase.from('election_settings').select('key,value').in('key',['feed_allow_photos','feed_allow_videos','feed_max_photo_mb','feed_max_video_mb','feed_max_post_length','feed_require_approval']),
-        supabase.from('members').select('id,full_name,chapter,photo_url').eq('status','approved').order('full_name'),
+        supabase.from('members').select('id,full_name,chapter,photo_url,phone,class_name,year_graduated,sponsor_name,principal_name,id_number,created_at').eq('status','approved').order('full_name'),
       ]);
       if (d) setDues(d);
       if (a) setActivity(a);
@@ -349,27 +350,30 @@ export default function MemberDashboard() {
     const post = posts.find(p => p.id === postId);
     const existing = post?.reactions?.find(r => r.member_id === member.id);
 
+    // auth_user_id matches auth.uid() in RLS — member.id is the members table id (different)
+    const authId = member.auth_user_id;
+
     // ── Optimistic local update — no full reload ──────────────────────────────
     setPosts(prev => prev.map(p => {
       if (p.id !== postId) return p;
       let reactions = [...(p.reactions ?? [])];
-      // Remove existing reaction
-      reactions = reactions.filter(r => r.member_id !== member.id);
-      // Add new reaction if different from existing
+      reactions = reactions.filter(r => r.member_id !== authId);
       if (!existing || existing.reaction_type !== reactionType) {
-        reactions.push({ id: Date.now().toString(), post_id: postId, member_id: member.id, member_name: member.full_name, reaction_type: reactionType });
+        reactions.push({ id: Date.now().toString(), post_id: postId, member_id: authId, member_name: member.full_name, reaction_type: reactionType });
       }
       return { ...p, reactions };
     }));
 
-    // Persist to DB
+    // Persist to DB using auth_user_id so RLS passes
     if (existing) {
-      await supabase.from('post_reactions').delete().eq('post_id', postId).eq('member_id', member.id);
+      await supabase.from('post_reactions').delete().eq('post_id', postId).eq('member_id', authId);
       if (existing.reaction_type !== reactionType) {
-        await supabase.from('post_reactions').insert([{ post_id: postId, member_id: member.id, member_name: member.full_name, reaction_type: reactionType }]);
+        const { error } = await supabase.from('post_reactions').insert([{ post_id: postId, member_id: authId, member_name: member.full_name, reaction_type: reactionType }]);
+        if (error) console.error('Reaction error:', error.message);
       }
     } else {
-      await supabase.from('post_reactions').insert([{ post_id: postId, member_id: member.id, member_name: member.full_name, reaction_type: reactionType }]);
+      const { error } = await supabase.from('post_reactions').insert([{ post_id: postId, member_id: authId, member_name: member.full_name, reaction_type: reactionType }]);
+      if (error) console.error('Reaction error:', error.message);
     }
   }
 
@@ -380,8 +384,9 @@ export default function MemberDashboard() {
     setCommentText(prev => ({...prev, [postId]: ''}));
 
     const { data: newComment, error } = await supabase.from('post_comments')
-      .insert([{ post_id: postId, member_id: member.id, member_name: member.full_name, member_photo_url: member.photo_url, chapter: member.chapter, content: commentContent }])
+      .insert([{ post_id: postId, member_id: member.auth_user_id, member_name: member.full_name, member_photo_url: member.photo_url, chapter: member.chapter, content: commentContent }])
       .select().single();
+    if (error) { console.error('Comment error:', error.message); setSubmittingComment(null); return; }
 
     // Optimistic local update — add comment directly without full reload
     if (newComment) {
@@ -500,6 +505,13 @@ export default function MemberDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Directory button — always visible */}
+            <button onClick={() => setActiveTab('people')}
+              className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab==='people' ? 'bg-red-600 text-white' : isDark?'bg-white/10 text-white/60 hover:bg-white/20':'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+              <Users size={15}/>
+              <span className="hidden sm:inline">Directory</span>
+            </button>
+
             {/* Notification Bell */}
             <div className="relative">
               <button onClick={() => setShowNotifs(!showNotifs)}
@@ -653,7 +665,7 @@ export default function MemberDashboard() {
             )}
 
             {posts.map(post => {
-              const myReaction = post.reactions?.find(r => r.member_id === member.id);
+              const myReaction = post.reactions?.find(r => r.member_id === member.auth_user_id);
               const showComments = expandedComments.has(post.id);
               const commentCount = post.comments?.length ?? 0;
               const isAuthor = member.id === post.member_id;
@@ -723,7 +735,7 @@ export default function MemberDashboard() {
                               </div>
                               <p className={`text-sm ${text} font-medium leading-relaxed`}>{c.content}</p>
                             </div>
-                            {(c.member_id === member.id || isAdmin) && <button onClick={() => deleteComment(c.id, post.id)} className="text-[10px] text-slate-300 hover:text-red-500 font-bold mt-1 ml-2 opacity-0 group-hover:opacity-100 transition-all">Delete</button>}
+                            {(c.member_id === member.auth_user_id || isAdmin) && <button onClick={() => deleteComment(c.id, post.id)} className="text-[10px] text-slate-300 hover:text-red-500 font-bold mt-1 ml-2 opacity-0 group-hover:opacity-100 transition-all">Delete</button>}
                           </div>
                         </div>
                       ))}
@@ -979,12 +991,51 @@ export default function MemberDashboard() {
               <p className={`text-xs font-bold ${subtext}`}>{[...new Set(allMembers.map(m => m.chapter))].length} chapters</p>
             </div>
 
+            {/* Member detail modal */}
+            {selectedPerson && (
+              <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setSelectedPerson(null)}>
+                <div className={`${card} border rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl`} onClick={e => e.stopPropagation()}>
+                  <div className="flex items-start justify-between mb-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-200 shrink-0">
+                        {selectedPerson.photo_url
+                          ? <img src={selectedPerson.photo_url} className="w-full h-full object-cover" alt={selectedPerson.full_name}/>
+                          : <div className="w-full h-full flex items-center justify-center bg-red-600"><span className="text-white font-black text-2xl">{selectedPerson.full_name.charAt(0)}</span></div>}
+                      </div>
+                      <div>
+                        <p className={`font-black ${text} text-base uppercase leading-tight`}>{selectedPerson.full_name}</p>
+                        <p className="text-red-600 font-bold text-xs uppercase mt-1">{selectedPerson.chapter}</p>
+                        {selectedPerson.id === member.id && <span className="text-[9px] bg-green-100 text-green-700 font-black uppercase px-2 py-0.5 rounded-full mt-1 inline-block">You</span>}
+                      </div>
+                    </div>
+                    <button onClick={() => setSelectedPerson(null)} className={`${subtext} hover:text-red-600 p-1`}><X size={18}/></button>
+                  </div>
+                  <div className={`${isDark?'bg-white/5':'bg-slate-50'} rounded-2xl p-5 space-y-2`}>
+                    {[
+                      ['Class',    selectedPerson.class_name ?? '—'],
+                      ['Year',     selectedPerson.year_graduated ? String(selectedPerson.year_graduated) : '—'],
+                      ['Sponsor',  selectedPerson.sponsor_name  ?? '—'],
+                      ['Principal',selectedPerson.principal_name ?? '—'],
+                      ['Phone',    selectedPerson.phone          ?? 'Not provided'],
+                      ['Member Since', new Date(selectedPerson.created_at).toLocaleDateString('en-US',{year:'numeric',month:'long'})],
+                    ].map(([l,v]) => (
+                      <div key={l} className={`flex justify-between py-1.5 border-b ${isDark?'border-white/10':'border-slate-100'} last:border-0`}>
+                        <span className={`text-xs font-black ${subtext} uppercase tracking-widest`}>{l}</span>
+                        <span className={`text-xs font-black ${text} text-right max-w-[55%]`}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Member grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {allMembers
                 .filter(m => !memberSearch || m.full_name.toLowerCase().includes(memberSearch.toLowerCase()) || m.chapter.toLowerCase().includes(memberSearch.toLowerCase()))
                 .map(m => (
-                  <div key={m.id} className={`${card} border rounded-3xl p-4 flex items-center gap-4 shadow-sm`}>
+                  <button key={m.id} onClick={() => setSelectedPerson(m)}
+                    className={`${card} border rounded-3xl p-4 flex items-center gap-4 shadow-sm text-left hover:border-red-400 transition-all w-full`}>
                     <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-200 shrink-0">
                       {m.photo_url
                         ? <img src={m.photo_url} className="w-full h-full object-cover" alt={m.full_name}/>
@@ -993,9 +1044,11 @@ export default function MemberDashboard() {
                     <div className="flex-1 min-w-0">
                       <p className={`font-black ${text} text-sm truncate`}>{m.full_name}</p>
                       <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest truncate">{m.chapter}</p>
+                      <p className={`text-[10px] ${subtext} font-bold mt-0.5`}>{m.class_name ?? ''}{m.year_graduated ? ` · ${m.year_graduated}` : ''}</p>
                       {m.id === member.id && <span className="text-[9px] bg-green-100 text-green-700 font-black uppercase px-2 py-0.5 rounded-full">You</span>}
                     </div>
-                  </div>
+                    <span className={`text-[10px] ${subtext} font-bold shrink-0`}>View →</span>
+                  </button>
                 ))}
               {allMembers.filter(m => !memberSearch || m.full_name.toLowerCase().includes(memberSearch.toLowerCase()) || m.chapter.toLowerCase().includes(memberSearch.toLowerCase())).length === 0 && (
                 <div className={`col-span-2 ${card} border rounded-3xl p-12 text-center`}>
