@@ -108,7 +108,7 @@ export default function MemberDashboard() {
   const [dues, setDues]               = useState<DuesPayment[]>([]);
   const [activity, setActivity]       = useState<ActivityEntry[]>([]);
   const [loading, setLoading]         = useState(true);
-  const [activeTab, setActiveTab]     = useState<'feed'|'overview'|'dues'|'events'|'activity'|'id-card'|'settings'>('feed');
+  const [activeTab, setActiveTab]     = useState<'feed'|'overview'|'dues'|'events'|'activity'|'id-card'|'people'|'settings'>('feed');
   const [theme, setTheme]             = useState('system');
   const [isDark, setIsDark]           = useState(false);
   const [savingTheme, setSavingTheme] = useState(false);
