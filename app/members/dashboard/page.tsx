@@ -128,7 +128,8 @@ export default function MemberDashboard() {
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
   const [commentText, setCommentText] = useState<Record<string,string>>({});
   const [submittingComment, setSubmittingComment] = useState<string|null>(null);
-  const [openMenu, setOpenMenu]       = useState<string|null>(null);
+  const [openMenu, setOpenMenu]         = useState<string|null>(null);
+  const [openShare, setOpenShare]       = useState<string|null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Session auth UID (for RLS-safe reactions/comments)
@@ -739,7 +740,44 @@ export default function MemberDashboard() {
                       return <button key={r.type} onClick={() => toggleReaction(post.id, r.type)} className={`flex items-center gap-1.5 flex-1 justify-center py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${active ? 'bg-red-50 text-red-600' : `${subtext} hover:${isDark?'bg-white/10':'bg-slate-50'}`}`}><span className="text-base">{r.emoji}</span><span className="hidden sm:inline">{r.label}</span></button>;
                     })}
                     <button onClick={() => setExpandedComments(prev => { const n=new Set(prev); n.has(post.id)?n.delete(post.id):n.add(post.id); return n; })} className={`flex items-center gap-1.5 flex-1 justify-center py-2 rounded-xl text-xs font-black uppercase tracking-widest ${subtext} hover:${isDark?'bg-white/10':'bg-slate-50'} transition-all`}><MessageCircle size={15}/><span className="hidden sm:inline">Comment</span>{commentCount > 0 && <span className={`${isDark?'bg-white/10':'bg-slate-200'} ${subtext} text-[9px] rounded-full px-1.5 py-0.5`}>{commentCount}</span>}</button>
-                    <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/feed#${post.id}`).then(()=>alert('Link copied!')); }} className={`flex items-center gap-1.5 flex-1 justify-center py-2 rounded-xl text-xs font-black uppercase tracking-widest ${subtext} hover:${isDark?'bg-white/10':'bg-slate-50'} transition-all`}><Share2 size={15}/><span className="hidden sm:inline">Share</span></button>
+                    <div className="relative flex-1">
+                      <button onClick={() => setOpenShare(openShare === post.id ? null : post.id)}
+                        className={`flex items-center gap-1.5 w-full justify-center py-2 rounded-xl text-xs font-black uppercase tracking-widest ${subtext} hover:${isDark?'bg-white/10':'bg-slate-50'} transition-all`}>
+                        <Share2 size={15}/><span className="hidden sm:inline">Share</span>
+                      </button>
+                      {openShare === post.id && (
+                        <div className={`absolute bottom-10 right-0 ${isDark?'bg-slate-800 border-slate-700':'bg-white border-slate-200'} border-2 rounded-2xl shadow-xl z-20 overflow-hidden min-w-[160px]`}>
+                          {/* Facebook */}
+                          <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.origin+'/feed#'+post.id)}&quote=${encodeURIComponent(post.content.slice(0,200))}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-3 px-4 py-3 hover:bg-blue-50 transition-all border-b border-slate-100 w-full">
+                            <div className="w-6 h-6 bg-[#1877F2] rounded-lg flex items-center justify-center shrink-0">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                            </div>
+                            <span className="text-xs font-black text-slate-700 uppercase tracking-widest">Facebook</span>
+                          </a>
+                          {/* WhatsApp */}
+                          <a href={`https://wa.me/?text=${encodeURIComponent(post.content.slice(0,200)+'
+
+'+window.location.origin+'/feed#'+post.id)}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-3 px-4 py-3 hover:bg-green-50 transition-all border-b border-slate-100 w-full">
+                            <div className="w-6 h-6 bg-[#25D366] rounded-lg flex items-center justify-center shrink-0">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.126 1.528 5.855L0 24l6.305-1.508A11.954 11.954 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.002-1.366l-.358-.214-3.742.895.953-3.641-.234-.374A9.818 9.818 0 1112 21.818z"/></svg>
+                            </div>
+                            <span className="text-xs font-black text-slate-700 uppercase tracking-widest">WhatsApp</span>
+                          </a>
+                          {/* Copy link */}
+                          <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/feed#${post.id}`).then(()=>{ setOpenShare(null); alert('Link copied!'); }); }}
+                            className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-all w-full">
+                            <div className={`w-6 h-6 ${isDark?'bg-white/20':'bg-slate-200'} rounded-lg flex items-center justify-center shrink-0`}>
+                              <Share2 size={12} className="text-slate-600"/>
+                            </div>
+                            <span className="text-xs font-black text-slate-700 uppercase tracking-widest">Copy Link</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {/* Comments */}
                   {showComments && (
@@ -1175,7 +1213,8 @@ export default function MemberDashboard() {
         )}
       </div>
 
-      {openMenu && <div className="fixed inset-0 z-0" onClick={() => setOpenMenu(null)}/>}
+      {openMenu  && <div className="fixed inset-0 z-0"  onClick={() => setOpenMenu(null)}/>}
+      {openShare && <div className="fixed inset-0 z-10" onClick={() => setOpenShare(null)}/>}
       {showNotifs && <div className="fixed inset-0 z-40" onClick={() => setShowNotifs(false)}/>}
     </div>
   );
