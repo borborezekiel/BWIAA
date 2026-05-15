@@ -131,6 +131,9 @@ export default function MemberDashboard() {
   const [openMenu, setOpenMenu]       = useState<string|null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Session auth UID (for RLS-safe reactions/comments)
+  const [sessionUid, setSessionUid] = useState('');
+
   // Feed settings (from admin)
   const [feedAllowPhotos,   setFeedAllowPhotos]   = useState(true);
   const [feedAllowVideos,   setFeedAllowVideos]   = useState(false);
@@ -197,6 +200,7 @@ export default function MemberDashboard() {
       }
 
       // Member lookup
+      setSessionUid(user.id); // store for RLS-safe DB writes
       let mem: any = null;
       const { data: m1 } = await supabase.from('members').select('*').eq('auth_user_id', user.id).maybeSingle();
       if (m1) { mem = m1; }
@@ -347,13 +351,16 @@ export default function MemberDashboard() {
 
   async function toggleReaction(postId: string, reactionType: string) {
     if (!member) return;
+
+    // Always get live session UID — never rely on stored member.id or auth_user_id
+    const { data: { user: sessionUser } } = await supabase.auth.getUser();
+    if (!sessionUser) return;
+    const authId = sessionUser.id;
+
     const post = posts.find(p => p.id === postId);
-    const existing = post?.reactions?.find(r => r.member_id === member.id);
+    const existing = post?.reactions?.find(r => r.member_id === authId);
 
-    // auth_user_id matches auth.uid() in RLS — member.id is the members table id (different)
-    const authId = member.auth_user_id;
-
-    // ── Optimistic local update — no full reload ──────────────────────────────
+    // ── Optimistic local update ───────────────────────────────────────────────
     setPosts(prev => prev.map(p => {
       if (p.id !== postId) return p;
       let reactions = [...(p.reactions ?? [])];
@@ -364,18 +371,21 @@ export default function MemberDashboard() {
       return { ...p, reactions };
     }));
 
-    // Persist to DB using auth_user_id so RLS passes
+    // ── Persist to DB ─────────────────────────────────────────────────────────
     if (existing) {
       await supabase.from('post_reactions').delete().eq('post_id', postId).eq('member_id', authId);
       if (existing.reaction_type !== reactionType) {
-        const { error } = await supabase.from('post_reactions').insert([{ post_id: postId, member_id: authId, member_name: member.full_name, reaction_type: reactionType }]);
-        if (error) console.error('Reaction error:', error.message);
+        const { error } = await supabase.from('post_reactions')
+          .insert([{ post_id: postId, member_id: authId, member_name: member.full_name, reaction_type: reactionType }]);
+        if (error) { console.error('Reaction error:', error.message, error.code); await loadPosts(authId); }
       }
     } else {
-      const { error } = await supabase.from('post_reactions').insert([{ post_id: postId, member_id: authId, member_name: member.full_name, reaction_type: reactionType }]);
-      if (error) console.error('Reaction error:', error.message);
+      const { error } = await supabase.from('post_reactions')
+        .insert([{ post_id: postId, member_id: authId, member_name: member.full_name, reaction_type: reactionType }]);
+      if (error) { console.error('Reaction error:', error.message, error.code); await loadPosts(authId); }
     }
   }
+
 
   async function submitComment(postId: string) {
     if (!member || !commentText[postId]?.trim()) return;
@@ -383,12 +393,22 @@ export default function MemberDashboard() {
     const commentContent = commentText[postId].trim();
     setCommentText(prev => ({...prev, [postId]: ''}));
 
-    const { data: newComment, error } = await supabase.from('post_comments')
-      .insert([{ post_id: postId, member_id: member.auth_user_id, member_name: member.full_name, member_photo_url: member.photo_url, chapter: member.chapter, content: commentContent }])
-      .select().single();
-    if (error) { console.error('Comment error:', error.message); setSubmittingComment(null); return; }
+    // Always get live session UID
+    const { data: { user: sessionUser } } = await supabase.auth.getUser();
+    if (!sessionUser) { setSubmittingComment(null); return; }
 
-    // Optimistic local update — add comment directly without full reload
+    const { data: newComment, error } = await supabase.from('post_comments')
+      .insert([{ post_id: postId, member_id: sessionUser.id, member_name: member.full_name, member_photo_url: member.photo_url, chapter: member.chapter, content: commentContent }])
+      .select().single();
+
+    if (error) {
+      console.error('Comment error:', error.message, error.code);
+      // Restore comment text so user can retry
+      setCommentText(prev => ({...prev, [postId]: commentContent}));
+      setSubmittingComment(null);
+      return;
+    }
+
     if (newComment) {
       setPosts(prev => prev.map(p => p.id === postId
         ? { ...p, comments: [...(p.comments ?? []), newComment] }
@@ -665,7 +685,7 @@ export default function MemberDashboard() {
             )}
 
             {posts.map(post => {
-              const myReaction = post.reactions?.find(r => r.member_id === member.auth_user_id);
+              const myReaction = post.reactions?.find(r => r.member_id === sessionUid);
               const showComments = expandedComments.has(post.id);
               const commentCount = post.comments?.length ?? 0;
               const isAuthor = member.id === post.member_id;
@@ -735,7 +755,7 @@ export default function MemberDashboard() {
                               </div>
                               <p className={`text-sm ${text} font-medium leading-relaxed`}>{c.content}</p>
                             </div>
-                            {(c.member_id === member.auth_user_id || isAdmin) && <button onClick={() => deleteComment(c.id, post.id)} className="text-[10px] text-slate-300 hover:text-red-500 font-bold mt-1 ml-2 opacity-0 group-hover:opacity-100 transition-all">Delete</button>}
+                            {(c.member_id === sessionUid || isAdmin) && <button onClick={() => deleteComment(c.id, post.id)} className="text-[10px] text-slate-300 hover:text-red-500 font-bold mt-1 ml-2 opacity-0 group-hover:opacity-100 transition-all">Delete</button>}
                           </div>
                         </div>
                       ))}
