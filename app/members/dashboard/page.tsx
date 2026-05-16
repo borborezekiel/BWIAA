@@ -748,7 +748,7 @@ export default function MemberDashboard() {
                       {openShare === post.id && (
                         <div className={`absolute bottom-10 right-0 ${isDark?'bg-slate-800 border-slate-700':'bg-white border-slate-200'} border-2 rounded-2xl shadow-xl z-20 overflow-hidden min-w-[160px]`}>
                           {/* Facebook */}
-                          <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.origin+'/feed#'+post.id)}&quote=${encodeURIComponent(post.content.slice(0,200))}`}
+                          <a href={'https://www.facebook.com/sharer/sharer.php?u='+encodeURIComponent(window.location.origin+'/feed#'+post.id)+'&quote='+encodeURIComponent(post.content.slice(0,200))}
                             target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-3 px-4 py-3 hover:bg-blue-50 transition-all border-b border-slate-100 w-full">
                             <div className="w-6 h-6 bg-[#1877F2] rounded-lg flex items-center justify-center shrink-0">
@@ -757,9 +757,7 @@ export default function MemberDashboard() {
                             <span className="text-xs font-black text-slate-700 uppercase tracking-widest">Facebook</span>
                           </a>
                           {/* WhatsApp */}
-                          <a href={`https://wa.me/?text=${encodeURIComponent(post.content.slice(0,200)+'
-
-'+window.location.origin+'/feed#'+post.id)}`}
+                          <a href={'https://wa.me/?text='+encodeURIComponent(post.content.slice(0,200)+' - '+window.location.origin+'/feed#'+post.id)}
                             target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-3 px-4 py-3 hover:bg-green-50 transition-all border-b border-slate-100 w-full">
                             <div className="w-6 h-6 bg-[#25D366] rounded-lg flex items-center justify-center shrink-0">
