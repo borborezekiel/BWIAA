@@ -244,6 +244,13 @@ export default function BWIAAElection2026() {
     if (data) setVotes(data);
   }
 
+  async function refreshMyVotes(userId: string) {
+    // Fetch ONLY this user's votes fresh from DB — used for duplicate check
+    const { data } = await supabase.from('votes').select('*')
+      .eq('voter_id', userId).order('created_at', { ascending: false });
+    return data ?? [];
+  }
+
   async function completeRegistration(u: any, chapter: string, classYear: string) {
     const { error } = await supabase.from('voter_profiles').upsert(
       [{ id: u.id, home_chapter: chapter, class_year: classYear }],
@@ -318,7 +325,7 @@ export default function BWIAAElection2026() {
     }
   }
 
-  function selectCandidate(pos: string, cand: string) {
+  async function selectCandidate(pos: string, cand: string) {
     if (!votingOpen) {
       setErrorMessage('VOTING IS NOT OPEN YET. The Election Committee has not officially opened the ballot. Please check back later.');
       return;
@@ -327,7 +334,11 @@ export default function BWIAAElection2026() {
       setErrorMessage('VOTING HAS CLOSED. The election deadline has passed. No further ballots can be cast.');
       return;
     }
-    const alreadyVoted = votes.some(v => v.voter_id === user?.id && v.position_name === pos);
+    if (!user) return;
+
+    // ── Always check DB directly — never trust stale client state ─────────────
+    const myVotes = await refreshMyVotes(user.id);
+    const alreadyVoted = myVotes.some(v => v.position_name === pos);
     if (alreadyVoted) {
       setErrorMessage(`INTEGRITY ALERT: You have already cast a ballot for ${pos}.`);
       return;
@@ -348,6 +359,8 @@ export default function BWIAAElection2026() {
       setErrorMessage(`INTEGRITY ALERT: Our records show you have already cast a ballot for ${confirm.pos}.`);
     } else {
       setReceipt(data);
+      // Refresh votes from DB so votedPositions stays accurate
+      await refreshVotes();
     }
   }
 
