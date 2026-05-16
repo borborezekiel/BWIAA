@@ -442,6 +442,89 @@ export default function MemberDashboard() {
     setNotifications(prev => prev.map(n => ({...n, is_read: true})));
   }
 
+  // ── Push Notifications ───────────────────────────────────────────────────────
+  const [pushEnabled, setPushEnabled]   = useState(false);
+  const [pushLoading, setPushLoading]   = useState(false);
+
+  useEffect(() => {
+    // Check if already subscribed
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    navigator.serviceWorker.ready.then(reg => {
+      reg.pushManager.getSubscription().then(sub => {
+        setPushEnabled(!!sub);
+      });
+    });
+  }, []);
+
+  async function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return null;
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      return reg;
+    } catch (e) {
+      console.error('SW registration failed:', e);
+      return null;
+    }
+  }
+
+  async function togglePushNotifications() {
+    if (!member) return;
+    setPushLoading(true);
+    try {
+      if (pushEnabled) {
+        // Unsubscribe
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await fetch('/api/push', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ member_id: member.id, endpoint: sub.endpoint }),
+          });
+          await sub.unsubscribe();
+        }
+        setPushEnabled(false);
+      } else {
+        // Subscribe
+        const reg = await registerServiceWorker();
+        if (!reg) throw new Error('Service worker not supported');
+
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') throw new Error('Notification permission denied');
+
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!),
+        });
+
+        const ua = navigator.userAgent;
+        const deviceType = /iPhone|iPad/i.test(ua) ? 'iOS' : /Android/i.test(ua) ? 'Android' : 'Desktop';
+
+        const res = await fetch('/api/push', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ member_id: member.id, subscription: sub.toJSON(), device_type: deviceType }),
+        });
+        if (!res.ok) throw new Error('Failed to save subscription');
+        setPushEnabled(true);
+      }
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setPushLoading(false);
+    }
+  }
+
+  function urlBase64ToUint8Array(base64String: string) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+    return outputArray;
+  }
+
   // ── Profile actions ───────────────────────────────────────────────────────────
   async function handleProfilePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
@@ -1160,6 +1243,35 @@ export default function MemberDashboard() {
                 {profileSaving ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>} Save Profile
               </button>
             </div>
+
+            {/* Push Notifications */}
+            {'Notification' in window && 'serviceWorker' in navigator && (
+              <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>
+                <h4 className={`font-black ${text} uppercase tracking-widest text-sm mb-1 flex items-center gap-2`}>
+                  <Bell size={16} className="text-red-600"/> Push Notifications
+                </h4>
+                <p className={`text-xs ${subtext} font-bold mb-5`}>
+                  Get notified when dues are approved, events are scheduled or voting opens — even when the app is closed.
+                </p>
+                <div className={`flex items-center justify-between p-4 ${isDark?'bg-white/5':'bg-slate-50'} rounded-2xl mb-4`}>
+                  <div>
+                    <p className={`font-black ${text} text-sm`}>{pushEnabled ? '🔔 Notifications ON' : '🔕 Notifications OFF'}</p>
+                    <p className={`text-xs ${subtext} font-bold mt-0.5`}>{pushEnabled ? 'You will receive push notifications on this device' : 'Enable to receive alerts on this device'}</p>
+                  </div>
+                  <button onClick={togglePushNotifications} disabled={pushLoading}
+                    className={`relative w-14 h-7 rounded-full transition-all disabled:opacity-50 ${pushEnabled ? 'bg-green-500' : isDark?'bg-white/20':'bg-slate-300'}`}>
+                    <span className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-all ${pushEnabled ? 'left-8' : 'left-1'}`}/>
+                    {pushLoading && <Loader2 size={12} className="absolute inset-0 m-auto animate-spin text-white"/>}
+                  </button>
+                </div>
+                {pushEnabled && (
+                  <div className="bg-green-50 border border-green-200 rounded-2xl p-3 flex items-center gap-2">
+                    <CheckCircle2 size={14} className="text-green-600 shrink-0"/>
+                    <p className="text-xs text-green-700 font-bold">This device will receive BWIAA push notifications.</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Theme */}
             <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>

@@ -1871,6 +1871,31 @@ function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases
       return next;
     });
     showToast(`✓ ${key.replace(/_/g,' ')} ${value ? 'enabled' : 'disabled'}.`);
+
+    // ── Send push notifications on key phase changes ──────────────────────────
+    if (value) {
+      let pushPayload: { title: string; message: string; url: string; tag: string; requireInteraction: boolean } | null = null;
+
+      if (key === 'voting_open') {
+        pushPayload = { title: '🗳️ Voting is Now Open!', message: 'The BWIAA 2026 national ballot is live. Log in now and cast your vote.', url: '/', tag: 'voting-open', requireInteraction: true };
+      } else if (key === 'results_announced') {
+        pushPayload = { title: '🏆 Election Results Are In!', message: 'The BWIAA 2026 election results have been announced. See who won!', url: '/history', tag: 'results', requireInteraction: false };
+      } else if (key === 'registration_open') {
+        pushPayload = { title: '📋 Candidate Registration Open', message: 'Approved members can now apply to run for office in BWIAA 2026.', url: '/register', tag: 'registration', requireInteraction: false };
+      }
+
+      if (pushPayload) {
+        try {
+          await fetch('/api/push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''}` },
+            body: JSON.stringify(pushPayload),
+          });
+        } catch (pushErr) {
+          console.warn('Push notification failed (non-critical):', pushErr);
+        }
+      }
+    }
   }
 
   // ── Settings save ───────────────────────────────────────────────────────────
