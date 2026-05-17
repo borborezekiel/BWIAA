@@ -2897,7 +2897,13 @@ function EventsTab({ events, setEvents, showToast, isHeadAdmin, myChapter, admin
         <button onClick={createEvent} disabled={saving} className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-2 transition-all disabled:opacity-50">{saving?<Loader2 size={16} className="animate-spin"/>:eventType==='announcement'?<Bell size={16}/>:<Calendar size={16}/>}{saving?'Posting...':eventType==='announcement'?'Post Announcement':'Create Event'}</button>
       </Card>
 
-      <div className="flex gap-2">{(['upcoming','past','all'] as const).map(f=><button key={f} onClick={()=>setFilter(f)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter===f?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{f}</button>)}</div>
+      {/* ── Attendance Report ── */}
+      <AttendanceReport events={events} members={members} isHeadAdmin={isHeadAdmin} myChapter={myChapter}/>
+
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h3 className="text-xl font-black uppercase italic text-slate-800">Events</h3>
+        <div className="flex gap-2">{(['upcoming','past','all'] as const).map(f=><button key={f} onClick={()=>setFilter(f)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter===f?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{f}</button>)}</div>
+      </div>
 
       <div className="space-y-4">
         {visible.length===0?<div className="text-center py-16 text-slate-400"><Calendar size={48} className="mx-auto mb-4 opacity-20"/><p className="font-black uppercase tracking-widest text-sm">No {filter} events</p></div>:visible.map(ev=>{
@@ -2932,6 +2938,174 @@ function EventsTab({ events, setEvents, showToast, isHeadAdmin, myChapter, admin
         })}
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ATTENDANCE REPORT — filterable view of who attended which meetings
+// ─────────────────────────────────────────────────────────────────────────────
+function AttendanceReport({ events, members, isHeadAdmin, myChapter }: {
+  events: EventRow[]; members: Member[];
+  isHeadAdmin: boolean; myChapter: string | null;
+}) {
+  const [selectedEventId, setSelectedEventId] = useState<string>('');
+  const [attendanceData, setAttendanceData]   = useState<any[]>([]);
+  const [loading, setLoading]                 = useState(false);
+  const [search, setSearch]                   = useState('');
+  const [statusFilter, setStatusFilter]       = useState<'all'|'present'|'absent'|'excused'>('all');
+
+  // Only show past events with attendance possible
+  const pastEvents = events.filter(e =>
+    e.event_type !== 'announcement' &&
+    (isHeadAdmin || !e.chapter || e.chapter === myChapter)
+  ).sort((a,b) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime());
+
+  useEffect(() => {
+    if (!selectedEventId) { setAttendanceData([]); return; }
+    setLoading(true);
+    supabase.from('attendance').select('*').eq('event_id', selectedEventId)
+      .then(({ data }) => {
+        setAttendanceData(data ?? []);
+        setLoading(false);
+      });
+  }, [selectedEventId]);
+
+  const selectedEvent = pastEvents.find(e => e.id === selectedEventId);
+  const approvedMembers = members.filter(m =>
+    m.status === 'approved' &&
+    (isHeadAdmin || !selectedEvent?.chapter || m.chapter === selectedEvent.chapter)
+  );
+
+  // Merge members with their attendance record
+  const report = approvedMembers.map(m => {
+    const att = attendanceData.find(a => a.member_id === m.id);
+    return { member: m, status: att?.status ?? 'unmarked', note: att?.note ?? '' };
+  }).filter(r => {
+    const matchSearch = !search || r.member.full_name.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter === 'all' || r.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  const counts = {
+    present: approvedMembers.filter(m => attendanceData.find(a => a.member_id === m.id)?.status === 'present').length,
+    absent:  approvedMembers.filter(m => attendanceData.find(a => a.member_id === m.id)?.status === 'absent').length,
+    excused: approvedMembers.filter(m => attendanceData.find(a => a.member_id === m.id)?.status === 'excused').length,
+    unmarked: approvedMembers.filter(m => !attendanceData.find(a => a.member_id === m.id)).length,
+  };
+
+  const STATUS_COLORS: Record<string,string> = {
+    present:  'bg-green-100 text-green-700 border-green-200',
+    absent:   'bg-red-100 text-red-700 border-red-200',
+    excused:  'bg-yellow-100 text-yellow-700 border-yellow-200',
+    unmarked: 'bg-slate-100 text-slate-500 border-slate-200',
+  };
+
+  return (
+    <Card>
+      <SectionTitle>📋 Attendance Report</SectionTitle>
+      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-5 -mt-2">
+        Select a meeting or event to view full attendance
+      </p>
+
+      <div className="mb-5">
+        <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Select Meeting / Event</label>
+        <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)}
+          className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none text-slate-800">
+          <option value="">— Choose an event —</option>
+          {pastEvents.map(e => (
+            <option key={e.id} value={e.id}>
+              {e.title} · {new Date(e.event_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
+              {e.chapter ? ` · ${e.chapter}` : ' · All Chapters'}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {selectedEventId && (
+        <>
+          {/* Summary cards */}
+          {!loading && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+              {[
+                { label: 'Present',  value: counts.present,  color: 'bg-green-600'  },
+                { label: 'Absent',   value: counts.absent,   color: 'bg-red-600'    },
+                { label: 'Excused',  value: counts.excused,  color: 'bg-yellow-500' },
+                { label: 'Unmarked', value: counts.unmarked, color: 'bg-slate-500'  },
+              ].map(s => (
+                <div key={s.label} className={`${s.color} text-white rounded-2xl p-4 text-center`}>
+                  <p className="text-2xl font-black">{s.value}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-80 mt-1">{s.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Filters */}
+          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <div className="relative flex-1">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Search member..."
+                className="w-full pl-9 pr-4 py-3 border-2 border-slate-200 focus:border-red-600 rounded-2xl text-xs font-bold outline-none"/>
+            </div>
+            <div className="flex gap-2">
+              {(['all','present','absent','excused'] as const).map(s => (
+                <button key={s} onClick={() => setStatusFilter(s)}
+                  className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${statusFilter===s?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Member list */}
+          {loading ? (
+            <div className="flex items-center justify-center py-10 gap-3">
+              <Loader2 className="animate-spin text-red-600" size={20}/>
+              <p className="text-slate-400 font-bold text-sm">Loading attendance...</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-slate-100">
+              <table className="w-full text-xs min-w-[500px]">
+                <thead className="bg-slate-900 text-white">
+                  <tr>
+                    {['Member','Chapter','Status','Note'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.map(({ member: m, status, note }, i) => (
+                    <tr key={m.id} className={`border-b border-slate-50 ${i%2===0?'bg-white':'bg-slate-50/50'}`}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl overflow-hidden bg-slate-200 shrink-0">
+                            {m.photo_url
+                              ? <img src={m.photo_url} className="w-full h-full object-cover" alt={m.full_name}/>
+                              : <div className="w-full h-full flex items-center justify-center bg-red-600"><span className="text-white font-black text-xs">{m.full_name.charAt(0)}</span></div>}
+                          </div>
+                          <p className="font-black text-slate-800">{m.full_name}</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 font-bold">{m.chapter}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full border ${STATUS_COLORS[status]}`}>
+                          {status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 font-bold italic">{note || '—'}</td>
+                    </tr>
+                  ))}
+                  {report.length === 0 && (
+                    <tr><td colSpan={4} className="text-center py-8 text-slate-400 font-bold">No members match your filter.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 
