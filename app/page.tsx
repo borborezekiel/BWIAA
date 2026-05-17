@@ -349,19 +349,42 @@ export default function BWIAAElection2026() {
   async function castBallot() {
     if (!confirm || !user || !myChapter) return;
     setCasting(true);
-    const { data, error } = await supabase
+
+    const pos = confirm.pos;
+    const cand = confirm.cand;
+
+    // ── Step 1: INSERT only — do not chain .select() which can fail independently ──
+    const { error: insertError } = await supabase
       .from('votes')
-      .insert([{ position_name: confirm.pos, candidate_name: confirm.cand, voter_name: user.email, voter_id: user.id, chapter: myChapter, class_year: myClass }])
-      .select().single();
+      .insert([{ position_name: pos, candidate_name: cand, voter_name: user.email, voter_id: user.id, chapter: myChapter, class_year: myClass }]);
+
+    if (insertError) {
+      setCasting(false);
+      setConfirm(null);
+      if (insertError.code === '23505') {
+        setErrorMessage(`INTEGRITY ALERT: You have already cast a ballot for ${pos}.`);
+      } else if (insertError.code === '42501' || insertError.message?.includes('row-level security')) {
+        setErrorMessage('VOTING IS NOT OPEN. The Election Committee has not officially opened the ballot yet.');
+      } else {
+        setErrorMessage(`Vote could not be recorded: ${insertError.message}. Please contact your administrator.`);
+      }
+      return;
+    }
+
+    // ── Step 2: Fetch the inserted row separately ─────────────────────────────
+    const { data: inserted } = await supabase
+      .from('votes')
+      .select('*')
+      .eq('voter_id', user.id)
+      .eq('position_name', pos)
+      .maybeSingle();
+
     setCasting(false);
     setConfirm(null);
-    if (error) {
-      setErrorMessage(`INTEGRITY ALERT: Our records show you have already cast a ballot for ${confirm.pos}.`);
-    } else {
-      setReceipt(data);
-      // Refresh votes from DB so votedPositions stays accurate
-      await refreshVotes();
-    }
+    setReceipt(inserted ?? { id: Date.now(), position_name: pos, candidate_name: cand, chapter: myChapter, class_year: myClass, created_at: new Date().toISOString(), voter_id: user.id, voter_name: user.email });
+
+    // ── Step 3: Refresh full vote tally ──────────────────────────────────────
+    await refreshVotes();
   }
 
   async function handleSignOut() {
