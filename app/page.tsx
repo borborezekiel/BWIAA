@@ -385,36 +385,42 @@ export default function BWIAAElection2026() {
 
     const pos = confirm.pos;
     const cand = confirm.cand;
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
 
     // ── Step 1: INSERT only — do not chain .select() which can fail independently ──
-    const { error: insertError } = await supabase
-      .from('votes')
-      .insert([{ position_name: pos, candidate_name: cand, voter_name: user.email, voter_id: user.id, chapter: myChapter, class_year: myClass }]);
-
-    if (insertError) {
+    if (!token) {
       setCasting(false);
       setConfirm(null);
-      if (insertError.code === '23505') {
-        setErrorMessage(`INTEGRITY ALERT: You have already cast a ballot for ${pos}.`);
-      } else if (insertError.code === '42501' || insertError.message?.includes('row-level security')) {
-        setErrorMessage('VOTING IS NOT OPEN. The Election Committee has not officially opened the ballot yet.');
-      } else {
-        setErrorMessage(`Vote could not be recorded: ${insertError.message}. Please contact your administrator.`);
-      }
+      setErrorMessage('Your session expired. Please sign in again before voting.');
       return;
     }
 
-    // ── Step 2: Fetch the inserted row separately ─────────────────────────────
-    const { data: inserted } = await supabase
-      .from('votes')
-      .select('*')
-      .eq('voter_id', user.id)
-      .eq('position_name', pos)
-      .maybeSingle();
+    const res = await fetch('/api/vote', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        position_name: pos,
+        candidate_name: cand,
+        chapter: myChapter,
+        class_year: myClass,
+      }),
+    });
+    const result = await res.json();
 
+    // ── Step 2: Fetch the inserted row separately ─────────────────────────────
     setCasting(false);
     setConfirm(null);
-    setReceipt(inserted ?? { id: Date.now(), position_name: pos, candidate_name: cand, chapter: myChapter, class_year: myClass, created_at: new Date().toISOString(), voter_id: user.id, voter_name: user.email });
+    if (!res.ok || !result.ok) {
+      setErrorMessage(result.error ?? 'Vote could not be recorded. Please contact your administrator.');
+      return;
+    }
+
+    setReceipt(result.vote as VoteRow);
+    setVotes(prev => [result.vote as VoteRow, ...prev]);
 
     // ── Step 3: Refresh full vote tally ──────────────────────────────────────
     await refreshVotes();
