@@ -832,6 +832,7 @@ export default function BWIAAElection2026() {
                 { href: '/feed',            label: 'Community Feed',          icon: '🐯' },
                 { href: '/register/status', label: 'Check Application Status', icon: '📋' },
                 { href: '/members',         label: 'Member Portal',            icon: '👤' },
+                { href: '/officers',        label: 'Our Officers',             icon: '🏆' },
                 { href: '/history',         label: 'Election History',         icon: '🏆' },
               ].map(l => (
                 <Link key={l.href} href={l.href}

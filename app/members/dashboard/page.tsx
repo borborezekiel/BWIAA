@@ -7,7 +7,7 @@ import {
   XCircle, Sun, Moon, Monitor, ChevronDown, ChevronUp,
   Settings, Loader2, Lock, Key, Calendar, MapPin, Plus,
   Printer, Users, Upload, X, Globe, Bell, Send,
-  Image, Share2, MessageCircle, MoreHorizontal, Pin, Trash2, Heart,
+  Image, Share2, MessageCircle, MoreHorizontal, Pin, Trash2, Heart, Terminal, Crown,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -134,6 +134,9 @@ export default function MemberDashboard() {
 
   // Session auth UID (for RLS-safe reactions/comments)
   const [sessionUid, setSessionUid] = useState('');
+  // Portal locked
+  const [portalLocked, setPortalLocked] = useState(false);
+  const [lockedMessage, setLockedMessage] = useState('');
 
   // Feed settings (from admin)
   const [feedAllowPhotos,   setFeedAllowPhotos]   = useState(true);
@@ -194,6 +197,8 @@ export default function MemberDashboard() {
       if (settings) {
         const get = (k: string) => settings.find((r: any) => r.key === k)?.value;
         if (get('org_name')) setOrgName(get('org_name'));
+        setPortalLocked(get('portal_locked') === 'true');
+        if (get('portal_locked_message')) setLockedMessage(get('portal_locked_message'));
         const heads = get('head_admins');
         let headList = ['ezekielborbor17@gmail.com'];
         if (heads) { try { headList = JSON.parse(heads); } catch {} }
@@ -609,6 +614,15 @@ export default function MemberDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Admin command center — only for admins */}
+            {isAdmin && (
+              <a href="/admin"
+                className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${isDark?'bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white':'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200'}`}>
+                <Terminal size={13}/>
+                <span className="hidden sm:inline">Command</span>
+              </a>
+            )}
+
             {/* Directory button — always visible */}
             <button onClick={() => setActiveTab('people')}
               className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${activeTab==='people' ? 'bg-red-600 text-white' : isDark?'bg-white/10 text-white/60 hover:bg-white/20':'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
@@ -664,6 +678,20 @@ export default function MemberDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Portal locked notice for non-admins */}
+      {portalLocked && !isAdmin && (
+        <div className="bg-amber-500 text-amber-950 px-6 py-3 text-center">
+          <p className="font-black text-xs uppercase tracking-widest">⏸ {lockedMessage || 'The election portal is currently closed.'}</p>
+        </div>
+      )}
+      {/* Portal locked notice for admins */}
+      {portalLocked && isAdmin && (
+        <div className="bg-slate-700 text-white px-6 py-2 text-center flex items-center justify-center gap-3">
+          <span className="text-xs font-black uppercase tracking-widest opacity-60">🔒 Portal is locked — members see a closed notice</span>
+          <a href="/admin" className="text-red-400 hover:text-red-300 text-xs font-black uppercase tracking-widest">Manage in Admin →</a>
+        </div>
+      )}
 
       <div className="max-w-2xl mx-auto px-4 pt-4">
         {/* Tabs */}
@@ -943,10 +971,10 @@ export default function MemberDashboard() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
+                {href:'/officers',     label:'Our Officers',  icon:<Crown size={20}/>,      color:'bg-yellow-500'},
                 {href:'/dues',         label:'Pay Dues',      icon:<CreditCard size={20}/>, color:'bg-green-600'},
                 {href:'/donations',    label:'Donations',     icon:<Plus size={20}/>,       color:'bg-red-600'},
                 {href:'/contributions',label:'Solidarity',    icon:<Users size={20}/>,      color:'bg-blue-600'},
-                {href:'/history',      label:'Elec. History', icon:<Activity size={20}/>,   color:'bg-slate-700'},
               ].map(({href,label,icon,color}) => (
                 <Link key={href} href={href} className={`flex flex-col items-center gap-3 ${card} border rounded-3xl p-5 hover:border-red-400 transition-all shadow-sm text-center`}>
                   <div className={`w-10 h-10 ${color} rounded-2xl flex items-center justify-center shrink-0 text-white`}>{icon}</div>
