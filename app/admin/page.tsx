@@ -8,6 +8,7 @@ import {
   CheckCircle2, XCircle, Terminal, Crown, Download, Printer,
   FileText, Sliders, Search, CreditCard, DollarSign, Key, Calendar,
   MapPin, Bell, TrendingUp, ChevronRight, Lock, Eye, EyeOff,
+  Heart,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -84,7 +85,8 @@ interface ElectionPhases {
 }
 
 type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" |
-           "applications" | "settings" | "members" | "dues" | "events" | "audit" | "investments";
+           "applications" | "settings" | "members" | "dues" | "donations" | "contributions" |
+           "events" | "audit" | "investments";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ADMIN COMPONENT
@@ -122,6 +124,8 @@ export default function AdminPage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [members, setMembers]           = useState<Member[]>([]);
   const [dues, setDues]                 = useState<DuesPayment[]>([]);
+  const [donations, setDonations]       = useState<any[]>([]);
+  const [contributions, setContributions] = useState<any[]>([]);
   const [events, setEvents]             = useState<EventRow[]>([]);
   const [auditLog, setAuditLog]         = useState<any[]>([]);
   const [config, setConfig]             = useState<ElectionConfig>(DEFAULT_CONFIG);
@@ -170,7 +174,7 @@ export default function AdminPage() {
   }, [isAuthorized]);
 
   async function fetchAll() {
-    const [v, c, r, b, a, settingsRes, ap, mem, duesRes, evRes, auditRes] = await Promise.all([
+    const [v, c, r, b, a, settingsRes, ap, mem, duesRes, donationsRes, contributionsRes, evRes, auditRes] = await Promise.all([
       supabase.from('votes').select('*').order('created_at', { ascending: false }),
       supabase.from('candidates').select('*').order('position_name'),
       supabase.from('eligible_voters').select('*').order('email'),
@@ -180,6 +184,8 @@ export default function AdminPage() {
       supabase.from('candidate_applications').select('*').order('created_at', { ascending: false }),
       supabase.from('members').select('*').order('created_at', { ascending: false }),
       supabase.from('dues_payments').select('*').order('created_at', { ascending: false }),
+      supabase.from('donations').select('*').order('created_at', { ascending: false }),
+      supabase.from('contributions').select('*').order('created_at', { ascending: false }),
       supabase.from('events').select('*').order('event_date', { ascending: false }),
       supabase.from('activity_log').select('*').order('created_at', { ascending: false }).limit(500),
     ]);
@@ -191,6 +197,8 @@ export default function AdminPage() {
     if (ap.data)       setApplications(ap.data);
     if (mem.data)      setMembers(mem.data);
     if (duesRes.data)  setDues(duesRes.data);
+    if (donationsRes.data) setDonations(donationsRes.data);
+    if (contributionsRes.data) setContributions(contributionsRes.data);
     if (evRes.data)    setEvents(evRes.data);
     if (auditRes.data) setAuditLog(auditRes.data);
 
@@ -248,6 +256,8 @@ export default function AdminPage() {
   const pendingApps     = applications.filter(a => a.status === 'pending').length;
   const pendingMembers  = members.filter(m => m.status === 'pending').length;
   const pendingDues     = dues.filter(d => d.status === 'pending').length;
+  const pendingDonations = donations.filter(d => d.status === 'pending').length;
+  const pendingContributions = contributions.filter(c => c.status === 'pending').length;
 
   const allowedTabs = isHeadAdmin
     ? ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions']
@@ -262,6 +272,8 @@ export default function AdminPage() {
     { id: "roster",       label: "Roster",       icon: UserCheck },
     { id: "members",      label: `Members${pendingMembers > 0 ? ` (${pendingMembers})` : ''}`, icon: Users },
     { id: "dues",         label: `Dues${pendingDues > 0 ? ` (${pendingDues})` : ''}`, icon: CreditCard },
+    { id: "donations",    label: `Donations${pendingDonations > 0 ? ` (${pendingDonations})` : ''}`, icon: Heart },
+    { id: "contributions", label: `Solidarity${pendingContributions > 0 ? ` (${pendingContributions})` : ''}`, icon: Users },
     { id: "events",       label: "Events",       icon: Calendar },
     { id: "audit",        label: "Audit Log",    icon: FileText, headOnly: true },
     { id: "investments",  label: "Investments",  icon: TrendingUp, headOnly: true },
@@ -348,6 +360,8 @@ export default function AdminPage() {
         {activeTab === "roster"       && <RosterTab roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} members={members}/>}
         {activeTab === "members"      && <MembersTab members={members} setMembers={setMembers} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "dues"         && <DuesTab dues={dues} setDues={setDues} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
+        {activeTab === "donations"    && <DonationsAdminTab donations={donations} setDonations={setDonations} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email ?? ''}/>}
+        {activeTab === "contributions" && <ContributionsAdminTab contributions={contributions} setContributions={setContributions} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email ?? ''}/>}
         {activeTab === "events"       && <EventsTab events={events} setEvents={setEvents} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config} members={members}/>}
         {activeTab === "audit"        && isHeadAdmin && <AuditLogTab log={auditLog} config={config}/>}
         {activeTab === "investments"  && isHeadAdmin && <InvestmentsTab showToast={showToast} isHeadAdmin={isHeadAdmin} members={members} config={config}/>}
@@ -3494,6 +3508,217 @@ function InvestmentsTab({ showToast, isHeadAdmin, members, config }: {
 }
 
 // ─── Feed Settings Panel ──────────────────────────────────────────────────────
+function DonationsAdminTab({ donations, setDonations, showToast, isHeadAdmin, myChapter, adminEmail }: {
+  donations: any[];
+  setDonations: React.Dispatch<React.SetStateAction<any[]>>;
+  showToast: (m: string, ok?: boolean) => void;
+  isHeadAdmin: boolean;
+  myChapter: string | null;
+  adminEmail: string;
+}) {
+  const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<any>(null);
+  const [processing, setProcessing] = useState(false);
+
+  const scoped = donations.filter(d => isHeadAdmin || !d.chapter || d.chapter === myChapter || d.chapter === 'All');
+  const visible = scoped.filter(d => {
+    const statusMatch = filter === 'all' || d.status === filter;
+    const q = search.trim().toLowerCase();
+    const searchMatch = !q ||
+      String(d.donor_name ?? '').toLowerCase().includes(q) ||
+      String(d.purpose ?? '').toLowerCase().includes(q) ||
+      String(d.chapter ?? '').toLowerCase().includes(q);
+    return statusMatch && searchMatch;
+  });
+  const pending = scoped.filter(d => d.status === 'pending').length;
+  const approved = scoped.filter(d => d.status === 'approved').length;
+  const totalMoney = scoped
+    .filter(d => d.status === 'approved' && d.donation_type === 'money')
+    .reduce((sum, d) => sum + Number(d.amount ?? 0), 0);
+
+  async function updateStatus(donation: any, status: 'approved' | 'rejected') {
+    if (status === 'rejected' && !confirm(`Reject donation from ${donation.donor_name}?`)) return;
+    setProcessing(true);
+    const approvedAt = new Date().toISOString();
+    const { error } = await supabase.from('donations').update({
+      status,
+      approved_by: adminEmail,
+      approved_at: approvedAt,
+    }).eq('id', donation.id);
+    setProcessing(false);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    setDonations(prev => prev.map(item => item.id === donation.id ? {
+      ...item, status, approved_by: adminEmail, approved_at: approvedAt,
+    } : item));
+    setSelected(null);
+    showToast(status === 'approved' ? `Donation from ${donation.donor_name} approved.` : `Donation from ${donation.donor_name} rejected.`);
+  }
+
+  const badge = (status: string) => ({
+    pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    approved: 'bg-green-100 text-green-700 border-green-200',
+    rejected: 'bg-red-100 text-red-700 border-red-200',
+  }[status] ?? 'bg-slate-100 text-slate-700 border-slate-200');
+
+  return (
+    <div className="space-y-8">
+      {selected && (
+        <div className="fixed inset-0 bg-slate-900/95 z-40 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white rounded-[2rem] p-7 max-w-lg w-full shadow-2xl">
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div>
+                <h3 className="text-xl font-black uppercase text-slate-900">{selected.donor_name}</h3>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{selected.donor_type ?? 'Donor'} / {selected.chapter ?? 'All Chapters'}</p>
+                <span className={`inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border mt-3 ${badge(selected.status)}`}>{selected.status}</span>
+              </div>
+              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700"><XCircle size={22}/></button>
+            </div>
+            <div className="bg-slate-50 rounded-2xl p-5 space-y-3 text-sm font-bold text-slate-700 mb-5">
+              <p><span className="text-slate-400 uppercase text-xs">Type:</span> {selected.donation_type ?? 'Donation'}</p>
+              <p><span className="text-slate-400 uppercase text-xs">Amount:</span> {selected.amount ? `${Number(selected.amount).toLocaleString()} ${selected.currency ?? 'LRD'}` : 'Material donation'}</p>
+              {selected.material_description && <p><span className="text-slate-400 uppercase text-xs">Items:</span> {selected.material_description}</p>}
+              {selected.purpose && <p><span className="text-slate-400 uppercase text-xs">Purpose:</span> {selected.purpose}</p>}
+              {selected.donor_contact && <p><span className="text-slate-400 uppercase text-xs">Contact:</span> {selected.donor_contact}</p>}
+              <p><span className="text-slate-400 uppercase text-xs">Submitted:</span> {new Date(selected.created_at).toLocaleString()}</p>
+            </div>
+            {(selected.receipt_url || selected.photo_url) && (
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                {selected.receipt_url && <a href={selected.receipt_url} target="_blank" rel="noreferrer" className="bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl p-4 font-black text-xs uppercase text-center">View Receipt</a>}
+                {selected.photo_url && <a href={selected.photo_url} target="_blank" rel="noreferrer" className="bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl p-4 font-black text-xs uppercase text-center">View Photo</a>}
+              </div>
+            )}
+            {selected.status === 'pending' && (
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => updateStatus(selected, 'approved')} disabled={processing} className="bg-green-600 hover:bg-green-700 text-white font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">{processing ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>} Approve</button>
+                <button onClick={() => updateStatus(selected, 'rejected')} disabled={processing} className="bg-red-50 hover:bg-red-100 text-red-600 font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 border-2 border-red-200 disabled:opacity-50"><XCircle size={16}/> Reject</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div><h2 className="text-3xl font-black uppercase italic text-slate-800">Donations</h2><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Approve money and material donations</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-yellow-500 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{pending}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Pending</p></div>
+        <div className="bg-green-600 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{approved}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Approved</p></div>
+        <div className="bg-red-600 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-2xl font-black">{totalMoney.toLocaleString()}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Money LRD</p></div>
+      </div>
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1"><Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search donor, purpose, chapter..." className="w-full pl-10 pr-4 py-4 border-2 border-slate-200 focus:border-red-600 rounded-2xl font-bold outline-none text-sm bg-white"/></div>
+        <div className="flex gap-2 overflow-x-auto">{(['pending','approved','rejected','all'] as const).map(f => <button key={f} onClick={() => setFilter(f)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{f}</button>)}</div>
+      </div>
+      <Card>
+        <SectionTitle>Donations ({visible.length})</SectionTitle>
+        <div className="space-y-3">
+          {visible.map(d => (
+            <button key={d.id} onClick={() => setSelected(d)} className="w-full flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl text-left transition-all border-2 border-transparent hover:border-slate-200">
+              <Heart size={22} className="text-red-600 shrink-0"/>
+              <div className="flex-1 min-w-0"><p className="font-black text-slate-800 truncate">{d.donor_name}</p><p className="text-xs text-slate-400 font-bold truncate">{d.purpose ?? d.donation_type ?? 'Donation'} / {d.chapter ?? 'All Chapters'}</p></div>
+              <div className="text-right shrink-0"><p className="font-black text-slate-800">{d.amount ? `${Number(d.amount).toLocaleString()} ${d.currency ?? 'LRD'}` : 'Material'}</p><span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badge(d.status)}`}>{d.status}</span></div>
+            </button>
+          ))}
+          {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}donations.</p>}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function ContributionsAdminTab({ contributions, setContributions, showToast, isHeadAdmin, myChapter, adminEmail }: {
+  contributions: any[];
+  setContributions: React.Dispatch<React.SetStateAction<any[]>>;
+  showToast: (m: string, ok?: boolean) => void;
+  isHeadAdmin: boolean;
+  myChapter: string | null;
+  adminEmail: string;
+}) {
+  const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [selected, setSelected] = useState<any>(null);
+  const [processing, setProcessing] = useState(false);
+
+  const scoped = contributions.filter(c => isHeadAdmin || c.from_chapter === myChapter || c.to_chapter === myChapter);
+  const visible = scoped.filter(c => filter === 'all' || c.status === filter);
+  const pending = scoped.filter(c => c.status === 'pending').length;
+  const approved = scoped.filter(c => c.status === 'approved').length;
+  const totalApproved = scoped.filter(c => c.status === 'approved').reduce((sum, c) => sum + Number(c.amount ?? 0), 0);
+
+  async function updateStatus(contribution: any, status: 'approved' | 'rejected') {
+    if (status === 'rejected' && !confirm('Reject this solidarity contribution?')) return;
+    setProcessing(true);
+    const approvedAt = new Date().toISOString();
+    const { error } = await supabase.from('contributions').update({
+      status,
+      approved_by: adminEmail,
+      approved_at: approvedAt,
+    }).eq('id', contribution.id);
+    setProcessing(false);
+    if (error) { showToast(`Failed: ${error.message}`, false); return; }
+    setContributions(prev => prev.map(item => item.id === contribution.id ? {
+      ...item, status, approved_by: adminEmail, approved_at: approvedAt,
+    } : item));
+    setSelected(null);
+    showToast(status === 'approved' ? `Contribution from ${contribution.from_member_name} approved.` : 'Contribution rejected.');
+  }
+
+  const badge = (status: string) => ({
+    pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    approved: 'bg-green-100 text-green-700 border-green-200',
+    rejected: 'bg-red-100 text-red-700 border-red-200',
+  }[status] ?? 'bg-slate-100 text-slate-700 border-slate-200');
+
+  return (
+    <div className="space-y-8">
+      {selected && (
+        <div className="fixed inset-0 bg-slate-900/95 z-40 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white rounded-[2rem] p-7 max-w-lg w-full shadow-2xl">
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div><h3 className="text-xl font-black uppercase text-slate-900">Solidarity Contribution</h3><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{selected.from_member_name} to {selected.to_member_name}</p><span className={`inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border mt-3 ${badge(selected.status)}`}>{selected.status}</span></div>
+              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700"><XCircle size={22}/></button>
+            </div>
+            <div className="bg-slate-50 rounded-2xl p-5 space-y-3 text-sm font-bold text-slate-700 mb-5">
+              <p><span className="text-slate-400 uppercase text-xs">From:</span> {selected.from_member_name} ({selected.from_chapter})</p>
+              <p><span className="text-slate-400 uppercase text-xs">To:</span> {selected.to_member_name} ({selected.to_chapter})</p>
+              <p><span className="text-slate-400 uppercase text-xs">Amount:</span> {Number(selected.amount ?? 0).toLocaleString()} {selected.currency ?? 'LRD'}</p>
+              <p><span className="text-slate-400 uppercase text-xs">Reason:</span> {selected.reason_type ?? 'Support'}</p>
+              {selected.reason && <p><span className="text-slate-400 uppercase text-xs">Details:</span> {selected.reason}</p>}
+              <p><span className="text-slate-400 uppercase text-xs">Submitted:</span> {new Date(selected.created_at).toLocaleString()}</p>
+            </div>
+            {selected.receipt_url && <a href={selected.receipt_url} target="_blank" rel="noreferrer" className="block bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl p-4 font-black text-xs uppercase text-center mb-5">View Receipt</a>}
+            {selected.status === 'pending' && (
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => updateStatus(selected, 'approved')} disabled={processing} className="bg-green-600 hover:bg-green-700 text-white font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">{processing ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>} Approve</button>
+                <button onClick={() => updateStatus(selected, 'rejected')} disabled={processing} className="bg-red-50 hover:bg-red-100 text-red-600 font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 border-2 border-red-200 disabled:opacity-50"><XCircle size={16}/> Reject</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div><h2 className="text-3xl font-black uppercase italic text-slate-800">Solidarity</h2><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Approve member-to-member support records</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-yellow-500 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{pending}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Pending</p></div>
+        <div className="bg-green-600 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{approved}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Approved</p></div>
+        <div className="bg-slate-900 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-2xl font-black">{totalApproved.toLocaleString()}</p><p className="text-xs font-bold uppercase tracking-widest opacity-60 mt-1">Total LRD</p></div>
+      </div>
+      <div className="flex gap-2 overflow-x-auto">{(['pending','approved','rejected','all'] as const).map(f => <button key={f} onClick={() => setFilter(f)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{f}</button>)}</div>
+      <Card>
+        <SectionTitle>Solidarity Records ({visible.length})</SectionTitle>
+        <div className="space-y-3">
+          {visible.map(c => (
+            <button key={c.id} onClick={() => setSelected(c)} className="w-full flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl text-left transition-all border-2 border-transparent hover:border-slate-200">
+              <Users size={22} className="text-blue-600 shrink-0"/>
+              <div className="flex-1 min-w-0"><p className="font-black text-slate-800 truncate">{c.from_member_name} to {c.to_member_name}</p><p className="text-xs text-slate-400 font-bold truncate">{c.reason_type ?? 'Support'} / {c.from_chapter}</p></div>
+              <div className="text-right shrink-0"><p className="font-black text-slate-800">{Number(c.amount ?? 0).toLocaleString()} {c.currency ?? 'LRD'}</p><span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badge(c.status)}`}>{c.status}</span></div>
+            </button>
+          ))}
+          {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}solidarity records.</p>}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function FeedSettingsPanel({ showToast }: { showToast: (m: string, ok?: boolean) => void }) {
   const [settings, setSettings] = useState({
     feed_allow_photos:    'true',
