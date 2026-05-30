@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, Terminal, Crown, Download, Printer,
   FileText, Sliders, Search, CreditCard, DollarSign, Key, Calendar,
   MapPin, Bell, TrendingUp, ChevronRight, Lock, Eye, EyeOff,
-  Heart,
+  Heart, Receipt, UserPlus, ChevronUp, ChevronDown, X,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -85,8 +85,8 @@ interface ElectionPhases {
 }
 
 type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" |
-           "applications" | "settings" | "members" | "dues" | "donations" | "contributions" |
-           "events" | "audit" | "investments";
+           "applications" | "settings" | "members" | "dues" | "events" | "audit" | "investments" |
+           "donations" | "contributions" | "expenses" | "associated" | "reports";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ADMIN COMPONENT
@@ -99,16 +99,16 @@ export default function AdminPage() {
 
   // ── Role-based tab permissions ────────────────────────────────────────────
   const ROLE_TABS: Record<string, string[]> = {
-    head_admin:          ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions'],
-    admin:               ['overview','results','candidates','voters','roster','admins','applications','members','dues','events','audit','investments','donations','contributions'],
-    president:           ['overview','results','candidates','voters','roster','applications','members','dues','events','audit','donations','contributions'],
+    head_admin:          ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions','expenses','associated','reports'],
+    admin:               ['overview','results','candidates','voters','roster','admins','applications','members','dues','events','audit','investments','donations','contributions','expenses','associated','reports'],
+    president:           ['overview','results','candidates','voters','roster','applications','members','dues','events','audit','donations','contributions','expenses','associated','reports'],
     vp_admin:            ['overview','members','applications','dues','events','audit','contributions','voters','roster'],
     vp_operations:       ['overview','events','audit'],
-    financial_secretary: ['overview','dues','audit','donations','investments'],
-    secretary_general:   ['overview','members','events','audit'],
-    parliamentarian:     ['overview','events','audit'],
-    treasurer:           ['overview','dues','audit','donations','investments'],
-    chaplain:            ['overview','events'],
+    financial_secretary: ['overview','dues','audit','donations','investments','expenses','reports'],
+    secretary_general:   ['overview','members','events','audit','reports'],
+    parliamentarian:     ['overview','events','audit','reports'],
+    treasurer:           ['overview','dues','audit','donations','investments','expenses','reports'],
+    chaplain:            ['overview','events','reports'],
   };
 
   const [isAuthorized, setIsAuthorized]     = useState(false);
@@ -124,8 +124,6 @@ export default function AdminPage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [members, setMembers]           = useState<Member[]>([]);
   const [dues, setDues]                 = useState<DuesPayment[]>([]);
-  const [donations, setDonations]       = useState<any[]>([]);
-  const [contributions, setContributions] = useState<any[]>([]);
   const [events, setEvents]             = useState<EventRow[]>([]);
   const [auditLog, setAuditLog]         = useState<any[]>([]);
   const [config, setConfig]             = useState<ElectionConfig>(DEFAULT_CONFIG);
@@ -174,7 +172,7 @@ export default function AdminPage() {
   }, [isAuthorized]);
 
   async function fetchAll() {
-    const [v, c, r, b, a, settingsRes, ap, mem, duesRes, donationsRes, contributionsRes, evRes, auditRes] = await Promise.all([
+    const [v, c, r, b, a, settingsRes, ap, mem, duesRes, evRes, auditRes] = await Promise.all([
       supabase.from('votes').select('*').order('created_at', { ascending: false }),
       supabase.from('candidates').select('*').order('position_name'),
       supabase.from('eligible_voters').select('*').order('email'),
@@ -184,8 +182,6 @@ export default function AdminPage() {
       supabase.from('candidate_applications').select('*').order('created_at', { ascending: false }),
       supabase.from('members').select('*').order('created_at', { ascending: false }),
       supabase.from('dues_payments').select('*').order('created_at', { ascending: false }),
-      supabase.from('donations').select('*').order('created_at', { ascending: false }),
-      supabase.from('contributions').select('*').order('created_at', { ascending: false }),
       supabase.from('events').select('*').order('event_date', { ascending: false }),
       supabase.from('activity_log').select('*').order('created_at', { ascending: false }).limit(500),
     ]);
@@ -197,8 +193,6 @@ export default function AdminPage() {
     if (ap.data)       setApplications(ap.data);
     if (mem.data)      setMembers(mem.data);
     if (duesRes.data)  setDues(duesRes.data);
-    if (donationsRes.data) setDonations(donationsRes.data);
-    if (contributionsRes.data) setContributions(contributionsRes.data);
     if (evRes.data)    setEvents(evRes.data);
     if (auditRes.data) setAuditLog(auditRes.data);
 
@@ -256,11 +250,9 @@ export default function AdminPage() {
   const pendingApps     = applications.filter(a => a.status === 'pending').length;
   const pendingMembers  = members.filter(m => m.status === 'pending').length;
   const pendingDues     = dues.filter(d => d.status === 'pending').length;
-  const pendingDonations = donations.filter(d => d.status === 'pending').length;
-  const pendingContributions = contributions.filter(c => c.status === 'pending').length;
 
   const allowedTabs = isHeadAdmin
-    ? ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions']
+    ? ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions','expenses','associated','reports']
     : (ROLE_TABS[myRole] ?? ROLE_TABS['admin']);
 
   const allTabs: { id: Tab; label: string; icon: any; headOnly?: boolean }[] = [
@@ -272,13 +264,16 @@ export default function AdminPage() {
     { id: "roster",       label: "Roster",       icon: UserCheck },
     { id: "members",      label: `Members${pendingMembers > 0 ? ` (${pendingMembers})` : ''}`, icon: Users },
     { id: "dues",         label: `Dues${pendingDues > 0 ? ` (${pendingDues})` : ''}`, icon: CreditCard },
-    { id: "donations",    label: `Donations${pendingDonations > 0 ? ` (${pendingDonations})` : ''}`, icon: Heart },
-    { id: "contributions", label: `Solidarity${pendingContributions > 0 ? ` (${pendingContributions})` : ''}`, icon: Users },
     { id: "events",       label: "Events",       icon: Calendar },
     { id: "audit",        label: "Audit Log",    icon: FileText, headOnly: true },
     { id: "investments",  label: "Investments",  icon: TrendingUp, headOnly: true },
     { id: "admins",       label: "Admins",       icon: Settings, headOnly: true },
     { id: "settings",     label: "Settings",     icon: Sliders, headOnly: true },
+    { id: "donations",    label: "Donations",    icon: Heart },
+    { id: "contributions",label: "Contributions",icon: Users },
+    { id: "expenses",     label: "Expenses",     icon: Receipt },
+    { id: "associated",   label: "Associated",   icon: UserPlus },
+    { id: "reports",      label: "Reports",      icon: FileText },
   ];
   const tabs = allTabs.filter(t => (!t.headOnly || isHeadAdmin) && allowedTabs.includes(t.id));
 
@@ -360,13 +355,16 @@ export default function AdminPage() {
         {activeTab === "roster"       && <RosterTab roster={roster} setRoster={setRoster} blacklist={blacklist} setBlacklist={setBlacklist} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} members={members}/>}
         {activeTab === "members"      && <MembersTab members={members} setMembers={setMembers} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email}/>}
         {activeTab === "dues"         && <DuesTab dues={dues} setDues={setDues} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config}/>}
-        {activeTab === "donations"    && <DonationsAdminTab donations={donations} setDonations={setDonations} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email ?? ''}/>}
-        {activeTab === "contributions" && <ContributionsAdminTab contributions={contributions} setContributions={setContributions} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email ?? ''}/>}
         {activeTab === "events"       && <EventsTab events={events} setEvents={setEvents} showToast={showToast} isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} adminEmail={user?.email} config={config} members={members}/>}
         {activeTab === "audit"        && isHeadAdmin && <AuditLogTab log={auditLog} config={config}/>}
         {activeTab === "investments"  && isHeadAdmin && <InvestmentsTab showToast={showToast} isHeadAdmin={isHeadAdmin} members={members} config={config}/>}
         {activeTab === "admins"       && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
         {activeTab === "settings"     && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline} phases={phases} setPhases={setPhases} isHeadAdmin={isHeadAdmin}/>}
+        {activeTab === "donations"     && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
+        {activeTab === "contributions" && <ContributionsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
+        {activeTab === "expenses"      && <ExpensesAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} config={config}/>}
+        {activeTab === "associated"    && <AssociatedAdminTab isHeadAdmin={isHeadAdmin} showToast={showToast} adminEmail={user?.email ?? ''}/>}
+        {activeTab === "reports"       && <ReportsAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} members={members}/>}
       </div>
     </div>
   );
@@ -3508,212 +3506,134 @@ function InvestmentsTab({ showToast, isHeadAdmin, members, config }: {
 }
 
 // ─── Feed Settings Panel ──────────────────────────────────────────────────────
-function DonationsAdminTab({ donations, setDonations, showToast, isHeadAdmin, myChapter, adminEmail }: {
-  donations: any[];
-  setDonations: React.Dispatch<React.SetStateAction<any[]>>;
-  showToast: (m: string, ok?: boolean) => void;
-  isHeadAdmin: boolean;
-  myChapter: string | null;
-  adminEmail: string;
-}) {
+function DonationsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; myChapter: string | null }) {
+  const [donations, setDonations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
-  const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<any>(null);
-  const [processing, setProcessing] = useState(false);
+  const [processing, setProcessing] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.from('donations').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => { if (data) setDonations(data); setLoading(false); });
+  }, []);
 
   const scoped = donations.filter(d => isHeadAdmin || !d.chapter || d.chapter === myChapter || d.chapter === 'All');
-  const visible = scoped.filter(d => {
-    const statusMatch = filter === 'all' || d.status === filter;
-    const q = search.trim().toLowerCase();
-    const searchMatch = !q ||
-      String(d.donor_name ?? '').toLowerCase().includes(q) ||
-      String(d.purpose ?? '').toLowerCase().includes(q) ||
-      String(d.chapter ?? '').toLowerCase().includes(q);
-    return statusMatch && searchMatch;
-  });
-  const pending = scoped.filter(d => d.status === 'pending').length;
-  const approved = scoped.filter(d => d.status === 'approved').length;
-  const totalMoney = scoped
-    .filter(d => d.status === 'approved' && d.donation_type === 'money')
-    .reduce((sum, d) => sum + Number(d.amount ?? 0), 0);
-
-  async function updateStatus(donation: any, status: 'approved' | 'rejected') {
-    if (status === 'rejected' && !confirm(`Reject donation from ${donation.donor_name}?`)) return;
-    setProcessing(true);
-    const approvedAt = new Date().toISOString();
-    const { error } = await supabase.from('donations').update({
-      status,
-      approved_by: adminEmail,
-      approved_at: approvedAt,
-    }).eq('id', donation.id);
-    setProcessing(false);
-    if (error) { showToast(`Failed: ${error.message}`, false); return; }
-    setDonations(prev => prev.map(item => item.id === donation.id ? {
-      ...item, status, approved_by: adminEmail, approved_at: approvedAt,
-    } : item));
-    setSelected(null);
-    showToast(status === 'approved' ? `Donation from ${donation.donor_name} approved.` : `Donation from ${donation.donor_name} rejected.`);
-  }
-
+  const visible = scoped.filter(d => filter === 'all' || d.status === filter);
   const badge = (status: string) => ({
     pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
     approved: 'bg-green-100 text-green-700 border-green-200',
     rejected: 'bg-red-100 text-red-700 border-red-200',
   }[status] ?? 'bg-slate-100 text-slate-700 border-slate-200');
 
+  async function updateStatus(item: any, status: 'approved' | 'rejected') {
+    if (status === 'rejected' && !confirm(`Reject donation from ${item.donor_name}?`)) return;
+    setProcessing(item.id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const approvedAt = new Date().toISOString();
+    const { error } = await supabase.from('donations').update({
+      status,
+      approved_by: user?.email ?? 'admin',
+      approved_at: approvedAt,
+    }).eq('id', item.id);
+    setProcessing(null);
+    if (error) return alert(error.message);
+    setDonations(prev => prev.map(d => d.id === item.id ? { ...d, status, approved_by: user?.email, approved_at: approvedAt } : d));
+  }
+
   return (
     <div className="space-y-8">
-      {selected && (
-        <div className="fixed inset-0 bg-slate-900/95 z-40 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
-          <div className="bg-white rounded-[2rem] p-7 max-w-lg w-full shadow-2xl">
-            <div className="flex items-start justify-between gap-4 mb-6">
-              <div>
-                <h3 className="text-xl font-black uppercase text-slate-900">{selected.donor_name}</h3>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{selected.donor_type ?? 'Donor'} / {selected.chapter ?? 'All Chapters'}</p>
-                <span className={`inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border mt-3 ${badge(selected.status)}`}>{selected.status}</span>
-              </div>
-              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700"><XCircle size={22}/></button>
-            </div>
-            <div className="bg-slate-50 rounded-2xl p-5 space-y-3 text-sm font-bold text-slate-700 mb-5">
-              <p><span className="text-slate-400 uppercase text-xs">Type:</span> {selected.donation_type ?? 'Donation'}</p>
-              <p><span className="text-slate-400 uppercase text-xs">Amount:</span> {selected.amount ? `${Number(selected.amount).toLocaleString()} ${selected.currency ?? 'LRD'}` : 'Material donation'}</p>
-              {selected.material_description && <p><span className="text-slate-400 uppercase text-xs">Items:</span> {selected.material_description}</p>}
-              {selected.purpose && <p><span className="text-slate-400 uppercase text-xs">Purpose:</span> {selected.purpose}</p>}
-              {selected.donor_contact && <p><span className="text-slate-400 uppercase text-xs">Contact:</span> {selected.donor_contact}</p>}
-              <p><span className="text-slate-400 uppercase text-xs">Submitted:</span> {new Date(selected.created_at).toLocaleString()}</p>
-            </div>
-            {(selected.receipt_url || selected.photo_url) && (
-              <div className="grid grid-cols-2 gap-3 mb-5">
-                {selected.receipt_url && <a href={selected.receipt_url} target="_blank" rel="noreferrer" className="bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl p-4 font-black text-xs uppercase text-center">View Receipt</a>}
-                {selected.photo_url && <a href={selected.photo_url} target="_blank" rel="noreferrer" className="bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl p-4 font-black text-xs uppercase text-center">View Photo</a>}
-              </div>
-            )}
-            {selected.status === 'pending' && (
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => updateStatus(selected, 'approved')} disabled={processing} className="bg-green-600 hover:bg-green-700 text-white font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">{processing ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>} Approve</button>
-                <button onClick={() => updateStatus(selected, 'rejected')} disabled={processing} className="bg-red-50 hover:bg-red-100 text-red-600 font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 border-2 border-red-200 disabled:opacity-50"><XCircle size={16}/> Reject</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <div><h2 className="text-3xl font-black uppercase italic text-slate-800">Donations</h2><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Approve money and material donations</p></div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-yellow-500 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{pending}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Pending</p></div>
-        <div className="bg-green-600 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{approved}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Approved</p></div>
-        <div className="bg-red-600 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-2xl font-black">{totalMoney.toLocaleString()}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Money LRD</p></div>
-      </div>
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1"><Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search donor, purpose, chapter..." className="w-full pl-10 pr-4 py-4 border-2 border-slate-200 focus:border-red-600 rounded-2xl font-bold outline-none text-sm bg-white"/></div>
-        <div className="flex gap-2 overflow-x-auto">{(['pending','approved','rejected','all'] as const).map(f => <button key={f} onClick={() => setFilter(f)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{f}</button>)}</div>
-      </div>
+      <div className="flex gap-2 overflow-x-auto">{(['pending','approved','rejected','all'] as const).map(f => <button key={f} onClick={() => setFilter(f)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{f}</button>)}</div>
       <Card>
         <SectionTitle>Donations ({visible.length})</SectionTitle>
-        <div className="space-y-3">
-          {visible.map(d => (
-            <button key={d.id} onClick={() => setSelected(d)} className="w-full flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl text-left transition-all border-2 border-transparent hover:border-slate-200">
-              <Heart size={22} className="text-red-600 shrink-0"/>
-              <div className="flex-1 min-w-0"><p className="font-black text-slate-800 truncate">{d.donor_name}</p><p className="text-xs text-slate-400 font-bold truncate">{d.purpose ?? d.donation_type ?? 'Donation'} / {d.chapter ?? 'All Chapters'}</p></div>
-              <div className="text-right shrink-0"><p className="font-black text-slate-800">{d.amount ? `${Number(d.amount).toLocaleString()} ${d.currency ?? 'LRD'}` : 'Material'}</p><span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badge(d.status)}`}>{d.status}</span></div>
-            </button>
-          ))}
-          {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}donations.</p>}
-        </div>
+        {loading ? <div className="flex justify-center py-8"><Loader2 className="animate-spin text-slate-400" size={24}/></div> : (
+          <div className="space-y-3">
+            {visible.map(d => (
+              <div key={d.id} className="flex items-center gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                <Heart size={22} className="text-red-600 shrink-0"/>
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-slate-800 truncate">{d.donor_name}</p>
+                  <p className="text-xs text-slate-400 font-bold truncate">{d.purpose ?? d.donation_type ?? 'Donation'} / {d.chapter ?? 'All Chapters'}</p>
+                  {(d.receipt_url || d.photo_url) && <div className="flex gap-3 mt-2 text-xs font-black uppercase">{d.receipt_url && <a href={d.receipt_url} target="_blank" rel="noreferrer" className="text-blue-600">Receipt</a>}{d.photo_url && <a href={d.photo_url} target="_blank" rel="noreferrer" className="text-blue-600">Photo</a>}</div>}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="font-black text-slate-800">{d.amount ? `${Number(d.amount).toLocaleString()} ${d.currency ?? 'LRD'}` : 'Material'}</p>
+                  <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badge(d.status)}`}>{d.status}</span>
+                </div>
+                {d.status === 'pending' && (
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => updateStatus(d, 'approved')} disabled={processing === d.id} className="bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Approve</button>
+                    <button onClick={() => updateStatus(d, 'rejected')} disabled={processing === d.id} className="bg-red-100 hover:bg-red-200 text-red-700 font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Reject</button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}donations.</p>}
+          </div>
+        )}
       </Card>
     </div>
   );
 }
 
-function ContributionsAdminTab({ contributions, setContributions, showToast, isHeadAdmin, myChapter, adminEmail }: {
-  contributions: any[];
-  setContributions: React.Dispatch<React.SetStateAction<any[]>>;
-  showToast: (m: string, ok?: boolean) => void;
-  isHeadAdmin: boolean;
-  myChapter: string | null;
-  adminEmail: string;
-}) {
+function ContributionsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; myChapter: string | null }) {
+  const [contributions, setContributions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
-  const [selected, setSelected] = useState<any>(null);
-  const [processing, setProcessing] = useState(false);
+  const [processing, setProcessing] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.from('contributions').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => { if (data) setContributions(data); setLoading(false); });
+  }, []);
 
   const scoped = contributions.filter(c => isHeadAdmin || c.from_chapter === myChapter || c.to_chapter === myChapter);
   const visible = scoped.filter(c => filter === 'all' || c.status === filter);
-  const pending = scoped.filter(c => c.status === 'pending').length;
-  const approved = scoped.filter(c => c.status === 'approved').length;
-  const totalApproved = scoped.filter(c => c.status === 'approved').reduce((sum, c) => sum + Number(c.amount ?? 0), 0);
-
-  async function updateStatus(contribution: any, status: 'approved' | 'rejected') {
-    if (status === 'rejected' && !confirm('Reject this solidarity contribution?')) return;
-    setProcessing(true);
-    const approvedAt = new Date().toISOString();
-    const { error } = await supabase.from('contributions').update({
-      status,
-      approved_by: adminEmail,
-      approved_at: approvedAt,
-    }).eq('id', contribution.id);
-    setProcessing(false);
-    if (error) { showToast(`Failed: ${error.message}`, false); return; }
-    setContributions(prev => prev.map(item => item.id === contribution.id ? {
-      ...item, status, approved_by: adminEmail, approved_at: approvedAt,
-    } : item));
-    setSelected(null);
-    showToast(status === 'approved' ? `Contribution from ${contribution.from_member_name} approved.` : 'Contribution rejected.');
-  }
-
   const badge = (status: string) => ({
     pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
     approved: 'bg-green-100 text-green-700 border-green-200',
     rejected: 'bg-red-100 text-red-700 border-red-200',
   }[status] ?? 'bg-slate-100 text-slate-700 border-slate-200');
 
+  async function updateStatus(item: any, status: 'approved' | 'rejected') {
+    if (status === 'rejected' && !confirm('Reject this solidarity contribution?')) return;
+    setProcessing(item.id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const approvedAt = new Date().toISOString();
+    const { error } = await supabase.from('contributions').update({
+      status,
+      approved_by: user?.email ?? 'admin',
+      approved_at: approvedAt,
+    }).eq('id', item.id);
+    setProcessing(null);
+    if (error) return alert(error.message);
+    setContributions(prev => prev.map(c => c.id === item.id ? { ...c, status, approved_by: user?.email, approved_at: approvedAt } : c));
+  }
+
   return (
     <div className="space-y-8">
-      {selected && (
-        <div className="fixed inset-0 bg-slate-900/95 z-40 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
-          <div className="bg-white rounded-[2rem] p-7 max-w-lg w-full shadow-2xl">
-            <div className="flex items-start justify-between gap-4 mb-6">
-              <div><h3 className="text-xl font-black uppercase text-slate-900">Solidarity Contribution</h3><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{selected.from_member_name} to {selected.to_member_name}</p><span className={`inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border mt-3 ${badge(selected.status)}`}>{selected.status}</span></div>
-              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700"><XCircle size={22}/></button>
-            </div>
-            <div className="bg-slate-50 rounded-2xl p-5 space-y-3 text-sm font-bold text-slate-700 mb-5">
-              <p><span className="text-slate-400 uppercase text-xs">From:</span> {selected.from_member_name} ({selected.from_chapter})</p>
-              <p><span className="text-slate-400 uppercase text-xs">To:</span> {selected.to_member_name} ({selected.to_chapter})</p>
-              <p><span className="text-slate-400 uppercase text-xs">Amount:</span> {Number(selected.amount ?? 0).toLocaleString()} {selected.currency ?? 'LRD'}</p>
-              <p><span className="text-slate-400 uppercase text-xs">Reason:</span> {selected.reason_type ?? 'Support'}</p>
-              {selected.reason && <p><span className="text-slate-400 uppercase text-xs">Details:</span> {selected.reason}</p>}
-              <p><span className="text-slate-400 uppercase text-xs">Submitted:</span> {new Date(selected.created_at).toLocaleString()}</p>
-            </div>
-            {selected.receipt_url && <a href={selected.receipt_url} target="_blank" rel="noreferrer" className="block bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl p-4 font-black text-xs uppercase text-center mb-5">View Receipt</a>}
-            {selected.status === 'pending' && (
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => updateStatus(selected, 'approved')} disabled={processing} className="bg-green-600 hover:bg-green-700 text-white font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">{processing ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>} Approve</button>
-                <button onClick={() => updateStatus(selected, 'rejected')} disabled={processing} className="bg-red-50 hover:bg-red-100 text-red-600 font-black uppercase py-4 rounded-2xl flex items-center justify-center gap-2 border-2 border-red-200 disabled:opacity-50"><XCircle size={16}/> Reject</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div><h2 className="text-3xl font-black uppercase italic text-slate-800">Solidarity</h2><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Approve member-to-member support records</p></div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-yellow-500 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{pending}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Pending</p></div>
-        <div className="bg-green-600 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-4xl font-black">{approved}</p><p className="text-xs font-bold uppercase tracking-widest opacity-80 mt-1">Approved</p></div>
-        <div className="bg-slate-900 text-white rounded-3xl p-6 text-center shadow-lg"><p className="text-2xl font-black">{totalApproved.toLocaleString()}</p><p className="text-xs font-bold uppercase tracking-widest opacity-60 mt-1">Total LRD</p></div>
-      </div>
+      <div><h2 className="text-3xl font-black uppercase italic text-slate-800">Solidarity Contributions</h2><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Approve member-to-member support records</p></div>
       <div className="flex gap-2 overflow-x-auto">{(['pending','approved','rejected','all'] as const).map(f => <button key={f} onClick={() => setFilter(f)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{f}</button>)}</div>
       <Card>
         <SectionTitle>Solidarity Records ({visible.length})</SectionTitle>
-        <div className="space-y-3">
-          {visible.map(c => (
-            <button key={c.id} onClick={() => setSelected(c)} className="w-full flex items-center gap-4 p-5 bg-slate-50 hover:bg-slate-100 rounded-2xl text-left transition-all border-2 border-transparent hover:border-slate-200">
-              <Users size={22} className="text-blue-600 shrink-0"/>
-              <div className="flex-1 min-w-0"><p className="font-black text-slate-800 truncate">{c.from_member_name} to {c.to_member_name}</p><p className="text-xs text-slate-400 font-bold truncate">{c.reason_type ?? 'Support'} / {c.from_chapter}</p></div>
-              <div className="text-right shrink-0"><p className="font-black text-slate-800">{Number(c.amount ?? 0).toLocaleString()} {c.currency ?? 'LRD'}</p><span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badge(c.status)}`}>{c.status}</span></div>
-            </button>
-          ))}
-          {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}solidarity records.</p>}
-        </div>
+        {loading ? <div className="flex justify-center py-8"><Loader2 className="animate-spin text-slate-400" size={24}/></div> : (
+          <div className="space-y-3">
+            {visible.map(c => (
+              <div key={c.id} className="flex items-center gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                <Users size={22} className="text-blue-600 shrink-0"/>
+                <div className="flex-1 min-w-0"><p className="font-black text-slate-800 truncate">{c.from_member_name} to {c.to_member_name}</p><p className="text-xs text-slate-400 font-bold truncate">{c.reason_type ?? 'Support'} / {c.from_chapter}</p></div>
+                <div className="text-right shrink-0"><p className="font-black text-slate-800">{Number(c.amount ?? 0).toLocaleString()} {c.currency ?? 'LRD'}</p><span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badge(c.status)}`}>{c.status}</span></div>
+                {c.status === 'pending' && (
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => updateStatus(c, 'approved')} disabled={processing === c.id} className="bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Approve</button>
+                    <button onClick={() => updateStatus(c, 'rejected')} disabled={processing === c.id} className="bg-red-100 hover:bg-red-200 text-red-700 font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Reject</button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}solidarity records.</p>}
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -3881,6 +3801,290 @@ function PortalLockPanel({ showToast }: { showToast: (m: string, ok?: boolean) =
         {saving ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
         {saving ? 'Saving...' : 'Save Portal Settings'}
       </button>
+    </div>
+  );
+}
+
+// ─── Expenses Admin Tab ───────────────────────────────────────────────────────
+function ExpensesAdminTab({ adminEmail, isHeadAdmin, showToast, config }: {
+  adminEmail: string; isHeadAdmin: boolean;
+  showToast: (m: string, ok?: boolean) => void; config?: any;
+}) {
+  const [expenses, setExpenses]   = useState<any[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [filter, setFilter]       = useState<'all'|'pending'|'approved'|'rejected'>('all');
+  const [expanded, setExpanded]   = useState<string|null>(null);
+  const [processing, setProcessing] = useState(false);
+  const currency = config?.currency ?? 'LRD';
+
+  useEffect(() => {
+    supabase.from('expenses').select('*').order('created_at',{ascending:false})
+      .then(({data})=>{ if(data) setExpenses(data); setLoading(false); });
+  }, []);
+
+  async function approve(e: any) {
+    setProcessing(true);
+    const now = new Date().toISOString();
+    await supabase.from('expenses').update({ status:'approved', approved_by: adminEmail, approved_at: now }).eq('id', e.id);
+    setExpenses(prev=>prev.map(x=>x.id===e.id?{...x,status:'approved',approved_by:adminEmail,approved_at:now}:x));
+    showToast(`✓ Expense "${e.title}" approved — deducted from balance.`);
+    setProcessing(false);
+  }
+
+  async function reject(e: any) {
+    setProcessing(true);
+    await supabase.from('expenses').update({ status:'rejected' }).eq('id', e.id);
+    setExpenses(prev=>prev.map(x=>x.id===e.id?{...x,status:'rejected'}:x));
+    showToast(`Expense "${e.title}" rejected.`);
+    setProcessing(false);
+  }
+
+  const filtered = expenses.filter(e => filter==='all' || e.status===filter);
+  const totalApproved = expenses.filter(e=>e.status==='approved').reduce((s,e)=>s+e.amount,0);
+  const totalPending  = expenses.filter(e=>e.status==='pending').reduce((s,e)=>s+e.amount,0);
+
+  const STATUS_COLORS: Record<string,string> = {
+    pending:  'bg-yellow-100 text-yellow-700 border-yellow-200',
+    approved: 'bg-green-100 text-green-700 border-green-200',
+    rejected: 'bg-red-100 text-red-700 border-red-200',
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          {label:'Total Approved',color:'bg-red-600',   value:totalApproved},
+          {label:'Pending',       color:'bg-yellow-500',value:totalPending},
+          {label:'Total Records', color:'bg-slate-700', value:expenses.length},
+        ].map(s=>(
+          <div key={s.label} className={`${s.color} text-white rounded-2xl p-5 text-center`}>
+            <p className="text-2xl font-black">{typeof s.value==='number'&&s.label!=='Total Records'?s.value.toLocaleString():s.value}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest opacity-80 mt-1">{s.label}{s.label!=='Total Records'?` ${currency}`:''}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2">
+        {(['all','pending','approved','rejected'] as const).map(f=>(
+          <button key={f} onClick={()=>setFilter(f)}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter===f?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+            {f} {f!=='all'?`(${expenses.filter(e=>e.status===f).length})`:''}
+          </button>
+        ))}
+      </div>
+
+      {loading ? <div className="flex items-center justify-center py-10"><Loader2 className="animate-spin text-red-600" size={24}/></div>
+      : filtered.length===0 ? <div className="bg-white rounded-3xl p-12 text-center"><p className="text-slate-400 font-bold text-sm">No expenses found.</p></div>
+      : filtered.map(e=>{
+        const isOpen = expanded===e.id;
+        return (
+          <div key={e.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100">
+            <button onClick={()=>setExpanded(isOpen?null:e.id)} className="w-full flex items-center gap-4 p-5 text-left hover:bg-slate-50 transition-all">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <p className="font-black text-slate-800">{e.title}</p>
+                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${STATUS_COLORS[e.status]}`}>{e.status}</span>
+                  <span className="text-[10px] bg-slate-100 text-slate-600 font-black uppercase px-2 py-0.5 rounded-full">{e.category}</span>
+                </div>
+                <p className="text-xs text-slate-400 font-bold">Submitted by {e.submitted_by} · {new Date(e.expense_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</p>
+              </div>
+              <span className="font-black text-red-600 text-lg shrink-0">{e.amount.toLocaleString()} {e.currency}</span>
+              {isOpen?<ChevronUp size={14} className="text-slate-400 shrink-0"/>:<ChevronDown size={14} className="text-slate-400 shrink-0"/>}
+            </button>
+            {isOpen && (
+              <div className="border-t border-slate-100 p-5 bg-slate-50 space-y-3">
+                <p className="text-sm font-bold text-slate-700 leading-relaxed">{e.description}</p>
+                {e.authorized_by && <p className="text-xs text-slate-500 font-bold">Authorized by: <span className="text-slate-700">{e.authorized_by}</span></p>}
+                {e.notes && <p className="text-xs text-slate-400 font-bold italic">"{e.notes}"</p>}
+                {e.receipt_url && <img src={e.receipt_url} className="rounded-xl max-h-32 cursor-pointer border border-slate-200" onClick={()=>window.open(e.receipt_url,'_blank')}/>}
+                {e.status==='pending' && (
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={()=>approve(e)} disabled={processing}
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white font-black uppercase py-3 rounded-2xl text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                      <CheckCircle2 size={14}/> Approve & Deduct
+                    </button>
+                    <button onClick={()=>reject(e)} disabled={processing}
+                      className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 font-black uppercase py-3 rounded-2xl text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                      <X size={14}/> Reject
+                    </button>
+                  </div>
+                )}
+                {e.status==='approved' && <p className="text-xs text-green-600 font-black">✓ Approved by {e.approved_by} on {new Date(e.approved_at).toLocaleDateString()}</p>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Associated Members Admin Tab ─────────────────────────────────────────────
+function AssociatedAdminTab({ isHeadAdmin, showToast, adminEmail }: {
+  isHeadAdmin: boolean; showToast: (m: string, ok?: boolean) => void; adminEmail: string;
+}) {
+  const [members, setMembers]   = useState<any[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [filter, setFilter]     = useState<'all'|'pending'|'approved'|'rejected'>('pending');
+  const [processing, setProcessing] = useState(false);
+
+  useEffect(() => {
+    supabase.from('associated_members').select('*').order('created_at',{ascending:false})
+      .then(({data})=>{ if(data) setMembers(data); setLoading(false); });
+  }, []);
+
+  async function approve(m: any) {
+    setProcessing(true);
+    const now = new Date().toISOString();
+    await supabase.from('associated_members').update({ status:'approved', approved_by: adminEmail, approved_at: now }).eq('id', m.id);
+    setMembers(prev=>prev.map(x=>x.id===m.id?{...x,status:'approved'}:x));
+    showToast(`✓ ${m.full_name} approved as ${m.member_type} member.`);
+    setProcessing(false);
+  }
+
+  async function reject(m: any) {
+    setProcessing(true);
+    await supabase.from('associated_members').update({ status:'rejected' }).eq('id', m.id);
+    setMembers(prev=>prev.map(x=>x.id===m.id?{...x,status:'rejected'}:x));
+    showToast(`${m.full_name} rejected.`);
+    setProcessing(false);
+  }
+
+  const filtered = members.filter(m => filter==='all' || m.status===filter);
+  const TYPE_COLORS: Record<string,string> = {
+    supporting: 'bg-blue-100 text-blue-700',
+    honorary:   'bg-yellow-100 text-yellow-700',
+    affiliate:  'bg-purple-100 text-purple-700',
+    corporate:  'bg-green-100 text-green-700',
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-4 gap-3">
+        {(['all','pending','approved','rejected'] as const).map(f=>(
+          <button key={f} onClick={()=>setFilter(f)}
+            className={`py-3 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter===f?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200'}`}>
+            {f} ({members.filter(m=>f==='all'||m.status===f).length})
+          </button>
+        ))}
+      </div>
+
+      {loading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-red-600" size={24}/></div>
+      : filtered.length===0 ? <div className="bg-white rounded-3xl p-12 text-center"><p className="text-slate-400 font-bold">No {filter} associated members.</p></div>
+      : <div className="space-y-3">
+          {filtered.map(m=>(
+            <div key={m.id} className="bg-white rounded-3xl p-5 flex items-center gap-4 shadow-sm border border-slate-100">
+              <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-200 shrink-0">
+                {m.photo_url?<img src={m.photo_url} className="w-full h-full object-cover"/>
+                :<div className="w-full h-full flex items-center justify-center bg-blue-600"><span className="text-white font-black">{m.full_name.charAt(0)}</span></div>}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-black text-slate-800 text-sm">{m.full_name}</p>
+                {m.organization_name && <p className="text-xs text-slate-500 font-bold">{m.organization_name}</p>}
+                <p className="text-xs text-slate-400 font-bold">{m.email}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${TYPE_COLORS[m.member_type]??'bg-slate-100 text-slate-600'}`}>{m.member_type}</span>
+                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${m.status==='approved'?'bg-green-100 text-green-700':m.status==='pending'?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}`}>{m.status}</span>
+                </div>
+              </div>
+              {m.status==='pending' && (
+                <div className="flex gap-2 shrink-0">
+                  <button onClick={()=>approve(m)} disabled={processing} className="bg-green-600 text-white font-black uppercase text-xs px-4 py-2 rounded-xl hover:bg-green-700 transition-all disabled:opacity-50">Approve</button>
+                  <button onClick={()=>reject(m)} disabled={processing} className="bg-red-100 text-red-700 font-black uppercase text-xs px-4 py-2 rounded-xl hover:bg-red-200 transition-all disabled:opacity-50">Reject</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+// ─── Reports Admin Tab ────────────────────────────────────────────────────────
+function ReportsAdminTab({ adminEmail, isHeadAdmin, showToast, members }: {
+  adminEmail: string; isHeadAdmin: boolean;
+  showToast: (m: string, ok?: boolean) => void; members: any[];
+}) {
+  const [reports, setReports]   = useState<any[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [expanded, setExpanded] = useState<string|null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle]       = useState('');
+  const [meetingDate, setMeetingDate] = useState(new Date().toISOString().slice(0,10));
+  const [chapter, setChapter]   = useState('Harbel Chapter');
+  const [content, setContent]   = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    supabase.from('meeting_reports').select('*').order('meeting_date',{ascending:false})
+      .then(({data})=>{ if(data) setReports(data); setLoading(false); });
+  }, []);
+
+  async function publish() {
+    if (!title.trim()||!content.trim()) { showToast('Title and content required.',false); return; }
+    setSubmitting(true);
+    const { data, error } = await supabase.from('meeting_reports').insert([{
+      title: title.trim(), meeting_date: meetingDate, chapter, content: content.trim(), published_by: adminEmail,
+    }]).select().single();
+    if (error) { showToast(`Failed: ${error.message}`,false); setSubmitting(false); return; }
+    // Notify all members
+    const approvedMembers = members.filter(m=>m.status==='approved');
+    if (approvedMembers.length > 0) {
+      await supabase.from('notifications').insert(
+        approvedMembers.map((m:any)=>({
+          member_id: m.id, type: 'meeting_report',
+          title: `📋 New Report: ${title.trim()}`,
+          message: `Meeting report for ${chapter} on ${new Date(meetingDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} published.`,
+          link: '/reports',
+        }))
+      );
+    }
+    setReports(prev=>[data,...prev]);
+    setTitle(''); setContent(''); setShowForm(false);
+    showToast(`✓ Report published — ${approvedMembers.length} members notified.`);
+    setSubmitting(false);
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><h3 className="text-xl font-black uppercase italic text-slate-800">Meeting Reports</h3><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Official minutes and records</p></div>
+        <button onClick={()=>setShowForm(!showForm)} className="bg-purple-600 hover:bg-purple-700 text-white font-black uppercase text-xs px-5 py-3 rounded-2xl transition-all flex items-center gap-2">
+          <PlusCircle size={14}/>{showForm?'Cancel':'Post Report'}
+        </button>
+      </div>
+
+      {showForm && (
+        <Card>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2"><label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Title</label><input value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. Minutes of General Meeting — May 2026" className="w-full border-2 border-slate-200 focus:border-purple-600 rounded-2xl px-5 py-3 font-bold outline-none text-slate-800"/></div>
+              <div><label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Meeting Date</label><input type="date" value={meetingDate} onChange={e=>setMeetingDate(e.target.value)} className="w-full border-2 border-slate-200 focus:border-purple-600 rounded-2xl px-5 py-3 font-bold outline-none text-slate-800"/></div>
+              <div><label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Chapter</label><input value={chapter} onChange={e=>setChapter(e.target.value)} className="w-full border-2 border-slate-200 focus:border-purple-600 rounded-2xl px-5 py-3 font-bold outline-none text-slate-800"/></div>
+              <div className="sm:col-span-2"><label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Report Content / Minutes</label><textarea value={content} onChange={e=>setContent(e.target.value)} rows={10} placeholder="Paste meeting minutes here..." className="w-full border-2 border-slate-200 focus:border-purple-600 rounded-2xl px-5 py-3 font-bold outline-none text-slate-800 resize-none font-mono text-sm"/></div>
+            </div>
+            <button onClick={publish} disabled={submitting} className="bg-purple-600 hover:bg-purple-700 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-2 transition-all disabled:opacity-50">
+              {submitting?<><Loader2 size={14} className="animate-spin"/>Publishing...</>:<><FileText size={14}/>Publish & Notify All Members</>}
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {loading?<div className="flex justify-center py-10"><Loader2 className="animate-spin text-red-600" size={24}/></div>
+      :reports.length===0?<div className="bg-white rounded-3xl p-12 text-center"><p className="text-slate-400 font-bold">No reports published yet.</p></div>
+      :reports.map(r=>{
+        const isOpen=expanded===r.id;
+        return (
+          <div key={r.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100">
+            <button onClick={()=>setExpanded(isOpen?null:r.id)} className="w-full flex items-center gap-4 p-5 text-left hover:bg-slate-50 transition-all">
+              <div className="w-10 h-10 bg-purple-100 rounded-2xl flex items-center justify-center shrink-0"><FileText size={18} className="text-purple-600"/></div>
+              <div className="flex-1"><p className="font-black text-slate-800">{r.title}</p><p className="text-xs text-slate-400 font-bold mt-0.5">{r.chapter} · {new Date(r.meeting_date).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} · by {r.published_by}</p></div>
+              {isOpen?<ChevronUp size={14} className="text-slate-400"/>:<ChevronDown size={14} className="text-slate-400"/>}
+            </button>
+            {isOpen&&<div className="border-t border-slate-100 p-5 bg-slate-50"><pre className="text-slate-700 font-sans text-sm leading-relaxed whitespace-pre-wrap">{r.content}</pre></div>}
+          </div>
+        );
+      })}
     </div>
   );
 }
