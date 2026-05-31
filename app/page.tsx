@@ -47,10 +47,6 @@ const CHAPTERS = [
   "Paynesville Branch","Mother Chapter",
 ];
 
-function settingIsOn(value: unknown) {
-  return value === true || String(value).toLowerCase() === 'true';
-}
-
 export default function BWIAAElection2026() {
   const [user, setUser]               = useState<any>(null);
   const [myChapter, setMyChapter]     = useState<string | null>(null);
@@ -124,8 +120,8 @@ export default function BWIAAElection2026() {
           if (dl) setDeadline(dl);
 
           // ── NEW: read registration_open phase ──────────────────────────────
-          setRegistrationOpen(settingIsOn(get('registration_open')));
-          setVotingOpen(settingIsOn(get('voting_open')));
+          setRegistrationOpen(get('registration_open') === 'true');
+          setVotingOpen(get('voting_open') === 'true');
 
           // ── Load ticker announcements & speed from settings ────────────────
           if (get('ticker_announcements')) {
@@ -156,16 +152,6 @@ export default function BWIAAElection2026() {
     const live = supabase.channel('national-audit')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'votes' }, (payload) => {
         setVotes(prev => [payload.new as VoteRow, ...prev]);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'election_settings' }, (payload: any) => {
-        const row = payload.new ?? payload.old;
-        if (row?.key === 'voting_open') setVotingOpen(settingIsOn(row.value));
-        if (row?.key === 'registration_open') setRegistrationOpen(settingIsOn(row.value));
-        if (row?.key === 'voting_deadline') {
-          const nextDeadline = payload.eventType === 'DELETE' ? null : row.value;
-          setDeadline(nextDeadline);
-          setVotingClosed(nextDeadline ? new Date(nextDeadline).getTime() <= Date.now() : false);
-        }
       })
       .subscribe();
 
@@ -339,31 +325,12 @@ export default function BWIAAElection2026() {
     }
   }
 
-  async function refreshVotingGate() {
-    const { data } = await supabase
-      .from('election_settings')
-      .select('key,value')
-      .in('key', ['voting_open', 'voting_deadline']);
-
-    const get = (k: string) => data?.find((r: any) => r.key === k)?.value;
-    const open = settingIsOn(get('voting_open'));
-    const dl = get('voting_deadline') ?? deadline;
-    const closed = dl ? new Date(dl).getTime() <= Date.now() : false;
-
-    setVotingOpen(open);
-    if (dl) setDeadline(dl);
-    setVotingClosed(closed);
-
-    return { open, closed };
-  }
-
   async function selectCandidate(pos: string, cand: string) {
-    const gate = await refreshVotingGate();
-    if (!gate.open) {
+    if (!votingOpen) {
       setErrorMessage('VOTING IS NOT OPEN YET. The Election Committee has not officially opened the ballot. Please check back later.');
       return;
     }
-    if (gate.closed) {
+    if (votingClosed) {
       setErrorMessage('VOTING HAS CLOSED. The election deadline has passed. No further ballots can be cast.');
       return;
     }
@@ -385,42 +352,36 @@ export default function BWIAAElection2026() {
 
     const pos = confirm.pos;
     const cand = confirm.cand;
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
 
     // ── Step 1: INSERT only — do not chain .select() which can fail independently ──
-    if (!token) {
+    const { error: insertError } = await supabase
+      .from('votes')
+      .insert([{ position_name: pos, candidate_name: cand, voter_name: user.email, voter_id: user.id, chapter: myChapter, class_year: myClass }]);
+
+    if (insertError) {
       setCasting(false);
       setConfirm(null);
-      setErrorMessage('Your session expired. Please sign in again before voting.');
+      if (insertError.code === '23505') {
+        setErrorMessage(`INTEGRITY ALERT: You have already cast a ballot for ${pos}.`);
+      } else if (insertError.code === '42501' || insertError.message?.includes('row-level security')) {
+        setErrorMessage('VOTING IS NOT OPEN. The Election Committee has not officially opened the ballot yet.');
+      } else {
+        setErrorMessage(`Vote could not be recorded: ${insertError.message}. Please contact your administrator.`);
+      }
       return;
     }
-
-    const res = await fetch('/api/vote', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        position_name: pos,
-        candidate_name: cand,
-        chapter: myChapter,
-        class_year: myClass,
-      }),
-    });
-    const result = await res.json();
 
     // ── Step 2: Fetch the inserted row separately ─────────────────────────────
+    const { data: inserted } = await supabase
+      .from('votes')
+      .select('*')
+      .eq('voter_id', user.id)
+      .eq('position_name', pos)
+      .maybeSingle();
+
     setCasting(false);
     setConfirm(null);
-    if (!res.ok || !result.ok) {
-      setErrorMessage(result.error ?? 'Vote could not be recorded. Please contact your administrator.');
-      return;
-    }
-
-    setReceipt(result.vote as VoteRow);
-    setVotes(prev => [result.vote as VoteRow, ...prev]);
+    setReceipt(inserted ?? { id: Date.now(), position_name: pos, candidate_name: cand, chapter: myChapter, class_year: myClass, created_at: new Date().toISOString(), voter_id: user.id, voter_name: user.email });
 
     // ── Step 3: Refresh full vote tally ──────────────────────────────────────
     await refreshVotes();
@@ -568,7 +529,7 @@ export default function BWIAAElection2026() {
           <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
             <div className="bg-[#111100] border-2 border-red-600 p-10 rounded-3xl max-w-md w-full text-center shadow-2xl">
               <XCircle size={56} className="text-red-500 mx-auto mb-5" />
-              <h2 className="font-bebas text-4xl text-white mb-3 tracking-wider not-italic">Access Denied</h2>
+              <h2 className="font-bebas text-4xl text-white mb-3 tracking-wider">Access Denied</h2>
               <p className="text-white/60 mb-8 font-oswald leading-relaxed">{errorMessage}</p>
               <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 hover:bg-red-700 text-white font-oswald font-bold py-4 rounded-2xl uppercase tracking-widest transition-all">Understood</button>
             </div>
@@ -829,11 +790,10 @@ export default function BWIAAElection2026() {
           <div className="max-w-6xl mx-auto px-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
-                { href: '/feed',            label: 'Community Feed',          icon: '🐯' },
-                { href: '/register/status', label: 'Check Application Status', icon: '📋' },
-                { href: '/members',         label: 'Member Portal',            icon: '👤' },
-                { href: '/officers',        label: 'Our Officers',             icon: '🏆' },
-                { href: '/history',         label: 'Election History',         icon: '🏆' },
+                { href: '/feed',               label: 'Community Feed',          icon: '🐯' },
+                { href: '/associated/register',label: 'Associated Membership',    icon: '🤝' },
+                { href: '/members',            label: 'Member Portal',            icon: '👤' },
+                { href: '/officers',           label: 'Our Officers',             icon: '🏛️' },
               ].map(l => (
                 <Link key={l.href} href={l.href}
                   className="flex items-center gap-4 border border-gold/20 hover:border-gold/60 bg-gold/3 hover:bg-gold/8 rounded-2xl px-6 py-5 transition-all group">
@@ -896,9 +856,9 @@ export default function BWIAAElection2026() {
         <div className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md">
           <div className="bg-white p-10 rounded-[3.5rem] max-w-md w-full text-center shadow-2xl border-t-[12px] border-red-600">
             <AlertCircle size={64} className="text-red-600 mx-auto mb-6" />
-            <h2 className="text-3xl font-black uppercase not-italic mb-4 text-slate-900">Notice</h2>
-            <p className="text-slate-500 mb-8 font-bold leading-relaxed">{errorMessage}</p>
-            <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-5 rounded-2xl uppercase tracking-widest transition-all">Understood</button>
+            <h2 className="text-3xl font-black uppercase italic mb-4">Notice</h2>
+            <p className="text-slate-500 mb-8 font-medium leading-relaxed">{errorMessage}</p>
+            <button onClick={() => setErrorMessage(null)} className="w-full bg-red-600 text-white font-black py-5 rounded-2xl uppercase tracking-widest">Understood</button>
           </div>
         </div>
       )}
@@ -1041,9 +1001,9 @@ export default function BWIAAElection2026() {
                   const percent  = total > 0 ? (count / total) * 100 : 0;
                   return (
                     <button key={cand.id} onClick={() => selectCandidate(posTitle, cand.full_name)}
-                      disabled={hasVoted || votingClosed}
+                      disabled={hasVoted || votingClosed || !votingOpen}
                       className={`relative flex flex-col items-center p-4 md:p-6 rounded-3xl border-2 transition-all overflow-hidden text-center
-                        ${hasVoted || votingClosed ? 'border-slate-100 cursor-not-allowed bg-slate-50/50 opacity-70' : 'border-slate-100 hover:border-red-600 bg-white active:scale-95 hover:shadow-xl'}`}>
+                        ${hasVoted || votingClosed || !votingOpen ? 'border-slate-100 cursor-not-allowed bg-slate-50/50 opacity-70' : 'border-slate-100 hover:border-red-600 bg-white active:scale-95 hover:shadow-xl'}`}>
                       <div className="w-16 h-16 md:w-24 md:h-24 rounded-2xl overflow-hidden bg-slate-100 mb-3 border-2 border-slate-200 shrink-0">
                         {cand.photo_url
                           ? <img src={cand.photo_url} alt={cand.full_name} className="w-full h-full object-cover"/>
