@@ -450,10 +450,13 @@ export default function MemberDashboard() {
   // ── Push Notifications ───────────────────────────────────────────────────────
   const [pushEnabled, setPushEnabled]   = useState(false);
   const [pushLoading, setPushLoading]   = useState(false);
+  const [pushSupported, setPushSupported] = useState(false);
 
   useEffect(() => {
     // Check if already subscribed
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    setPushSupported(supported);
+    if (!supported) return;
     navigator.serviceWorker.ready.then(reg => {
       reg.pushManager.getSubscription().then(sub => {
         setPushEnabled(!!sub);
@@ -971,10 +974,12 @@ export default function MemberDashboard() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
-                {href:'/officers',     label:'Our Officers',   icon:<Crown size={20}/>,       color:'bg-yellow-500'},
-                {href:'/expenses',     label:'Financials',     icon:<DollarSign size={20}/>,  color:'bg-emerald-600'},
-                {href:'/reports',      label:'Mtg Reports',    icon:<FileText size={20}/>,    color:'bg-purple-600'},
-                {href:'/dues',         label:'Pay Dues',       icon:<CreditCard size={20}/>,  color:'bg-green-600'},
+                {href:'/officers',      label:'Our Officers',   icon:<Crown size={20}/>,       color:'bg-yellow-500'},
+                {href:'/expenses',      label:'Financials',     icon:<DollarSign size={20}/>,  color:'bg-emerald-600'},
+                {href:'/reports',       label:'Mtg Reports',    icon:<FileText size={20}/>,    color:'bg-purple-600'},
+                {href:'/dues',          label:'Pay Dues',       icon:<CreditCard size={20}/>,  color:'bg-green-600'},
+                {href:'/donations',     label:'Donations',      icon:<Plus size={20}/>,        color:'bg-red-600'},
+                {href:'/contributions', label:'Solidarity',     icon:<Users size={20}/>,       color:'bg-blue-600'},
               ].map(({href,label,icon,color}) => (
                 <Link key={href} href={href} className={`flex flex-col items-center gap-3 ${card} border rounded-3xl p-5 hover:border-red-400 transition-all shadow-sm text-center`}>
                   <div className={`w-10 h-10 ${color} rounded-2xl flex items-center justify-center shrink-0 text-white`}>{icon}</div>
@@ -1273,7 +1278,7 @@ export default function MemberDashboard() {
             </div>
 
             {/* Push Notifications */}
-            {'Notification' in window && 'serviceWorker' in navigator && (
+            {pushSupported && (
               <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>
                 <h4 className={`font-black ${text} uppercase tracking-widest text-sm mb-1 flex items-center gap-2`}>
                   <Bell size={16} className="text-red-600"/> Push Notifications

@@ -77,6 +77,19 @@ type ElectionConfig = typeof DEFAULT_CONFIG;
 let CHAPTERS  = DEFAULT_CONFIG.chapters;
 let POSITIONS = DEFAULT_CONFIG.positions_fees.map(p => p.position);
 
+async function sendPushToMembers(memberIds: string[], title: string, message: string, url = '/members/dashboard', tag = 'bwiaa-activity') {
+  if (memberIds.length === 0) return;
+  try {
+    await fetch('/api/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ member_ids: memberIds, title, message, url, tag }),
+    });
+  } catch (err) {
+    console.warn('Push notification failed (non-critical):', err);
+  }
+}
+
 // Election phase type
 interface ElectionPhases {
   registration_open: boolean;
@@ -86,7 +99,7 @@ interface ElectionPhases {
 
 type Tab = "overview" | "results" | "candidates" | "voters" | "roster" | "admins" |
            "applications" | "settings" | "members" | "dues" | "events" | "audit" | "investments" |
-           "donations" | "contributions" | "expenses" | "associated" | "reports";
+           "donations" | "contributions" | "expenses" | "associated" | "reports" | "rbac";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ADMIN COMPONENT
@@ -99,7 +112,7 @@ export default function AdminPage() {
 
   // ── Role-based tab permissions ────────────────────────────────────────────
   const ROLE_TABS: Record<string, string[]> = {
-    head_admin:          ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions','expenses','associated','reports'],
+    head_admin:          ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions','expenses','associated','reports','rbac'],
     admin:               ['overview','results','candidates','voters','roster','admins','applications','members','dues','events','audit','investments','donations','contributions','expenses','associated','reports'],
     president:           ['overview','results','candidates','voters','roster','applications','members','dues','events','audit','donations','contributions','expenses','associated','reports'],
     vp_admin:            ['overview','members','applications','dues','events','audit','contributions','voters','roster'],
@@ -252,7 +265,7 @@ export default function AdminPage() {
   const pendingDues     = dues.filter(d => d.status === 'pending').length;
 
   const allowedTabs = isHeadAdmin
-    ? ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions','expenses','associated','reports']
+    ? ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions','expenses','associated','reports','rbac']
     : (ROLE_TABS[myRole] ?? ROLE_TABS['admin']);
 
   const allTabs: { id: Tab; label: string; icon: any; headOnly?: boolean }[] = [
@@ -274,6 +287,7 @@ export default function AdminPage() {
     { id: "expenses",     label: "Expenses",     icon: Receipt },
     { id: "associated",   label: "Associated",   icon: UserPlus },
     { id: "reports",      label: "Reports",      icon: FileText },
+    { id: "rbac",        label: "RBAC",         icon: ShieldCheck, headOnly: true },
   ];
   const tabs = allTabs.filter(t => (!t.headOnly || isHeadAdmin) && allowedTabs.includes(t.id));
 
@@ -365,6 +379,7 @@ export default function AdminPage() {
         {activeTab === "expenses"      && <ExpensesAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} config={config}/>}
         {activeTab === "associated"    && <AssociatedAdminTab isHeadAdmin={isHeadAdmin} showToast={showToast} adminEmail={user?.email ?? ''}/>}
         {activeTab === "reports"       && <ReportsAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} members={members}/>}
+        {activeTab === "rbac"         && <RBACAdminTab showToast={showToast}/>}
       </div>
     </div>
   );
@@ -1304,6 +1319,8 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
     try {
       const { data: mem } = await supabase.from('members').select('id').eq('email', app.applicant_email?.toLowerCase() ?? '').maybeSingle();
       if (mem?.id) {
+        const pushTitle = 'Candidacy Approved!';
+        const pushMessage = `Your application to run for ${app.position_name} in the ${app.chapter} has been approved. You are now an official candidate.`;
         await supabase.from('notifications').insert([{
           member_id: mem.id,
           type: 'application_approved',
@@ -1311,6 +1328,7 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
           message: `Your application to run for ${app.position_name} in the ${app.chapter} has been approved. You are now an official candidate.`,
           link: '/members/dashboard',
         }]);
+        await sendPushToMembers([mem.id], pushTitle, pushMessage, '/members/dashboard', 'application-approved');
       }
     } catch {}
   }
@@ -1336,6 +1354,8 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
     try {
       const { data: mem } = await supabase.from('members').select('id').eq('email', app.applicant_email?.toLowerCase() ?? '').maybeSingle();
       if (mem?.id) {
+        const pushTitle = 'Candidacy Application Update';
+        const pushMessage = `Your application for ${app.position_name} was not approved. Reason: ${rejReason.trim()}. Contact the Election Committee for more information.`;
         await supabase.from('notifications').insert([{
           member_id: mem.id,
           type: 'application_rejected',
@@ -1343,6 +1363,7 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
           message: `Your application for ${app.position_name} was not approved. Reason: ${rejReason.trim()}. Contact the Election Committee for more information.`,
           link: '/members/dashboard',
         }]);
+        await sendPushToMembers([mem.id], pushTitle, pushMessage, '/members/dashboard', 'application-rejected');
       }
     } catch {}
   }
@@ -1926,7 +1947,7 @@ function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases
         try {
           await fetch('/api/push', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''}` },
+            headers: { 'Content-Type': 'application/json', 'x-internal': '1' },
             body: JSON.stringify(pushPayload),
           });
         } catch (pushErr) {
@@ -2420,6 +2441,8 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
     await supabase.from('activity_log').insert([{ member_id:m.id, member_name:m.full_name, chapter:m.chapter, action:'Membership approved — added to voter roster', details:`Approved by ${adminEmail}` }]);
     // Notify member
     if (m.id) {
+      const pushTitle = 'Membership Approved!';
+      const pushMessage = 'Welcome to BWIAA! Your membership has been approved. You now have full access to the member portal.';
       await supabase.from('notifications').insert([{
         member_id: m.id,
         type: 'membership_approved',
@@ -2427,6 +2450,7 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
         message: `Welcome to BWIAA! Your membership has been approved. You now have full access to the member portal.`,
         link: '/members/dashboard',
       }]);
+      await sendPushToMembers([m.id], pushTitle, pushMessage, '/members/dashboard', 'membership-approved');
     }
     setMembers(prev => prev.map(x => x.id===m.id ? {...x, status:'approved', approved_by:adminEmail, approved_at:approvedAt} : x));
     setSelected(null); setProcessing(false);
@@ -2441,6 +2465,8 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
     await supabase.from('activity_log').insert([{ member_id:m.id, member_name:m.full_name, chapter:m.chapter, action:'Membership rejected', details:`Reason: ${rejReason.trim()}` }]);
     // Notify member
     if (m.id) {
+      const pushTitle = 'Membership Application Update';
+      const pushMessage = `Your membership application was not approved. Reason: ${rejReason.trim()}. Please contact your chapter administrator for more information.`;
       await supabase.from('notifications').insert([{
         member_id: m.id,
         type: 'membership_rejected',
@@ -2448,6 +2474,7 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
         message: `Your membership application was not approved. Reason: ${rejReason.trim()}. Please contact your chapter administrator for more information.`,
         link: '/members/rejected',
       }]);
+      await sendPushToMembers([m.id], pushTitle, pushMessage, '/members/rejected', 'membership-rejected');
     }
     setMembers(prev => prev.map(x => x.id===m.id ? {...x, status:'rejected'} : x));
     setSelected(null); setRejReason(''); setProcessing(false);
@@ -2473,6 +2500,8 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
     await supabase.from('eligible_voters').upsert([{ email:m.email, chapter:m.chapter }], { onConflict:'email' });
     await supabase.from('activity_log').insert([{ member_id:m.id, member_name:m.full_name, chapter:m.chapter, action:'Member reactivated', details:`By ${adminEmail}` }]);
     // Notify member
+    const pushTitle = 'Account Reactivated';
+    const pushMessage = 'Your membership has been reactivated. You now have full access to the member portal.';
     await supabase.from('notifications').insert([{
       member_id: m.id,
       type: 'membership_reactivated',
@@ -2480,6 +2509,7 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
       message: 'Your membership has been reactivated. You now have full access to the member portal.',
       link: '/members/dashboard',
     }]);
+    await sendPushToMembers([m.id], pushTitle, pushMessage, '/members/dashboard', 'membership-reactivated');
     setMembers(prev => prev.map(x => x.id===m.id ? {...x, status:'approved', approved_by:adminEmail, approved_at:approvedAt} : x));
     setSelected(null); setProcessing(false);
     showToast(`${m.full_name} reactivated and added back to voter roster.`);
@@ -2761,6 +2791,8 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
     await supabase.from('activity_log').insert([{ member_name:d.member_name, chapter:d.chapter, action:'Dues payment approved', details:`${symbol}${d.amount} for ${d.period} approved by ${adminEmail}` }]);
     // Notify member
     if (d.member_id) {
+      const pushTitle = 'Payment Approved';
+      const pushMessage = `Your payment of ${d.amount.toLocaleString()} ${d.currency} for ${d.period} has been approved.`;
       await supabase.from('notifications').insert([{
         member_id: d.member_id,
         type: 'dues_approved',
@@ -2768,6 +2800,7 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
         message: `Your payment of ${d.amount.toLocaleString()} ${d.currency} for ${d.period} has been approved.`,
         link: '/members/dashboard',
       }]);
+      await sendPushToMembers([d.member_id], pushTitle, pushMessage, '/members/dashboard', 'dues-approved');
     }
     setDues(prev=>prev.map(x=>x.id===d.id?{...x,status:'approved',approved_by:adminEmail,approved_at:approvedAt}:x));
     setSelected(null); setProcessing(false);
@@ -2780,6 +2813,8 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
     await supabase.from('dues_payments').update({ status:'rejected', approved_by:adminEmail, approved_at:new Date().toISOString() }).eq('id',d.id);
     // Notify member
     if (d.member_id) {
+      const pushTitle = 'Payment Not Approved';
+      const pushMessage = `Your payment of ${d.amount.toLocaleString()} ${d.currency} for ${d.period} was not approved. Please contact your administrator.`;
       await supabase.from('notifications').insert([{
         member_id: d.member_id,
         type: 'dues_rejected',
@@ -2787,6 +2822,7 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
         message: `Your payment of ${d.amount.toLocaleString()} ${d.currency} for ${d.period} was not approved. Please contact your administrator.`,
         link: '/dues',
       }]);
+      await sendPushToMembers([d.member_id], pushTitle, pushMessage, '/dues', 'dues-rejected');
     }
     setDues(prev=>prev.map(x=>x.id===d.id?{...x,status:'rejected'}:x));
     setSelected(null); setProcessing(false);
@@ -3049,6 +3085,43 @@ function AttendanceReport({ events, members, isHeadAdmin, myChapter }: {
     unmarked: 'bg-slate-100 text-slate-500 border-slate-200',
   };
 
+  function exportCSV() {
+    if (!selectedEvent) return;
+    const headers = ['Member','Chapter','Status','Note'];
+    const rows = report.map(({ member: m, status, note }) => [m.full_name, m.chapter, status, note || '--']);
+    const csv = [headers, ...rows]
+      .map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attendance_${(selectedEvent.title || 'event').replace(/\s+/g, '_')}_${selectedEvent.event_date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function copyCaption() {
+    if (!selectedEvent) return;
+    const presentList = report.filter(r => r.status === 'present').map(r => `- ${r.member.full_name}`);
+    const absentList = report.filter(r => r.status === 'absent').map(r => `- ${r.member.full_name}`);
+    const excusedList = report.filter(r => r.status === 'excused').map(r => `- ${r.member.full_name}`);
+    const lines = [
+      'ATTENDANCE REPORT',
+      `Event: ${selectedEvent.title}`,
+      `Date: ${new Date(selectedEvent.event_date).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}`,
+      `Chapter: ${selectedEvent.chapter || 'All Chapters'}`,
+      '',
+      `Present: ${counts.present} | Absent: ${counts.absent} | Excused: ${counts.excused} | Total: ${approvedMembers.length}`,
+      '',
+      'PRESENT:', ...presentList,
+      '',
+      'ABSENT:', ...absentList,
+      ...(excusedList.length > 0 ? ['', 'EXCUSED:', ...excusedList] : []),
+    ];
+    navigator.clipboard.writeText(lines.join('\n')).then(() => alert('Caption copied to clipboard!'));
+  }
+
   return (
     <Card>
       <SectionTitle>📋 Attendance Report</SectionTitle>
@@ -3069,6 +3142,8 @@ function AttendanceReport({ events, members, isHeadAdmin, myChapter }: {
           ))}
         </select>
       </div>
+
+
 
       {selectedEventId && (
         <>
@@ -3105,6 +3180,30 @@ function AttendanceReport({ events, members, isHeadAdmin, myChapter }: {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Export buttons */}
+          {!loading && (
+            <div className="flex gap-2 flex-wrap mb-2">
+              <button onClick={exportCSV} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">📥 Export CSV</button>
+              <button onClick={copyCaption} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">📋 Copy Caption</button>
+            </div>
+          )}
+
+          {/* Export buttons */}
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={exportCSV}
+              className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">
+              📥 Export CSV
+            </button>
+            <button onClick={copyCaption}
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">
+              📋 Copy Caption
+            </button>
+            <a href={`/api/attendance-pdf?event_id=${selectedEventId}`} target="_blank"
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">
+              📄 Print / PDF
+            </a>
           </div>
 
           {/* Member list */}
@@ -4030,6 +4129,8 @@ function ReportsAdminTab({ adminEmail, isHeadAdmin, showToast, members }: {
     // Notify all members
     const approvedMembers = members.filter(m=>m.status==='approved');
     if (approvedMembers.length > 0) {
+      const pushTitle = `New Report: ${title.trim()}`;
+      const pushMessage = `Meeting report for ${chapter} on ${new Date(meetingDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} published.`;
       await supabase.from('notifications').insert(
         approvedMembers.map((m:any)=>({
           member_id: m.id, type: 'meeting_report',
@@ -4038,6 +4139,7 @@ function ReportsAdminTab({ adminEmail, isHeadAdmin, showToast, members }: {
           link: '/reports',
         }))
       );
+      await sendPushToMembers(approvedMembers.map((m:any) => m.id), pushTitle, pushMessage, '/reports', 'meeting-report');
     }
     setReports(prev=>[data,...prev]);
     setTitle(''); setContent(''); setShowForm(false);
@@ -4085,6 +4187,120 @@ function ReportsAdminTab({ adminEmail, isHeadAdmin, showToast, members }: {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ─── RBAC Admin Tab ───────────────────────────────────────────────────────────
+function RBACAdminTab({ showToast }: { showToast: (m: string, ok?: boolean) => void }) {
+  const [admins, setAdmins]     = useState<any[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState<string|null>(null);
+
+  const ROLES = [
+    { value: 'admin',               label: 'Admin',                desc: 'Full access except head-admin settings' },
+    { value: 'president',           label: 'President',            desc: 'Broad access, all major tabs' },
+    { value: 'vp_admin',            label: 'VP Administration',    desc: 'Members, dues, events, applications' },
+    { value: 'vp_operations',       label: 'VP Operations',        desc: 'Events and audit only' },
+    { value: 'financial_secretary', label: 'Financial Secretary',  desc: 'Dues, expenses, donations, investments' },
+    { value: 'secretary_general',   label: 'Secretary General',    desc: 'Members, events, reports' },
+    { value: 'parliamentarian',     label: 'Parliamentarian',      desc: 'Events, audit, reports' },
+    { value: 'treasurer',           label: 'Treasurer',            desc: 'Dues, expenses, donations, investments' },
+    { value: 'chaplain',            label: 'Chaplain',             desc: 'Events and reports only' },
+  ];
+
+  useEffect(() => {
+    supabase.from('election_admins').select('*').order('role')
+      .then(({ data }) => { if (data) setAdmins(data); setLoading(false); });
+  }, []);
+
+  async function updateRole(id: string, email: string, newRole: string) {
+    setSaving(id);
+    const { error } = await supabase.from('election_admins').update({ role: newRole }).eq('id', id);
+    if (error) { showToast(`Failed: ${error.message}`, false); }
+    else {
+      setAdmins(prev => prev.map(a => a.id === id ? { ...a, role: newRole } : a));
+      showToast(`✓ ${email} role updated to ${ROLES.find(r=>r.value===newRole)?.label ?? newRole}.`);
+    }
+    setSaving(null);
+  }
+
+  async function removeAdmin(id: string, email: string) {
+    if (!confirm(`Remove ${email} from admin system?`)) return;
+    setSaving(id);
+    await supabase.from('election_admins').delete().eq('id', id);
+    setAdmins(prev => prev.filter(a => a.id !== id));
+    showToast(`${email} removed from admin system.`);
+    setSaving(null);
+  }
+
+  const ROLE_COLORS: Record<string, string> = {
+    admin: 'bg-slate-700 text-white', president: 'bg-yellow-500 text-black',
+    vp_admin: 'bg-blue-600 text-white', vp_operations: 'bg-green-600 text-white',
+    financial_secretary: 'bg-emerald-600 text-white', secretary_general: 'bg-purple-600 text-white',
+    parliamentarian: 'bg-orange-500 text-white', treasurer: 'bg-red-600 text-white',
+    chaplain: 'bg-pink-600 text-white',
+  };
+
+  if (loading) return <div className="flex justify-center py-10"><Loader2 className="animate-spin text-red-600" size={24}/></div>;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-xl font-black uppercase italic text-slate-800">Role-Based Access Control</h3>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+          Manage which admin portal tabs each officer can access. Changes take effect immediately.
+        </p>
+      </div>
+
+      {/* Role legend */}
+      <div className="bg-slate-50 rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <p className="text-xs font-black text-slate-500 uppercase tracking-widest sm:col-span-2 mb-2">Role Permissions</p>
+        {ROLES.map(r => (
+          <div key={r.value} className="flex items-center gap-3">
+            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-lg shrink-0 ${ROLE_COLORS[r.value]??'bg-slate-200 text-slate-700'}`}>{r.label}</span>
+            <span className="text-xs text-slate-500 font-bold">{r.desc}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Admin list */}
+      <div className="space-y-3">
+        {admins.map(a => (
+          <div key={a.id} className="bg-white rounded-3xl p-5 flex items-center gap-4 shadow-sm border border-slate-100">
+            <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0">
+              <span className="font-black text-slate-600 text-lg">{a.email.charAt(0).toUpperCase()}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-black text-slate-800 text-sm truncate">{a.email}</p>
+              <p className="text-xs text-slate-400 font-bold">{a.branch ?? 'National'}</p>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <select value={a.role ?? 'admin'} onChange={e => updateRole(a.id, a.email, e.target.value)}
+                disabled={saving === a.id}
+                className={`border-2 border-slate-200 focus:border-red-600 rounded-xl px-3 py-2 font-black text-xs uppercase outline-none cursor-pointer disabled:opacity-50 ${ROLE_COLORS[a.role]??'bg-white text-slate-700'}`}>
+                {ROLES.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+              {saving === a.id
+                ? <Loader2 size={16} className="animate-spin text-slate-400"/>
+                : <button onClick={() => removeAdmin(a.id, a.email)}
+                    className="text-slate-300 hover:text-red-600 p-1.5 rounded-xl hover:bg-red-50 transition-all">
+                    <X size={14}/>
+                  </button>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+        <span className="text-amber-500 shrink-0">⚠️</span>
+        <div>
+          <p className="text-xs font-black text-amber-700 uppercase tracking-widest">Important</p>
+          <p className="text-xs text-amber-600 font-bold mt-1">Role changes take effect on the officer's next page load. Head Admin access is controlled separately via the Head Admins setting and cannot be changed here.</p>
+        </div>
+      </div>
     </div>
   );
 }

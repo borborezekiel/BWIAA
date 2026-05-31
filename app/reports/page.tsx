@@ -10,6 +10,19 @@ interface Report {
   content: string; published_by: string; created_at: string;
 }
 
+async function sendPushToMembers(memberIds: string[], title: string, message: string, url = '/reports') {
+  if (memberIds.length === 0) return;
+  try {
+    await fetch('/api/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ member_ids: memberIds, title, message, url, tag: 'meeting-report' }),
+    });
+  } catch (err) {
+    console.warn('Push notification failed (non-critical):', err);
+  }
+}
+
 export default function MeetingReportsPage() {
   const [reports, setReports]   = useState<Report[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -77,6 +90,8 @@ export default function MeetingReportsPage() {
       // Notify all members
       const { data: allMembers } = await supabase.from('members').select('id').eq('status','approved');
       if (allMembers && allMembers.length > 0) {
+        const pushTitle = `New Meeting Report: ${title.trim()}`;
+        const pushMessage = `A report from the ${chapter} meeting on ${new Date(meetingDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} has been published.`;
         await supabase.from('notifications').insert(
           allMembers.map((m: any) => ({
             member_id: m.id,
@@ -86,6 +101,7 @@ export default function MeetingReportsPage() {
             link: '/reports',
           }))
         );
+        await sendPushToMembers(allMembers.map((m: any) => m.id), pushTitle, pushMessage, '/reports');
       }
       setReports(prev => [data, ...prev]);
       setSubmitted(true);
