@@ -80,6 +80,9 @@ export default function BWIAAElection2026() {
   const [tickerSpeed, setTickerSpeed] = useState<'slow'|'medium'|'fast'>('medium');
   const tickerDuration = tickerSpeed === 'slow' ? '90s' : tickerSpeed === 'fast' ? '35s' : '60s';
 
+  const [portalLocked, setPortalLocked]   = useState(false);
+  const [lockedMsg, setLockedMsg]         = useState('');
+
   // ── Init ────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
@@ -122,6 +125,8 @@ export default function BWIAAElection2026() {
           // ── NEW: read registration_open phase ──────────────────────────────
           setRegistrationOpen(get('registration_open') === 'true');
           setVotingOpen(get('voting_open') === 'true');
+          setPortalLocked(get('portal_locked') === 'true');
+          if (get('portal_locked_message')) setLockedMsg(get('portal_locked_message'));
 
           // ── Load ticker announcements & speed from settings ────────────────
           if (get('ticker_announcements')) {
@@ -352,38 +357,31 @@ export default function BWIAAElection2026() {
 
     const pos = confirm.pos;
     const cand = confirm.cand;
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
 
-    // ── Step 1: INSERT only — do not chain .select() which can fail independently ──
-    const { error: insertError } = await supabase
-      .from('votes')
-      .insert([{ position_name: pos, candidate_name: cand, voter_name: user.email, voter_id: user.id, chapter: myChapter, class_year: myClass }]);
-
-    if (insertError) {
+    if (!token) {
       setCasting(false);
       setConfirm(null);
-      if (insertError.code === '23505') {
-        setErrorMessage(`INTEGRITY ALERT: You have already cast a ballot for ${pos}.`);
-      } else if (insertError.code === '42501' || insertError.message?.includes('row-level security')) {
-        setErrorMessage('VOTING IS NOT OPEN. The Election Committee has not officially opened the ballot yet.');
-      } else {
-        setErrorMessage(`Vote could not be recorded: ${insertError.message}. Please contact your administrator.`);
-      }
+      setErrorMessage('Your session expired. Please sign in again before voting.');
       return;
     }
 
-    // ── Step 2: Fetch the inserted row separately ─────────────────────────────
-    const { data: inserted } = await supabase
-      .from('votes')
-      .select('*')
-      .eq('voter_id', user.id)
-      .eq('position_name', pos)
-      .maybeSingle();
+    const res = await fetch('/api/vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ position_name: pos, candidate_name: cand, chapter: myChapter, class_year: myClass }),
+    });
+    const result = await res.json();
 
     setCasting(false);
     setConfirm(null);
-    setReceipt(inserted ?? { id: Date.now(), position_name: pos, candidate_name: cand, chapter: myChapter, class_year: myClass, created_at: new Date().toISOString(), voter_id: user.id, voter_name: user.email });
+    if (!res.ok || !result.ok) {
+      setErrorMessage(result.error ?? 'Vote could not be recorded. Please contact your administrator.');
+      return;
+    }
 
-    // ── Step 3: Refresh full vote tally ──────────────────────────────────────
+    setReceipt(result.vote as VoteRow);
     await refreshVotes();
   }
 
@@ -969,7 +967,25 @@ export default function BWIAAElection2026() {
         </div>
       )}
 
-      {!votingOpen && !votingClosed && (
+      {portalLocked && !votingOpen && (
+        <div className="bg-slate-900 border-b border-white/10 py-6 px-6 text-center">
+          <div className="max-w-2xl mx-auto">
+            <p className="text-2xl font-black text-white uppercase mb-2">🔒 Election Portal Closed</p>
+            <p className="text-white/60 font-bold text-sm mb-6">{lockedMsg || 'The election portal is currently closed. Check back for the next election cycle.'}</p>
+            <div className="flex flex-wrap justify-center gap-3">
+              {[
+                {href:'/members/dashboard', label:'Member Dashboard', color:'bg-red-600'},
+                {href:'/feed',              label:'Community Feed',   color:'bg-slate-700'},
+                {href:'/officers',          label:'Our Officers',     color:'bg-yellow-500 text-black'},
+                {href:'/reports',           label:'Meeting Reports',  color:'bg-purple-600'},
+              ].map(l=>(
+                <a key={l.href} href={l.href} className={`${l.color} text-white font-black uppercase text-xs px-5 py-3 rounded-xl hover:opacity-90 transition-all`}>{l.label}</a>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {!votingOpen && !votingClosed && !portalLocked && (
         <div className="bg-slate-800 text-white text-center py-4 px-6 font-black uppercase tracking-widest text-sm">
           ⏳ Voting has not opened yet — The Election Committee will announce when the ballot opens.
         </div>

@@ -17,6 +17,7 @@ interface Member {
   id: string; auth_user_id: string; full_name: string; email: string;
   phone: string|null; class_name: string; year_graduated: number;
   sponsor_name: string; principal_name: string; id_number: string;
+  department: string | null;
   chapter: string; chapter_locked: boolean; photo_url: string|null;
   status: string; theme: string; approved_by: string|null;
   approved_at: string|null; created_at: string;
@@ -137,6 +138,8 @@ export default function MemberDashboard() {
   // Portal locked
   const [portalLocked, setPortalLocked] = useState(false);
   const [lockedMessage, setLockedMessage] = useState('');
+  // Officer role — any election_admins entry gets command center access
+  const [officerRole, setOfficerRole] = useState('');
 
   // Feed settings (from admin)
   const [feedAllowPhotos,   setFeedAllowPhotos]   = useState(true);
@@ -169,6 +172,7 @@ export default function MemberDashboard() {
   const [profileYearGrad, setProfileYearGrad]   = useState('');
   const [profileSponsor, setProfileSponsor]     = useState('');
   const [profilePrincipal, setProfilePrincipal] = useState('');
+  const [profileDepartment, setProfileDepartment] = useState('');
   const [profilePhotoFile, setProfilePhotoFile] = useState<File|null>(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string|null>(null);
   const [profileMsg, setProfileMsg]         = useState('');
@@ -207,6 +211,9 @@ export default function MemberDashboard() {
 
       // Member lookup
       setSessionUid(user.id); // store for RLS-safe DB writes
+      // Check if user is an officer/admin
+      const { data: adminRec } = await supabase.from('election_admins').select('role').eq('email', user.email?.toLowerCase() ?? '').maybeSingle();
+      if (adminRec?.role) setOfficerRole(adminRec.role);
       let mem: any = null;
       const { data: m1 } = await supabase.from('members').select('*').eq('auth_user_id', user.id).maybeSingle();
       if (m1) { mem = m1; }
@@ -221,7 +228,7 @@ export default function MemberDashboard() {
       setMember(mem); setTheme(mem.theme ?? 'system');
       setProfileName(mem.full_name ?? ''); setProfilePhone(mem.phone ?? '');
       setProfileClassName(mem.class_name ?? ''); setProfileYearGrad(mem.year_graduated ? String(mem.year_graduated) : '');
-      setProfileSponsor(mem.sponsor_name ?? ''); setProfilePrincipal(mem.principal_name ?? '');
+      setProfileSponsor(mem.sponsor_name ?? ''); setProfilePrincipal(mem.principal_name ?? ''); setProfileDepartment(mem.department ?? '');
 
       // Parallel data load
       const [
@@ -236,7 +243,7 @@ export default function MemberDashboard() {
         supabase.from('attendance').select('*').eq('member_id', mem.id),
         supabase.from('notifications').select('*').eq('member_id', mem.id).order('created_at',{ascending:false}).limit(30),
         supabase.from('election_settings').select('key,value').in('key',['feed_allow_photos','feed_allow_videos','feed_max_photo_mb','feed_max_video_mb','feed_max_post_length','feed_require_approval']),
-        supabase.from('members').select('id,full_name,chapter,photo_url,phone,class_name,year_graduated,sponsor_name,principal_name,id_number,created_at').eq('status','approved').order('full_name'),
+        supabase.from('members').select('id,full_name,chapter,photo_url,phone,class_name,year_graduated,sponsor_name,principal_name,id_number,department,created_at').eq('status','approved').order('full_name'),
       ]);
       if (d) setDues(d);
       if (a) setActivity(a);
@@ -450,13 +457,10 @@ export default function MemberDashboard() {
   // ── Push Notifications ───────────────────────────────────────────────────────
   const [pushEnabled, setPushEnabled]   = useState(false);
   const [pushLoading, setPushLoading]   = useState(false);
-  const [pushSupported, setPushSupported] = useState(false);
 
   useEffect(() => {
     // Check if already subscribed
-    const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-    setPushSupported(supported);
-    if (!supported) return;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     navigator.serviceWorker.ready.then(reg => {
       reg.pushManager.getSubscription().then(sub => {
         setPushEnabled(!!sub);
@@ -555,7 +559,7 @@ export default function MemberDashboard() {
         if (ue) throw new Error(ue.message);
         photo_url = supabase.storage.from('candidate-photos').getPublicUrl(ud.path).data.publicUrl;
       }
-      const updates: any = { full_name: profileName.trim(), phone: profilePhone.trim()||null, class_name: profileClassName.trim()||null, year_graduated: profileYearGrad?parseInt(profileYearGrad):null, sponsor_name: profileSponsor.trim()||null, principal_name: profilePrincipal.trim()||null, photo_url };
+      const updates: any = { full_name: profileName.trim(), phone: profilePhone.trim()||null, class_name: profileClassName.trim()||null, year_graduated: profileYearGrad?parseInt(profileYearGrad):null, sponsor_name: profileSponsor.trim()||null, principal_name: profilePrincipal.trim()||null, department: profileDepartment||null, photo_url };
       const { error } = await supabase.from('members').update(updates).eq('id', member.id);
       if (error) throw new Error(error.message);
       setMember(prev => prev ? {...prev, ...updates} : prev);
@@ -617,12 +621,12 @@ export default function MemberDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Admin command center — only for admins */}
-            {isAdmin && (
+            {/* Admin command center — visible to ALL officers and admins */}
+            {(isAdmin || officerRole) && (
               <a href="/admin"
                 className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all ${isDark?'bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white':'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200'}`}>
                 <Terminal size={13}/>
-                <span className="hidden sm:inline">Command</span>
+                <span className="hidden sm:inline">{officerRole ? officerRole.replace(/_/g,' ') : 'Command'}</span>
               </a>
             )}
 
@@ -964,7 +968,7 @@ export default function MemberDashboard() {
             <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>
               <h3 className={`font-black ${text} uppercase italic text-lg mb-6`}>Member Details</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {[['Member ID',member.id.slice(0,8).toUpperCase()],['Email',member.email],['Phone',member.phone??'—'],['ID Number',member.id_number],['Class Sponsor',member.sponsor_name],['Principal',member.principal_name],['Chapter',member.chapter+(member.chapter_locked?' 🔒':'')],['Approved By',member.approved_by??'Pending']].map(([l,v]) => (
+                {[['Member ID',member.id.slice(0,8).toUpperCase()],['Email',member.email],['Phone',member.phone??'—'],['ID Number',member.id_number],['Department',(member as any).department??'—'],['Class Sponsor',member.sponsor_name],['Principal',member.principal_name],['Chapter',member.chapter+(member.chapter_locked?' 🔒':'')],['Approved By',member.approved_by??'Pending']].map(([l,v]) => (
                   <div key={l} className={`${isDark?'bg-white/5':'bg-slate-50'} rounded-2xl p-4`}>
                     <p className={`text-[10px] font-black ${subtext} uppercase tracking-widest mb-1`}>{l}</p>
                     <p className={`font-black ${text} text-sm`}>{v}</p>
@@ -1184,11 +1188,12 @@ export default function MemberDashboard() {
                   </div>
                   <div className={`${isDark?'bg-white/5':'bg-slate-50'} rounded-2xl p-5 space-y-2`}>
                     {[
-                      ['Class',    selectedPerson.class_name ?? '—'],
-                      ['Year',     selectedPerson.year_graduated ? String(selectedPerson.year_graduated) : '—'],
-                      ['Sponsor',  selectedPerson.sponsor_name  ?? '—'],
-                      ['Principal',selectedPerson.principal_name ?? '—'],
-                      ['Phone',    selectedPerson.phone          ?? 'Not provided'],
+                      ['Class',      selectedPerson.class_name ?? '—'],
+                      ['Year',       selectedPerson.year_graduated ? String(selectedPerson.year_graduated) : '—'],
+                      ['Department', (selectedPerson as any).department ?? '—'],
+                      ['Sponsor',    selectedPerson.sponsor_name  ?? '—'],
+                      ['Principal',  selectedPerson.principal_name ?? '—'],
+                      ['Phone',      selectedPerson.phone          ?? 'Not provided'],
                       ['Member Since', new Date(selectedPerson.created_at).toLocaleDateString('en-US',{year:'numeric',month:'long'})],
                     ].map(([l,v]) => (
                       <div key={l} className={`flex justify-between py-1.5 border-b ${isDark?'border-white/10':'border-slate-100'} last:border-0`}>
@@ -1216,7 +1221,7 @@ export default function MemberDashboard() {
                     <div className="flex-1 min-w-0">
                       <p className={`font-black ${text} text-sm truncate`}>{m.full_name}</p>
                       <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest truncate">{m.chapter}</p>
-                      <p className={`text-[10px] ${subtext} font-bold mt-0.5`}>{m.class_name ?? ''}{m.year_graduated ? ` · ${m.year_graduated}` : ''}</p>
+                      <p className={`text-[10px] ${subtext} font-bold mt-0.5`}>{m.class_name ?? ''}{m.year_graduated ? ` · ${m.year_graduated}` : ''}{(m as any).department ? ` · ${(m as any).department}` : ''}</p>
                       {m.id === member.id && <span className="text-[9px] bg-green-100 text-green-700 font-black uppercase px-2 py-0.5 rounded-full">You</span>}
                     </div>
                     <span className={`text-[10px] ${subtext} font-bold shrink-0`}>View →</span>
@@ -1270,6 +1275,17 @@ export default function MemberDashboard() {
                       className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}/>
                   </div>
                 ))}
+                {/* Department */}
+                <div className="sm:col-span-2">
+                  <label className={`block text-xs font-black ${subtext} uppercase tracking-widest mb-2`}>Department / Trade</label>
+                  <select value={profileDepartment} onChange={e=>setProfileDepartment(e.target.value)}
+                    className={`w-full border-2 rounded-2xl px-5 py-4 font-bold outline-none ${inputCls}`}>
+                    <option value="">— Select Department —</option>
+                    {['Electronics','Electrical','Secretarial Science','Accounting','Automotive','Domestic Science','Machinery','Agriculture','Building Trade (Carpentry, Masoning, Plumbing, Drafting)','Others'].map(d=>(
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               {profileMsg && <p className={`text-xs font-bold ${profileMsg.startsWith('✓')?'text-green-600':'text-red-600'}`}>{profileMsg}</p>}
               <button onClick={saveProfile} disabled={profileSaving} className="bg-red-600 hover:bg-red-700 text-white font-black uppercase px-6 py-3 rounded-2xl text-sm flex items-center gap-2 disabled:opacity-50 transition-all">
@@ -1278,7 +1294,7 @@ export default function MemberDashboard() {
             </div>
 
             {/* Push Notifications */}
-            {pushSupported && (
+            {'Notification' in window && 'serviceWorker' in navigator && (
               <div className={`${card} border rounded-[2.5rem] p-8 shadow-sm`}>
                 <h4 className={`font-black ${text} uppercase tracking-widest text-sm mb-1 flex items-center gap-2`}>
                   <Bell size={16} className="text-red-600"/> Push Notifications

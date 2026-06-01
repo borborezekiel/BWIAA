@@ -77,19 +77,6 @@ type ElectionConfig = typeof DEFAULT_CONFIG;
 let CHAPTERS  = DEFAULT_CONFIG.chapters;
 let POSITIONS = DEFAULT_CONFIG.positions_fees.map(p => p.position);
 
-async function sendPushToMembers(memberIds: string[], title: string, message: string, url = '/members/dashboard', tag = 'bwiaa-activity') {
-  if (memberIds.length === 0) return;
-  try {
-    await fetch('/api/push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ member_ids: memberIds, title, message, url, tag }),
-    });
-  } catch (err) {
-    console.warn('Push notification failed (non-critical):', err);
-  }
-}
-
 // Election phase type
 interface ElectionPhases {
   registration_open: boolean;
@@ -1319,8 +1306,6 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
     try {
       const { data: mem } = await supabase.from('members').select('id').eq('email', app.applicant_email?.toLowerCase() ?? '').maybeSingle();
       if (mem?.id) {
-        const pushTitle = 'Candidacy Approved!';
-        const pushMessage = `Your application to run for ${app.position_name} in the ${app.chapter} has been approved. You are now an official candidate.`;
         await supabase.from('notifications').insert([{
           member_id: mem.id,
           type: 'application_approved',
@@ -1328,7 +1313,6 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
           message: `Your application to run for ${app.position_name} in the ${app.chapter} has been approved. You are now an official candidate.`,
           link: '/members/dashboard',
         }]);
-        await sendPushToMembers([mem.id], pushTitle, pushMessage, '/members/dashboard', 'application-approved');
       }
     } catch {}
   }
@@ -1354,8 +1338,6 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
     try {
       const { data: mem } = await supabase.from('members').select('id').eq('email', app.applicant_email?.toLowerCase() ?? '').maybeSingle();
       if (mem?.id) {
-        const pushTitle = 'Candidacy Application Update';
-        const pushMessage = `Your application for ${app.position_name} was not approved. Reason: ${rejReason.trim()}. Contact the Election Committee for more information.`;
         await supabase.from('notifications').insert([{
           member_id: mem.id,
           type: 'application_rejected',
@@ -1363,7 +1345,6 @@ function ApplicationsTab({ applications, setApplications, setCandidates, showToa
           message: `Your application for ${app.position_name} was not approved. Reason: ${rejReason.trim()}. Contact the Election Committee for more information.`,
           link: '/members/dashboard',
         }]);
-        await sendPushToMembers([mem.id], pushTitle, pushMessage, '/members/dashboard', 'application-rejected');
       }
     } catch {}
   }
@@ -2441,8 +2422,6 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
     await supabase.from('activity_log').insert([{ member_id:m.id, member_name:m.full_name, chapter:m.chapter, action:'Membership approved — added to voter roster', details:`Approved by ${adminEmail}` }]);
     // Notify member
     if (m.id) {
-      const pushTitle = 'Membership Approved!';
-      const pushMessage = 'Welcome to BWIAA! Your membership has been approved. You now have full access to the member portal.';
       await supabase.from('notifications').insert([{
         member_id: m.id,
         type: 'membership_approved',
@@ -2450,7 +2429,6 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
         message: `Welcome to BWIAA! Your membership has been approved. You now have full access to the member portal.`,
         link: '/members/dashboard',
       }]);
-      await sendPushToMembers([m.id], pushTitle, pushMessage, '/members/dashboard', 'membership-approved');
     }
     setMembers(prev => prev.map(x => x.id===m.id ? {...x, status:'approved', approved_by:adminEmail, approved_at:approvedAt} : x));
     setSelected(null); setProcessing(false);
@@ -2465,8 +2443,6 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
     await supabase.from('activity_log').insert([{ member_id:m.id, member_name:m.full_name, chapter:m.chapter, action:'Membership rejected', details:`Reason: ${rejReason.trim()}` }]);
     // Notify member
     if (m.id) {
-      const pushTitle = 'Membership Application Update';
-      const pushMessage = `Your membership application was not approved. Reason: ${rejReason.trim()}. Please contact your chapter administrator for more information.`;
       await supabase.from('notifications').insert([{
         member_id: m.id,
         type: 'membership_rejected',
@@ -2474,7 +2450,6 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
         message: `Your membership application was not approved. Reason: ${rejReason.trim()}. Please contact your chapter administrator for more information.`,
         link: '/members/rejected',
       }]);
-      await sendPushToMembers([m.id], pushTitle, pushMessage, '/members/rejected', 'membership-rejected');
     }
     setMembers(prev => prev.map(x => x.id===m.id ? {...x, status:'rejected'} : x));
     setSelected(null); setRejReason(''); setProcessing(false);
@@ -2500,8 +2475,6 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
     await supabase.from('eligible_voters').upsert([{ email:m.email, chapter:m.chapter }], { onConflict:'email' });
     await supabase.from('activity_log').insert([{ member_id:m.id, member_name:m.full_name, chapter:m.chapter, action:'Member reactivated', details:`By ${adminEmail}` }]);
     // Notify member
-    const pushTitle = 'Account Reactivated';
-    const pushMessage = 'Your membership has been reactivated. You now have full access to the member portal.';
     await supabase.from('notifications').insert([{
       member_id: m.id,
       type: 'membership_reactivated',
@@ -2509,7 +2482,6 @@ function MembersTab({ members, setMembers, showToast, isHeadAdmin, myChapter, ad
       message: 'Your membership has been reactivated. You now have full access to the member portal.',
       link: '/members/dashboard',
     }]);
-    await sendPushToMembers([m.id], pushTitle, pushMessage, '/members/dashboard', 'membership-reactivated');
     setMembers(prev => prev.map(x => x.id===m.id ? {...x, status:'approved', approved_by:adminEmail, approved_at:approvedAt} : x));
     setSelected(null); setProcessing(false);
     showToast(`${m.full_name} reactivated and added back to voter roster.`);
@@ -2791,8 +2763,6 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
     await supabase.from('activity_log').insert([{ member_name:d.member_name, chapter:d.chapter, action:'Dues payment approved', details:`${symbol}${d.amount} for ${d.period} approved by ${adminEmail}` }]);
     // Notify member
     if (d.member_id) {
-      const pushTitle = 'Payment Approved';
-      const pushMessage = `Your payment of ${d.amount.toLocaleString()} ${d.currency} for ${d.period} has been approved.`;
       await supabase.from('notifications').insert([{
         member_id: d.member_id,
         type: 'dues_approved',
@@ -2800,7 +2770,6 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
         message: `Your payment of ${d.amount.toLocaleString()} ${d.currency} for ${d.period} has been approved.`,
         link: '/members/dashboard',
       }]);
-      await sendPushToMembers([d.member_id], pushTitle, pushMessage, '/members/dashboard', 'dues-approved');
     }
     setDues(prev=>prev.map(x=>x.id===d.id?{...x,status:'approved',approved_by:adminEmail,approved_at:approvedAt}:x));
     setSelected(null); setProcessing(false);
@@ -2813,8 +2782,6 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
     await supabase.from('dues_payments').update({ status:'rejected', approved_by:adminEmail, approved_at:new Date().toISOString() }).eq('id',d.id);
     // Notify member
     if (d.member_id) {
-      const pushTitle = 'Payment Not Approved';
-      const pushMessage = `Your payment of ${d.amount.toLocaleString()} ${d.currency} for ${d.period} was not approved. Please contact your administrator.`;
       await supabase.from('notifications').insert([{
         member_id: d.member_id,
         type: 'dues_rejected',
@@ -2822,7 +2789,6 @@ function DuesTab({ dues, setDues, showToast, isHeadAdmin, myChapter, adminEmail,
         message: `Your payment of ${d.amount.toLocaleString()} ${d.currency} for ${d.period} was not approved. Please contact your administrator.`,
         link: '/dues',
       }]);
-      await sendPushToMembers([d.member_id], pushTitle, pushMessage, '/dues', 'dues-rejected');
     }
     setDues(prev=>prev.map(x=>x.id===d.id?{...x,status:'rejected'}:x));
     setSelected(null); setProcessing(false);
@@ -3629,11 +3595,7 @@ function DonationsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; m
     setProcessing(item.id);
     const { data: { user } } = await supabase.auth.getUser();
     const approvedAt = new Date().toISOString();
-    const { error } = await supabase.from('donations').update({
-      status,
-      approved_by: user?.email ?? 'admin',
-      approved_at: approvedAt,
-    }).eq('id', item.id);
+    const { error } = await supabase.from('donations').update({ status, approved_by: user?.email ?? 'admin', approved_at: approvedAt }).eq('id', item.id);
     setProcessing(null);
     if (error) return alert(error.message);
     setDonations(prev => prev.map(d => d.id === item.id ? { ...d, status, approved_by: user?.email, approved_at: approvedAt } : d));
@@ -3650,21 +3612,9 @@ function DonationsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; m
             {visible.map(d => (
               <div key={d.id} className="flex items-center gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
                 <Heart size={22} className="text-red-600 shrink-0"/>
-                <div className="flex-1 min-w-0">
-                  <p className="font-black text-slate-800 truncate">{d.donor_name}</p>
-                  <p className="text-xs text-slate-400 font-bold truncate">{d.purpose ?? d.donation_type ?? 'Donation'} / {d.chapter ?? 'All Chapters'}</p>
-                  {(d.receipt_url || d.photo_url) && <div className="flex gap-3 mt-2 text-xs font-black uppercase">{d.receipt_url && <a href={d.receipt_url} target="_blank" rel="noreferrer" className="text-blue-600">Receipt</a>}{d.photo_url && <a href={d.photo_url} target="_blank" rel="noreferrer" className="text-blue-600">Photo</a>}</div>}
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="font-black text-slate-800">{d.amount ? `${Number(d.amount).toLocaleString()} ${d.currency ?? 'LRD'}` : 'Material'}</p>
-                  <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badge(d.status)}`}>{d.status}</span>
-                </div>
-                {d.status === 'pending' && (
-                  <div className="flex gap-2 shrink-0">
-                    <button onClick={() => updateStatus(d, 'approved')} disabled={processing === d.id} className="bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Approve</button>
-                    <button onClick={() => updateStatus(d, 'rejected')} disabled={processing === d.id} className="bg-red-100 hover:bg-red-200 text-red-700 font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Reject</button>
-                  </div>
-                )}
+                <div className="flex-1 min-w-0"><p className="font-black text-slate-800 truncate">{d.donor_name}</p><p className="text-xs text-slate-400 font-bold truncate">{d.purpose ?? d.donation_type ?? 'Donation'} / {d.chapter ?? 'All Chapters'}</p></div>
+                <div className="text-right shrink-0"><p className="font-black text-slate-800">{d.amount ? `${Number(d.amount).toLocaleString()} ${d.currency ?? 'LRD'}` : 'Material'}</p><span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badge(d.status)}`}>{d.status}</span></div>
+                {d.status === 'pending' && <div className="flex gap-2 shrink-0"><button onClick={() => updateStatus(d, 'approved')} disabled={processing === d.id} className="bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Approve</button><button onClick={() => updateStatus(d, 'rejected')} disabled={processing === d.id} className="bg-red-100 hover:bg-red-200 text-red-700 font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Reject</button></div>}
               </div>
             ))}
             {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}donations.</p>}
@@ -3699,11 +3649,7 @@ function ContributionsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolea
     setProcessing(item.id);
     const { data: { user } } = await supabase.auth.getUser();
     const approvedAt = new Date().toISOString();
-    const { error } = await supabase.from('contributions').update({
-      status,
-      approved_by: user?.email ?? 'admin',
-      approved_at: approvedAt,
-    }).eq('id', item.id);
+    const { error } = await supabase.from('contributions').update({ status, approved_by: user?.email ?? 'admin', approved_at: approvedAt }).eq('id', item.id);
     setProcessing(null);
     if (error) return alert(error.message);
     setContributions(prev => prev.map(c => c.id === item.id ? { ...c, status, approved_by: user?.email, approved_at: approvedAt } : c));
@@ -3722,12 +3668,7 @@ function ContributionsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolea
                 <Users size={22} className="text-blue-600 shrink-0"/>
                 <div className="flex-1 min-w-0"><p className="font-black text-slate-800 truncate">{c.from_member_name} to {c.to_member_name}</p><p className="text-xs text-slate-400 font-bold truncate">{c.reason_type ?? 'Support'} / {c.from_chapter}</p></div>
                 <div className="text-right shrink-0"><p className="font-black text-slate-800">{Number(c.amount ?? 0).toLocaleString()} {c.currency ?? 'LRD'}</p><span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badge(c.status)}`}>{c.status}</span></div>
-                {c.status === 'pending' && (
-                  <div className="flex gap-2 shrink-0">
-                    <button onClick={() => updateStatus(c, 'approved')} disabled={processing === c.id} className="bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Approve</button>
-                    <button onClick={() => updateStatus(c, 'rejected')} disabled={processing === c.id} className="bg-red-100 hover:bg-red-200 text-red-700 font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Reject</button>
-                  </div>
-                )}
+                {c.status === 'pending' && <div className="flex gap-2 shrink-0"><button onClick={() => updateStatus(c, 'approved')} disabled={processing === c.id} className="bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Approve</button><button onClick={() => updateStatus(c, 'rejected')} disabled={processing === c.id} className="bg-red-100 hover:bg-red-200 text-red-700 font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Reject</button></div>}
               </div>
             ))}
             {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}solidarity records.</p>}
@@ -4129,8 +4070,6 @@ function ReportsAdminTab({ adminEmail, isHeadAdmin, showToast, members }: {
     // Notify all members
     const approvedMembers = members.filter(m=>m.status==='approved');
     if (approvedMembers.length > 0) {
-      const pushTitle = `New Report: ${title.trim()}`;
-      const pushMessage = `Meeting report for ${chapter} on ${new Date(meetingDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} published.`;
       await supabase.from('notifications').insert(
         approvedMembers.map((m:any)=>({
           member_id: m.id, type: 'meeting_report',
@@ -4139,7 +4078,6 @@ function ReportsAdminTab({ adminEmail, isHeadAdmin, showToast, members }: {
           link: '/reports',
         }))
       );
-      await sendPushToMembers(approvedMembers.map((m:any) => m.id), pushTitle, pushMessage, '/reports', 'meeting-report');
     }
     setReports(prev=>[data,...prev]);
     setTitle(''); setContent(''); setShowForm(false);
@@ -4193,35 +4131,56 @@ function ReportsAdminTab({ adminEmail, isHeadAdmin, showToast, members }: {
 
 // ─── RBAC Admin Tab ───────────────────────────────────────────────────────────
 function RBACAdminTab({ showToast }: { showToast: (m: string, ok?: boolean) => void }) {
-  const [admins, setAdmins]     = useState<any[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [saving, setSaving]     = useState<string|null>(null);
+  const [admins, setAdmins]       = useState<any[]>([]);
+  const [allMembers, setAllMembers] = useState<any[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [saving, setSaving]       = useState<string|null>(null);
+  const [search, setSearch]       = useState('');
+  const [showAdd, setShowAdd]     = useState(false);
+  const [addEmail, setAddEmail]   = useState('');
+  const [addRole, setAddRole]     = useState('admin');
+  const [addBranch, setAddBranch] = useState('Harbel Chapter');
 
   const ROLES = [
-    { value: 'admin',               label: 'Admin',                desc: 'Full access except head-admin settings' },
-    { value: 'president',           label: 'President',            desc: 'Broad access, all major tabs' },
-    { value: 'vp_admin',            label: 'VP Administration',    desc: 'Members, dues, events, applications' },
-    { value: 'vp_operations',       label: 'VP Operations',        desc: 'Events and audit only' },
-    { value: 'financial_secretary', label: 'Financial Secretary',  desc: 'Dues, expenses, donations, investments' },
-    { value: 'secretary_general',   label: 'Secretary General',    desc: 'Members, events, reports' },
-    { value: 'parliamentarian',     label: 'Parliamentarian',      desc: 'Events, audit, reports' },
-    { value: 'treasurer',           label: 'Treasurer',            desc: 'Dues, expenses, donations, investments' },
-    { value: 'chaplain',            label: 'Chaplain',             desc: 'Events and reports only' },
+    { value: 'admin',               label: 'Admin',               color: 'bg-slate-700 text-white' },
+    { value: 'president',           label: 'President',           color: 'bg-yellow-500 text-black' },
+    { value: 'vp_admin',            label: 'VP Administration',   color: 'bg-blue-600 text-white' },
+    { value: 'vp_operations',       label: 'VP Operations',       color: 'bg-green-600 text-white' },
+    { value: 'financial_secretary', label: 'Fin. Secretary',      color: 'bg-emerald-600 text-white' },
+    { value: 'secretary_general',   label: 'Sec. General',        color: 'bg-purple-600 text-white' },
+    { value: 'parliamentarian',     label: 'Parliamentarian',     color: 'bg-orange-500 text-white' },
+    { value: 'treasurer',           label: 'Treasurer',           color: 'bg-red-600 text-white' },
+    { value: 'chaplain',            label: 'Chaplain',            color: 'bg-pink-600 text-white' },
   ];
 
+  const ROLE_TABS: Record<string,string> = {
+    admin: 'All tabs except Settings & Admins',
+    president: 'Overview, Results, Candidates, Voters, Members, Dues, Events, Expenses, Reports',
+    vp_admin: 'Overview, Members, Applications, Dues, Events, Contributions, Reports',
+    vp_operations: 'Overview, Events, Audit',
+    financial_secretary: 'Overview, Dues, Expenses, Donations, Investments, Reports',
+    secretary_general: 'Overview, Members, Events, Reports',
+    parliamentarian: 'Overview, Events, Audit, Reports',
+    treasurer: 'Overview, Dues, Expenses, Donations, Investments, Reports',
+    chaplain: 'Overview, Events, Reports',
+  };
+
   useEffect(() => {
-    supabase.from('election_admins').select('*').order('role')
-      .then(({ data }) => { if (data) setAdmins(data); setLoading(false); });
+    Promise.all([
+      supabase.from('election_admins').select('*').order('role'),
+      supabase.from('members').select('id,full_name,email,chapter,photo_url,status').eq('status','approved').order('full_name'),
+    ]).then(([{ data: a }, { data: m }]) => {
+      if (a) setAdmins(a);
+      if (m) setAllMembers(m);
+      setLoading(false);
+    });
   }, []);
 
   async function updateRole(id: string, email: string, newRole: string) {
     setSaving(id);
-    const { error } = await supabase.from('election_admins').update({ role: newRole }).eq('id', id);
-    if (error) { showToast(`Failed: ${error.message}`, false); }
-    else {
-      setAdmins(prev => prev.map(a => a.id === id ? { ...a, role: newRole } : a));
-      showToast(`✓ ${email} role updated to ${ROLES.find(r=>r.value===newRole)?.label ?? newRole}.`);
-    }
+    await supabase.from('election_admins').update({ role: newRole }).eq('id', id);
+    setAdmins(prev => prev.map(a => a.id === id ? { ...a, role: newRole } : a));
+    showToast(`✓ ${email} → ${ROLES.find(r=>r.value===newRole)?.label}`);
     setSaving(null);
   }
 
@@ -4230,76 +4189,153 @@ function RBACAdminTab({ showToast }: { showToast: (m: string, ok?: boolean) => v
     setSaving(id);
     await supabase.from('election_admins').delete().eq('id', id);
     setAdmins(prev => prev.filter(a => a.id !== id));
-    showToast(`${email} removed from admin system.`);
+    showToast(`${email} removed.`);
     setSaving(null);
   }
 
-  const ROLE_COLORS: Record<string, string> = {
-    admin: 'bg-slate-700 text-white', president: 'bg-yellow-500 text-black',
-    vp_admin: 'bg-blue-600 text-white', vp_operations: 'bg-green-600 text-white',
-    financial_secretary: 'bg-emerald-600 text-white', secretary_general: 'bg-purple-600 text-white',
-    parliamentarian: 'bg-orange-500 text-white', treasurer: 'bg-red-600 text-white',
-    chaplain: 'bg-pink-600 text-white',
-  };
+  async function addFromMember(member: any) {
+    setSaving(member.id);
+    // Check if already exists
+    const exists = admins.find(a => a.email.toLowerCase() === member.email.toLowerCase());
+    if (exists) { showToast(`${member.email} already has a role.`, false); setSaving(null); return; }
+    const { data, error } = await supabase.from('election_admins')
+      .insert([{ email: member.email.toLowerCase(), branch: member.chapter, role: 'admin' }])
+      .select().single();
+    if (error) { showToast(`Failed: ${error.message}`, false); }
+    else { setAdmins(prev => [...prev, data]); showToast(`✓ ${member.full_name} added as Admin.`); }
+    setSaving(null);
+  }
+
+  async function addManual() {
+    if (!addEmail.trim()) return;
+    setSaving('new');
+    const { data, error } = await supabase.from('election_admins')
+      .insert([{ email: addEmail.trim().toLowerCase(), branch: addBranch, role: addRole }])
+      .select().single();
+    if (error) { showToast(`Failed: ${error.message}`, false); }
+    else { setAdmins(prev => [...prev, data]); showToast(`✓ ${addEmail} added as ${addRole}.`); setAddEmail(''); setShowAdd(false); }
+    setSaving(null);
+  }
+
+  const adminEmails = new Set(admins.map(a => a.email.toLowerCase()));
+
+  // Non-admin members matching search
+  const filteredMembers = allMembers.filter(m =>
+    !adminEmails.has(m.email.toLowerCase()) &&
+    (!search || m.full_name.toLowerCase().includes(search.toLowerCase()) || m.email.toLowerCase().includes(search.toLowerCase()))
+  );
 
   if (loading) return <div className="flex justify-center py-10"><Loader2 className="animate-spin text-red-600" size={24}/></div>;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-xl font-black uppercase italic text-slate-800">Role-Based Access Control</h3>
-        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-          Manage which admin portal tabs each officer can access. Changes take effect immediately.
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h3 className="text-xl font-black uppercase italic text-slate-800">Role-Based Access Control</h3>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Manage admin portal access for all officers</p>
+        </div>
+        <button onClick={() => setShowAdd(!showAdd)}
+          className="bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs px-5 py-3 rounded-xl flex items-center gap-2 transition-all">
+          <PlusCircle size={14}/> Add Manually
+        </button>
       </div>
 
-      {/* Role legend */}
-      <div className="bg-slate-50 rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <p className="text-xs font-black text-slate-500 uppercase tracking-widest sm:col-span-2 mb-2">Role Permissions</p>
-        {ROLES.map(r => (
-          <div key={r.value} className="flex items-center gap-3">
-            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-lg shrink-0 ${ROLE_COLORS[r.value]??'bg-slate-200 text-slate-700'}`}>{r.label}</span>
-            <span className="text-xs text-slate-500 font-bold">{r.desc}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Admin list */}
-      <div className="space-y-3">
-        {admins.map(a => (
-          <div key={a.id} className="bg-white rounded-3xl p-5 flex items-center gap-4 shadow-sm border border-slate-100">
-            <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0">
-              <span className="font-black text-slate-600 text-lg">{a.email.charAt(0).toUpperCase()}</span>
+      {/* Manual add form */}
+      {showAdd && (
+        <Card>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-1">
+              <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Email</label>
+              <input value={addEmail} onChange={e=>setAddEmail(e.target.value)} placeholder="officer@email.com"
+                className="w-full border-2 border-slate-200 focus:border-red-600 rounded-xl px-4 py-3 font-bold outline-none text-sm text-slate-800"/>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-black text-slate-800 text-sm truncate">{a.email}</p>
-              <p className="text-xs text-slate-400 font-bold">{a.branch ?? 'National'}</p>
-            </div>
-            <div className="flex items-center gap-3 shrink-0">
-              <select value={a.role ?? 'admin'} onChange={e => updateRole(a.id, a.email, e.target.value)}
-                disabled={saving === a.id}
-                className={`border-2 border-slate-200 focus:border-red-600 rounded-xl px-3 py-2 font-black text-xs uppercase outline-none cursor-pointer disabled:opacity-50 ${ROLE_COLORS[a.role]??'bg-white text-slate-700'}`}>
-                {ROLES.map(r => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
+            <div>
+              <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Role</label>
+              <select value={addRole} onChange={e=>setAddRole(e.target.value)}
+                className="w-full border-2 border-slate-200 focus:border-red-600 rounded-xl px-4 py-3 font-bold outline-none text-sm text-slate-800">
+                {ROLES.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
-              {saving === a.id
-                ? <Loader2 size={16} className="animate-spin text-slate-400"/>
-                : <button onClick={() => removeAdmin(a.id, a.email)}
-                    className="text-slate-300 hover:text-red-600 p-1.5 rounded-xl hover:bg-red-50 transition-all">
-                    <X size={14}/>
-                  </button>}
+            </div>
+            <div>
+              <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Branch</label>
+              <input value={addBranch} onChange={e=>setAddBranch(e.target.value)}
+                className="w-full border-2 border-slate-200 focus:border-red-600 rounded-xl px-4 py-3 font-bold outline-none text-sm text-slate-800"/>
             </div>
           </div>
-        ))}
+          <button onClick={addManual} disabled={saving==='new' || !addEmail.trim()}
+            className="mt-4 bg-slate-900 hover:bg-slate-700 text-white font-black uppercase text-xs px-6 py-3 rounded-xl flex items-center gap-2 disabled:opacity-50 transition-all">
+            {saving==='new'?<Loader2 size={14} className="animate-spin"/>:<PlusCircle size={14}/>} Add to System
+          </button>
+        </Card>
+      )}
+
+      {/* Current admins/officers */}
+      <div>
+        <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Current Officers & Admins ({admins.length})</p>
+        <div className="space-y-2">
+          {admins.map(a => {
+            const roleCfg = ROLES.find(r=>r.value===(a.role??'admin'));
+            const linkedMember = allMembers.find(m=>m.email.toLowerCase()===a.email.toLowerCase());
+            return (
+              <div key={a.id} className="bg-white rounded-3xl p-4 flex items-center gap-4 shadow-sm border border-slate-100">
+                <div className="w-12 h-12 rounded-2xl overflow-hidden bg-slate-100 shrink-0">
+                  {linkedMember?.photo_url
+                    ? <img src={linkedMember.photo_url} className="w-full h-full object-cover"/>
+                    : <div className="w-full h-full flex items-center justify-center bg-red-600"><span className="text-white font-black">{a.email.charAt(0).toUpperCase()}</span></div>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-slate-800 text-sm truncate">{linkedMember?.full_name ?? a.email}</p>
+                  <p className="text-xs text-slate-400 font-bold truncate">{a.email}</p>
+                  <p className="text-[10px] text-slate-300 font-bold">{ROLE_TABS[a.role??'admin']?.slice(0,60)}...</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <select value={a.role??'admin'} onChange={e=>updateRole(a.id,a.email,e.target.value)}
+                    disabled={saving===a.id}
+                    className="border-2 border-slate-200 focus:border-red-600 rounded-xl px-3 py-2 font-black text-xs uppercase outline-none cursor-pointer disabled:opacity-50 bg-white text-slate-700">
+                    {ROLES.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                  {saving===a.id
+                    ? <Loader2 size={16} className="animate-spin text-slate-400 shrink-0"/>
+                    : <button onClick={()=>removeAdmin(a.id,a.email)} className="text-slate-300 hover:text-red-600 p-1.5 rounded-xl hover:bg-red-50 transition-all shrink-0"><X size={14}/></button>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Approved members not yet in admin system */}
+      <div>
+        <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Add From Members ({filteredMembers.length} not yet assigned)</p>
+        <div className="relative mb-3">
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search members..."
+            className="w-full border-2 border-slate-200 focus:border-red-600 rounded-xl px-4 py-3 pl-9 font-bold outline-none text-sm text-slate-800"/>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+        </div>
+        <div className="space-y-2 max-h-80 overflow-y-auto">
+          {filteredMembers.map(m=>(
+            <div key={m.id} className="bg-white rounded-2xl p-4 flex items-center gap-3 border border-slate-100">
+              <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 shrink-0">
+                {m.photo_url?<img src={m.photo_url} className="w-full h-full object-cover"/>
+                :<div className="w-full h-full flex items-center justify-center bg-slate-400"><span className="text-white font-black text-sm">{m.full_name.charAt(0)}</span></div>}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-black text-slate-800 text-sm truncate">{m.full_name}</p>
+                <p className="text-xs text-slate-400 font-bold truncate">{m.email} · {m.chapter}</p>
+              </div>
+              <button onClick={()=>addFromMember(m)} disabled={saving===m.id}
+                className="bg-slate-900 hover:bg-red-600 text-white font-black uppercase text-[10px] px-3 py-2 rounded-xl transition-all disabled:opacity-50 shrink-0 flex items-center gap-1">
+                {saving===m.id?<Loader2 size={11} className="animate-spin"/>:<PlusCircle size={11}/>} Add
+              </button>
+            </div>
+          ))}
+          {filteredMembers.length===0&&<p className="text-center text-slate-400 font-bold text-sm py-4">All members are already assigned roles.</p>}
+        </div>
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
-        <span className="text-amber-500 shrink-0">⚠️</span>
-        <div>
-          <p className="text-xs font-black text-amber-700 uppercase tracking-widest">Important</p>
-          <p className="text-xs text-amber-600 font-bold mt-1">Role changes take effect on the officer's next page load. Head Admin access is controlled separately via the Head Admins setting and cannot be changed here.</p>
-        </div>
+        <span className="text-amber-500 shrink-0 text-lg">⚠️</span>
+        <p className="text-xs text-amber-600 font-bold leading-relaxed">Role changes take effect on the officer's next page load. Head Admin access is controlled separately via Settings and cannot be changed here.</p>
       </div>
     </div>
   );
