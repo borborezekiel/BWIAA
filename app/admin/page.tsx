@@ -102,8 +102,8 @@ export default function AdminPage() {
     head_admin:          ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions','expenses','associated','reports','rbac'],
     admin:               ['overview','results','candidates','voters','roster','admins','applications','members','dues','events','audit','investments','donations','contributions','expenses','associated','reports'],
     president:           ['overview','results','candidates','voters','roster','applications','members','dues','events','audit','donations','contributions','expenses','associated','reports'],
-    vp_admin:            ['overview','members','applications','dues','events','audit','contributions','voters','roster'],
-    vp_operations:       ['overview','events','audit'],
+    vp_admin:            ['overview','members','applications','dues','events','audit','contributions','voters','roster','expenses','reports','associated'],
+    vp_operations:       ['overview','events','audit','reports'],
     financial_secretary: ['overview','dues','audit','donations','investments','expenses','reports'],
     secretary_general:   ['overview','members','events','audit','reports'],
     parliamentarian:     ['overview','events','audit','reports'],
@@ -404,66 +404,88 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
     donations: number;
     total: number;
   }[]>([]);
-  const [finLoading, setFinLoading] = useState(false);
+  const [finLoading, setFinLoading]   = useState(false);
+  const [exchangeRates, setExchangeRates] = useState<Record<string,number>>({LRD:1,USD:184});
+  const [baseCurrency, setBaseCurrency]   = useState('LRD');
+  const [contribLabel, setContribLabel]   = useState('Contributions');
+  const [donationsLabel, setDonationsLabel] = useState('Donations');
   // ── Visitor log pagination ────────────────────────────────────────────────
   const [visitorPage, setVisitorPage]     = useState(1);
   const [visitorSearch, setVisitorSearch] = useState('');
 
+
   useEffect(() => {
     setFinLoading(true);
     (async () => {
+      // Load exchange rates + labels from settings (SSS)
+      const { data: settingsData } = await supabase.from('election_settings').select('key,value')
+        .in('key',['exchange_rates','base_currency','contributions_label','donations_label']);
+      let rates: Record<string,number> = { LRD:1, USD:184 };
+      let base = 'LRD';
+      if (settingsData) {
+        const get = (k: string) => settingsData.find((r: any) => r.key === k)?.value;
+        if (get('exchange_rates')) { try { rates = JSON.parse(get('exchange_rates')); } catch {} }
+        if (get('base_currency')) { base = get('base_currency'); }
+        if (get('contributions_label')) setContribLabel(get('contributions_label'));
+        if (get('donations_label')) setDonationsLabel(get('donations_label'));
+        setExchangeRates(rates); setBaseCurrency(base);
+      }
+
+      // Helper: convert any amount to base currency
+      const toBase = (amount: number, currency: string) => {
+        if (!currency || currency === base) return amount;
+        return amount * (rates[currency] ?? 1);
+      };
+
       const [
         { data: apps },
         { data: duesData },
         { data: donationData },
-        { data: contribData },
       ] = await Promise.all([
         supabase.from('candidate_applications').select('chapter,status,registration_fee'),
-        supabase.from('dues_payments').select('chapter,status,dues_amount,maintenance_fee,amount'),
-        supabase.from('donations').select('chapter,status,donation_type,amount'),
-        Promise.resolve({ data: [] }), // solidarity removed — member-to-member only
+        supabase.from('dues_payments').select('chapter,status,dues_amount,maintenance_fee,amount,period,currency'),
+        supabase.from('donations').select('chapter,status,donation_type,amount,currency,converted_amount,original_amount,original_currency'),
       ]);
 
       // Gather all chapters
       const allChapters = new Set<string>();
-      (apps    ?? []).forEach((r: any) => r.chapter      && allChapters.add(r.chapter));
-      (duesData ?? []).forEach((r: any) => r.chapter     && allChapters.add(r.chapter));
+      (apps     ?? []).forEach((r: any) => r.chapter  && allChapters.add(r.chapter));
+      (duesData ?? []).forEach((r: any) => r.chapter  && allChapters.add(r.chapter));
       (donationData ?? []).forEach((r: any) => r.chapter && allChapters.add(r.chapter));
-      (contribData ?? []).forEach((r: any) => r.from_chapter && allChapters.add(r.from_chapter));
 
       const rows = Array.from(allChapters).map(ch => {
         const candidateFees = (apps ?? [])
           .filter((a: any) => a.chapter === ch && a.status === 'approved')
           .reduce((s: number, a: any) => s + (a.registration_fee ?? 0), 0);
 
-        // Membership fees — always use `amount` (dues_amount is 0 on these records)
         const membershipFees = (duesData ?? [])
           .filter((d: any) => d.status === 'approved' && d.period === 'Membership Registration Fee' &&
             (d.chapter === ch || !d.chapter || d.chapter === ''))
-          .reduce((s: number, d: any) => s + (d.amount ?? 0), 0);
+          .reduce((s: number, d: any) => toBase(d.amount ?? 0, d.currency ?? base), 0);
 
-        // Annual dues — exclude membership fee records, use dues_amount if set else fall back to amount
         const duesCollected = (duesData ?? [])
           .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.period !== 'Membership Registration Fee')
           .reduce((s: number, d: any) => {
-            if (d.dues_amount > 0) return s + d.dues_amount;
-            if (d.maintenance_fee > 0) return s + (d.amount - d.maintenance_fee);
-            return s + d.amount;
+            const raw = d.dues_amount > 0 ? d.dues_amount : d.maintenance_fee > 0 ? (d.amount - d.maintenance_fee) : d.amount;
+            return s + toBase(raw ?? 0, d.currency ?? base);
           }, 0);
 
         const maintenanceFees = (duesData ?? [])
           .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.period !== 'Membership Registration Fee')
-          .reduce((s: number, d: any) => s + (d.maintenance_fee ?? 0), 0);
+          .reduce((s: number, d: any) => toBase(d.maintenance_fee ?? 0, d.currency ?? base), 0);
 
+        // Donations — use converted_amount if available, else convert on the fly
         const donations = (donationData ?? [])
           .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.donation_type === 'money')
-          .reduce((s: number, d: any) => s + (d.amount ?? 0), 0);
+          .reduce((s: number, d: any) => {
+            if (d.converted_amount && d.converted_amount > 0) return s + d.converted_amount;
+            return s + toBase(d.amount ?? 0, d.currency ?? base);
+          }, 0);
 
         const total = membershipFees + candidateFees + duesCollected + maintenanceFees + donations;
         return { chapter: ch, membershipFees, candidateFees, duesCollected, maintenanceFees, donations, total };
       });
 
-      // Sort by total descending
       rows.sort((a, b) => b.total - a.total);
       setFinancials(isHeadAdmin ? rows : rows.filter(r => r.chapter === myChapter));
       setFinLoading(false);
@@ -833,7 +855,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                   { label: 'Candidate Fees',   value: financials.reduce((s,r)=>s+r.candidateFees,0),          color: 'bg-purple-600' },
                   { label: 'Annual Dues',      value: financials.reduce((s,r)=>s+r.duesCollected,0),          color: 'bg-blue-600'   },
                   { label: 'Maintenance Fund', value: financials.reduce((s,r)=>s+r.maintenanceFees,0),        color: 'bg-amber-500'  },
-                  { label: 'Donations',        value: financials.reduce((s,r)=>s+r.donations,0),              color: 'bg-red-500'    },
+                  { label: donationsLabel,     value: financials.reduce((s,r)=>s+r.donations,0),              color: 'bg-red-500'    },
 
                 ].map(s => (
                   <div key={s.label} className={`${s.color} text-white rounded-2xl p-4 text-center`}>
@@ -849,7 +871,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
               <table className="w-full text-xs min-w-[700px]">
                 <thead className="bg-slate-900 text-white">
                   <tr>
-                    {['Chapter','Membership Fees','Candidate Fees','Annual Dues','Maintenance','Donations','Total'].map(h => (
+                    {['Chapter','Membership Fees','Candidate Fees','Annual Dues','Maintenance', donationsLabel,'Total'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -892,7 +914,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
                           {financials.reduce((s,r) => s + (r[k] as number), 0).toLocaleString()}
                         </td>
                       ))}
-                      <td className="px-4 py-3 font-black text-green-400 text-sm">
+                      <td className="px-4 py-3 font-black text-green-400 text-sm" title={`All amounts in ${baseCurrency}`}>
                         {financials.reduce((s,r)=>s+r.total,0).toLocaleString()} LRD
                       </td>
                     </tr>
@@ -3580,114 +3602,6 @@ function InvestmentsTab({ showToast, isHeadAdmin, members, config }: {
 }
 
 // ─── Feed Settings Panel ──────────────────────────────────────────────────────
-function DonationsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; myChapter: string | null }) {
-  const [donations, setDonations] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
-  const [processing, setProcessing] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.from('donations').select('*').order('created_at', { ascending: false })
-      .then(({ data }) => { if (data) setDonations(data); setLoading(false); });
-  }, []);
-
-  const scoped = donations.filter(d => isHeadAdmin || !d.chapter || d.chapter === myChapter || d.chapter === 'All');
-  const visible = scoped.filter(d => filter === 'all' || d.status === filter);
-  const badge = (status: string) => ({
-    pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    approved: 'bg-green-100 text-green-700 border-green-200',
-    rejected: 'bg-red-100 text-red-700 border-red-200',
-  }[status] ?? 'bg-slate-100 text-slate-700 border-slate-200');
-
-  async function updateStatus(item: any, status: 'approved' | 'rejected') {
-    if (status === 'rejected' && !confirm(`Reject donation from ${item.donor_name}?`)) return;
-    setProcessing(item.id);
-    const { data: { user } } = await supabase.auth.getUser();
-    const approvedAt = new Date().toISOString();
-    const { error } = await supabase.from('donations').update({ status, approved_by: user?.email ?? 'admin', approved_at: approvedAt }).eq('id', item.id);
-    setProcessing(null);
-    if (error) return alert(error.message);
-    setDonations(prev => prev.map(d => d.id === item.id ? { ...d, status, approved_by: user?.email, approved_at: approvedAt } : d));
-  }
-
-  return (
-    <div className="space-y-8">
-      <div><h2 className="text-3xl font-black uppercase italic text-slate-800">Donations</h2><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Approve money and material donations</p></div>
-      <div className="flex gap-2 overflow-x-auto">{(['pending','approved','rejected','all'] as const).map(f => <button key={f} onClick={() => setFilter(f)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{f}</button>)}</div>
-      <Card>
-        <SectionTitle>Donations ({visible.length})</SectionTitle>
-        {loading ? <div className="flex justify-center py-8"><Loader2 className="animate-spin text-slate-400" size={24}/></div> : (
-          <div className="space-y-3">
-            {visible.map(d => (
-              <div key={d.id} className="flex items-center gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                <Heart size={22} className="text-red-600 shrink-0"/>
-                <div className="flex-1 min-w-0"><p className="font-black text-slate-800 truncate">{d.donor_name}</p><p className="text-xs text-slate-400 font-bold truncate">{d.purpose ?? d.donation_type ?? 'Donation'} / {d.chapter ?? 'All Chapters'}</p></div>
-                <div className="text-right shrink-0"><p className="font-black text-slate-800">{d.amount ? `${Number(d.amount).toLocaleString()} ${d.currency ?? 'LRD'}` : 'Material'}</p><span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badge(d.status)}`}>{d.status}</span></div>
-                {d.status === 'pending' && <div className="flex gap-2 shrink-0"><button onClick={() => updateStatus(d, 'approved')} disabled={processing === d.id} className="bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Approve</button><button onClick={() => updateStatus(d, 'rejected')} disabled={processing === d.id} className="bg-red-100 hover:bg-red-200 text-red-700 font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Reject</button></div>}
-              </div>
-            ))}
-            {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}donations.</p>}
-          </div>
-        )}
-      </Card>
-    </div>
-  );
-}
-
-function ContributionsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; myChapter: string | null }) {
-  const [contributions, setContributions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
-  const [processing, setProcessing] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.from('contributions').select('*').order('created_at', { ascending: false })
-      .then(({ data }) => { if (data) setContributions(data); setLoading(false); });
-  }, []);
-
-  const scoped = contributions.filter(c => isHeadAdmin || c.from_chapter === myChapter || c.to_chapter === myChapter);
-  const visible = scoped.filter(c => filter === 'all' || c.status === filter);
-  const badge = (status: string) => ({
-    pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    approved: 'bg-green-100 text-green-700 border-green-200',
-    rejected: 'bg-red-100 text-red-700 border-red-200',
-  }[status] ?? 'bg-slate-100 text-slate-700 border-slate-200');
-
-  async function updateStatus(item: any, status: 'approved' | 'rejected') {
-    if (status === 'rejected' && !confirm('Reject this solidarity contribution?')) return;
-    setProcessing(item.id);
-    const { data: { user } } = await supabase.auth.getUser();
-    const approvedAt = new Date().toISOString();
-    const { error } = await supabase.from('contributions').update({ status, approved_by: user?.email ?? 'admin', approved_at: approvedAt }).eq('id', item.id);
-    setProcessing(null);
-    if (error) return alert(error.message);
-    setContributions(prev => prev.map(c => c.id === item.id ? { ...c, status, approved_by: user?.email, approved_at: approvedAt } : c));
-  }
-
-  return (
-    <div className="space-y-8">
-      <div><h2 className="text-3xl font-black uppercase italic text-slate-800">Solidarity Contributions</h2><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Approve member-to-member support records</p></div>
-      <div className="flex gap-2 overflow-x-auto">{(['pending','approved','rejected','all'] as const).map(f => <button key={f} onClick={() => setFilter(f)} className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{f}</button>)}</div>
-      <Card>
-        <SectionTitle>Solidarity Records ({visible.length})</SectionTitle>
-        {loading ? <div className="flex justify-center py-8"><Loader2 className="animate-spin text-slate-400" size={24}/></div> : (
-          <div className="space-y-3">
-            {visible.map(c => (
-              <div key={c.id} className="flex items-center gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                <Users size={22} className="text-blue-600 shrink-0"/>
-                <div className="flex-1 min-w-0"><p className="font-black text-slate-800 truncate">{c.from_member_name} to {c.to_member_name}</p><p className="text-xs text-slate-400 font-bold truncate">{c.reason_type ?? 'Support'} / {c.from_chapter}</p></div>
-                <div className="text-right shrink-0"><p className="font-black text-slate-800">{Number(c.amount ?? 0).toLocaleString()} {c.currency ?? 'LRD'}</p><span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badge(c.status)}`}>{c.status}</span></div>
-                {c.status === 'pending' && <div className="flex gap-2 shrink-0"><button onClick={() => updateStatus(c, 'approved')} disabled={processing === c.id} className="bg-green-600 hover:bg-green-700 text-white font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Approve</button><button onClick={() => updateStatus(c, 'rejected')} disabled={processing === c.id} className="bg-red-100 hover:bg-red-200 text-red-700 font-black text-xs uppercase px-4 py-2 rounded-xl disabled:opacity-50">Reject</button></div>}
-              </div>
-            ))}
-            {visible.length === 0 && <p className="text-slate-400 font-bold text-sm text-center py-8">No {filter === 'all' ? '' : filter + ' '}solidarity records.</p>}
-          </div>
-        )}
-      </Card>
-    </div>
-  );
-}
-
 function FeedSettingsPanel({ showToast }: { showToast: (m: string, ok?: boolean) => void }) {
   const [settings, setSettings] = useState({
     feed_allow_photos:    'true',
@@ -4483,6 +4397,258 @@ function CurrencySettingsPanel({ showToast }: { showToast: (m: string, ok?: bool
         className="bg-green-600 hover:bg-green-700 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-2 transition-all disabled:opacity-50">
         {saving ? <><Loader2 size={16} className="animate-spin"/>Saving...</> : <><CheckCircle2 size={16}/>Save Currency Settings</>}
       </button>
+    </div>
+  );
+}
+
+// ─── Donations Admin Tab (with currency conversion display) ───────────────────
+function ContributionsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; myChapter: string | null }) {
+  const [contributions, setContributions] = useState<any[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [filter, setFilter]               = useState<'all'|'pending'|'approved'|'rejected'>('all');
+  const [expanded, setExpanded]           = useState<string|null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from('contributions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        setContributions(
+          isHeadAdmin
+            ? data
+            : data.filter((c: any) => c.from_chapter === myChapter || c.to_chapter === myChapter)
+        );
+      }
+      setLoading(false);
+    })();
+  }, [isHeadAdmin, myChapter]);
+
+  async function approve(c: any) {
+    await supabase.from('contributions').update({ status: 'approved' }).eq('id', c.id);
+    setContributions(prev => prev.map(x => x.id === c.id ? { ...x, status: 'approved' } : x));
+  }
+
+  async function reject(c: any) {
+    await supabase.from('contributions').update({ status: 'rejected' }).eq('id', c.id);
+    setContributions(prev => prev.map(x => x.id === c.id ? { ...x, status: 'rejected' } : x));
+  }
+
+  const filtered = contributions.filter(c => filter === 'all' || c.status === filter);
+  const totalApproved = contributions
+    .filter(c => c.status === 'approved')
+    .reduce((s, c) => s + (Number(c.amount) || 0), 0);
+
+  const STATUS_COLORS: Record<string,string> = {
+    pending:  'bg-yellow-100 text-yellow-700 border-yellow-200',
+    approved: 'bg-green-100 text-green-700 border-green-200',
+    rejected: 'bg-red-100 text-red-700 border-red-200',
+  };
+
+  if (loading) return <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600" size={24}/></div>;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h3 className="text-xl font-black uppercase italic text-slate-800">Solidarity Contributions</h3>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+            Total approved: <span className="text-green-700 font-black">{totalApproved.toLocaleString()} LRD</span>
+          </p>
+        </div>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {(['all','pending','approved','rejected'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter===f?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+            {f} ({contributions.filter(c=>f==='all'||c.status===f).length})
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0
+        ? <div className="bg-white rounded-3xl p-12 text-center"><p className="text-slate-400 font-bold">No solidarity contributions found.</p></div>
+        : <div className="space-y-3">
+          {filtered.map(c => {
+            const isOpen = expanded === c.id;
+            const receiptUrl = c.receipt_url ?? c.screenshot_url;
+            return (
+              <div key={c.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100">
+                <button onClick={() => setExpanded(isOpen ? null : c.id)}
+                  className="w-full flex items-center gap-4 p-5 text-left hover:bg-slate-50 transition-all">
+                  <div className="bg-blue-50 text-blue-700 rounded-2xl p-3 shrink-0"><Users size={18}/></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <p className="font-black text-slate-800 truncate">{c.from_member_name ?? 'Member'}</p>
+                      <span className="text-slate-400 text-xs font-black">to</span>
+                      <p className="font-black text-slate-800 truncate">{c.to_member_name ?? 'Member'}</p>
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${STATUS_COLORS[c.status]??''}`}>{c.status}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 font-bold">
+                      {c.reason_type ?? 'solidarity'} - {c.from_chapter ?? 'Unknown'} to {c.to_chapter ?? 'Unknown'} - {new Date(c.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-black text-slate-800 text-base">{(Number(c.amount) || 0).toLocaleString()} {c.currency ?? 'LRD'}</p>
+                  </div>
+                  {isOpen?<ChevronUp size={14} className="text-slate-400"/>:<ChevronDown size={14} className="text-slate-400"/>}
+                </button>
+                {isOpen && (
+                  <div className="border-t border-slate-100 p-5 bg-slate-50 space-y-2">
+                    {c.reason && <p className="text-xs text-slate-500 font-bold">{c.reason}</p>}
+                    {receiptUrl && <img src={receiptUrl} className="rounded-xl max-h-32 cursor-pointer border border-slate-200" onClick={()=>window.open(receiptUrl,'_blank')}/>}
+                    {c.status==='pending' && (
+                      <div className="flex gap-3 pt-2">
+                        <button onClick={()=>approve(c)} className="flex-1 bg-green-600 text-white font-black uppercase py-3 rounded-2xl text-xs hover:bg-green-700 transition-all flex items-center justify-center gap-2">
+                          <CheckCircle2 size={14}/> Approve
+                        </button>
+                        <button onClick={()=>reject(c)} className="flex-1 bg-red-100 text-red-700 font-black uppercase py-3 rounded-2xl text-xs hover:bg-red-200 transition-all flex items-center justify-center gap-2">
+                          <X size={14}/> Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>}
+    </div>
+  );
+}
+
+function DonationsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; myChapter: string | null }) {
+  const [donations, setDonations] = useState<any[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [baseCurrency, setBaseCurrency] = useState('LRD');
+  const [label, setLabel]         = useState('Donations');
+  const [filter, setFilter]       = useState<'all'|'pending'|'approved'|'rejected'>('all');
+  const [expanded, setExpanded]   = useState<string|null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data: settings } = await supabase.from('election_settings').select('key,value')
+        .in('key',['base_currency','donations_label']);
+      if (settings) {
+        const get = (k:string) => settings.find((r:any)=>r.key===k)?.value;
+        if (get('base_currency')) setBaseCurrency(get('base_currency'));
+        if (get('donations_label')) setLabel(get('donations_label'));
+      }
+      const q = isHeadAdmin
+        ? supabase.from('donations').select('*').order('created_at',{ascending:false})
+        : supabase.from('donations').select('*').eq('chapter', myChapter??'').order('created_at',{ascending:false});
+      const { data } = await q;
+      if (data) setDonations(data);
+      setLoading(false);
+    })();
+  }, []);
+
+  async function approve(d: any) {
+    await supabase.from('donations').update({ status:'approved' }).eq('id', d.id);
+    setDonations(prev => prev.map(x => x.id===d.id ? {...x,status:'approved'} : x));
+  }
+  async function reject(d: any) {
+    await supabase.from('donations').update({ status:'rejected' }).eq('id', d.id);
+    setDonations(prev => prev.map(x => x.id===d.id ? {...x,status:'rejected'} : x));
+  }
+
+  const filtered = donations.filter(d => filter==='all' || d.status===filter);
+  const totalBase = donations.filter(d=>d.status==='approved')
+    .reduce((s,d) => s + (d.converted_amount ?? d.amount ?? 0), 0);
+
+  const STATUS_COLORS: Record<string,string> = {
+    pending:  'bg-yellow-100 text-yellow-700 border-yellow-200',
+    approved: 'bg-green-100 text-green-700 border-green-200',
+    rejected: 'bg-red-100 text-red-700 border-red-200',
+  };
+
+  if (loading) return <div className="flex justify-center py-10"><Loader2 className="animate-spin text-red-600" size={24}/></div>;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h3 className="text-xl font-black uppercase italic text-slate-800">{label}</h3>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+            Total approved: <span className="text-green-700 font-black">{totalBase.toLocaleString()} {baseCurrency}</span>
+            {' '}· All multi-currency amounts converted to {baseCurrency}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {(['all','pending','approved','rejected'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter===f?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
+            {f} ({donations.filter(d=>f==='all'||d.status===f).length})
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0
+        ? <div className="bg-white rounded-3xl p-12 text-center"><p className="text-slate-400 font-bold">No {label.toLowerCase()} found.</p></div>
+        : <div className="space-y-3">
+          {filtered.map(d => {
+            const isOpen = expanded === d.id;
+            const showConv = d.original_currency && d.original_currency !== baseCurrency;
+            return (
+              <div key={d.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100">
+                <button onClick={() => setExpanded(isOpen?null:d.id)}
+                  className="w-full flex items-center gap-4 p-5 text-left hover:bg-slate-50 transition-all">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <p className="font-black text-slate-800">{d.member_name ?? d.donor_name ?? 'Anonymous'}</p>
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${STATUS_COLORS[d.status]??''}`}>{d.status}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 font-bold">{d.chapter} · {d.donation_type} · {new Date(d.created_at).toLocaleDateString()}</p>
+                    {d.reason && <p className="text-xs text-slate-400 font-bold italic">{d.reason}</p>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    {showConv ? (
+                      <>
+                        <p className="font-black text-red-600 text-base">{(d.original_amount??d.amount).toLocaleString()} {d.original_currency}</p>
+                        <p className="text-xs text-slate-400 font-bold">= {(d.converted_amount??d.amount).toLocaleString()} {baseCurrency}</p>
+                      </>
+                    ) : (
+                      <p className="font-black text-slate-800 text-base">{d.amount.toLocaleString()} {d.currency??baseCurrency}</p>
+                    )}
+                  </div>
+                  {isOpen?<ChevronUp size={14} className="text-slate-400"/>:<ChevronDown size={14} className="text-slate-400"/>}
+                </button>
+                {isOpen && (
+                  <div className="border-t border-slate-100 p-5 bg-slate-50 space-y-2">
+                    {showConv && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs">
+                        <p className="font-black text-blue-700 uppercase tracking-widest mb-1">💱 Currency Record</p>
+                        <p className="font-bold text-blue-800">
+                          {(d.original_amount??d.amount).toLocaleString()} {d.original_currency}
+                          {' × '}{d.exchange_rate??'?'}
+                          {' = '}{(d.converted_amount??d.amount).toLocaleString()} {baseCurrency}
+                        </p>
+                      </div>
+                    )}
+                    {d.payment_method && <p className="text-xs text-slate-500 font-bold">Payment: {d.payment_method}</p>}
+                    {d.notes && <p className="text-xs text-slate-400 font-bold italic">"{d.notes}"</p>}
+                    {d.screenshot_url && <img src={d.screenshot_url} className="rounded-xl max-h-32 cursor-pointer border border-slate-200" onClick={()=>window.open(d.screenshot_url,'_blank')}/>}
+                    {d.status==='pending' && (
+                      <div className="flex gap-3 pt-2">
+                        <button onClick={()=>approve(d)} className="flex-1 bg-green-600 text-white font-black uppercase py-3 rounded-2xl text-xs hover:bg-green-700 transition-all flex items-center justify-center gap-2">
+                          <CheckCircle2 size={14}/> Approve
+                        </button>
+                        <button onClick={()=>reject(d)} className="flex-1 bg-red-100 text-red-700 font-black uppercase py-3 rounded-2xl text-xs hover:bg-red-200 transition-all flex items-center justify-center gap-2">
+                          <X size={14}/> Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>}
     </div>
   );
 }
