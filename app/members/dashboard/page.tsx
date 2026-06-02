@@ -17,7 +17,6 @@ interface Member {
   id: string; auth_user_id: string; full_name: string; email: string;
   phone: string|null; class_name: string; year_graduated: number;
   sponsor_name: string; principal_name: string; id_number: string;
-  department: string | null;
   chapter: string; chapter_locked: boolean; photo_url: string|null;
   status: string; theme: string; approved_by: string|null;
   approved_at: string|null; created_at: string;
@@ -1133,7 +1132,7 @@ export default function MemberDashboard() {
                     <p className="font-black text-slate-900 text-base uppercase">{member.full_name}</p>
                     <p className="text-red-600 font-bold text-xs uppercase mt-1">{member.chapter}</p>
                     <div className="mt-3 space-y-1.5">
-                      {[['Class',`${member.class_name} · ${member.year_graduated}`],['ID No.',member.id_number],['Member',member.id.slice(0,8).toUpperCase()]].map(([l,v]) => (
+                      {[['Class',`${member.class_name} · ${member.year_graduated}`],['Dept.',(member as any).department??'—'],['ID No.',member.id_number],['Member',member.id.slice(0,8).toUpperCase()]].map(([l,v]) => (
                         <div key={l} className="flex gap-2"><span className="text-[10px] text-slate-400 font-bold uppercase w-16 shrink-0">{l}</span><span className="text-[10px] text-slate-800 font-black font-mono">{v}</span></div>
                       ))}
                     </div>

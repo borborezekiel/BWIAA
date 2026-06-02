@@ -252,7 +252,7 @@ export default function AdminPage() {
   const pendingDues     = dues.filter(d => d.status === 'pending').length;
 
   const allowedTabs = isHeadAdmin
-    ? ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions','expenses','associated','reports','rbac']
+    ? ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions']
     : (ROLE_TABS[myRole] ?? ROLE_TABS['admin']);
 
   const allTabs: { id: Tab; label: string; icon: any; headOnly?: boolean }[] = [
@@ -2146,6 +2146,15 @@ function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases
           {tickerSaving ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}
           {tickerSaving ? 'Saving...' : 'Save & Publish Ticker'}
         </button>
+      </Card>
+
+      {/* ── Currency & Exchange Rates ── */}
+      <Card accent="green">
+        <SectionTitle>💱 Currency & Exchange Rates</SectionTitle>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-5 -mt-2">
+          Set exchange rates from your base currency. All multi-currency payments use these rates. Changes apply immediately.
+        </p>
+        <CurrencySettingsPanel showToast={showToast}/>
       </Card>
 
       {/* ── Feed Settings ── */}
@@ -4210,7 +4219,7 @@ function RBACAdminTab({ showToast }: { showToast: (m: string, ok?: boolean) => v
     if (!addEmail.trim()) return;
     setSaving('new');
     const { data, error } = await supabase.from('election_admins')
-      .insert([{ email: addEmail.trim().toLowerCase(), branch: addBranch, role: addRole }])
+      .insert([{ email: addEmail.trim().toLowerCase(), branch: addBranch || 'Harbel Chapter', role: addRole }])
       .select().single();
     if (error) { showToast(`Failed: ${error.message}`, false); }
     else { setAdmins(prev => [...prev, data]); showToast(`✓ ${addEmail} added as ${addRole}.`); setAddEmail(''); setShowAdd(false); }
@@ -4284,7 +4293,16 @@ function RBACAdminTab({ showToast }: { showToast: (m: string, ok?: boolean) => v
                     : <div className="w-full h-full flex items-center justify-center bg-red-600"><span className="text-white font-black">{a.email.charAt(0).toUpperCase()}</span></div>}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-black text-slate-800 text-sm truncate">{linkedMember?.full_name ?? a.email}</p>
+                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                    <p className="font-black text-slate-800 text-sm truncate">{linkedMember?.full_name ?? a.email}</p>
+                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 ${
+                      (a.branch==='National'||!a.branch||a.branch==='')
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {(a.branch==='National'||!a.branch||a.branch==='') ? '🌐 National' : `📍 ${a.branch}`}
+                    </span>
+                  </div>
                   <p className="text-xs text-slate-400 font-bold truncate">{a.email}</p>
                   <p className="text-[10px] text-slate-300 font-bold">{ROLE_TABS[a.role??'admin']?.slice(0,60)}...</p>
                 </div>
@@ -4337,6 +4355,134 @@ function RBACAdminTab({ showToast }: { showToast: (m: string, ok?: boolean) => v
         <span className="text-amber-500 shrink-0 text-lg">⚠️</span>
         <p className="text-xs text-amber-600 font-bold leading-relaxed">Role changes take effect on the officer's next page load. Head Admin access is controlled separately via Settings and cannot be changed here.</p>
       </div>
+    </div>
+  );
+}
+
+// ─── Currency Settings Panel ──────────────────────────────────────────────────
+function CurrencySettingsPanel({ showToast }: { showToast: (m: string, ok?: boolean) => void }) {
+  const [baseCurrency, setBaseCurrency]   = useState('LRD');
+  const [ratesJson, setRatesJson]         = useState<Record<string,number>>({ LRD:1, USD:184, EUR:200, GBP:230 });
+  const [currencies, setCurrencies]       = useState<string[]>(['LRD','USD','EUR','GBP','GHS','NGN']);
+  const [newCurrency, setNewCurrency]     = useState('');
+  const [newRate, setNewRate]             = useState('');
+  const [saving, setSaving]               = useState(false);
+  const [loaded, setLoaded]               = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
+  const [newMethod, setNewMethod]         = useState('');
+
+  useEffect(() => {
+    supabase.from('election_settings').select('key,value')
+      .in('key',['base_currency','exchange_rates','supported_currencies','payment_methods'])
+      .then(({ data }) => {
+        if (!data) return;
+        const get = (k: string) => data.find(r => r.key === k)?.value;
+        if (get('base_currency')) setBaseCurrency(get('base_currency'));
+        if (get('exchange_rates')) { try { setRatesJson(JSON.parse(get('exchange_rates'))); } catch {} }
+        if (get('supported_currencies')) { try { setCurrencies(JSON.parse(get('supported_currencies'))); } catch {} }
+        if (get('payment_methods')) { try { setPaymentMethods(JSON.parse(get('payment_methods'))); } catch {} }
+        setLoaded(true);
+      });
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    await supabase.from('election_settings').upsert([
+      { key: 'base_currency',        value: baseCurrency },
+      { key: 'exchange_rates',       value: JSON.stringify(ratesJson) },
+      { key: 'supported_currencies', value: JSON.stringify(currencies) },
+      { key: 'payment_methods',      value: JSON.stringify(paymentMethods) },
+    ], { onConflict: 'key' });
+    setSaving(false);
+    showToast('✓ Currency settings saved — all submissions will use these rates.');
+  }
+
+  function addCurrency() {
+    if (!newCurrency.trim() || !newRate || isNaN(parseFloat(newRate))) return;
+    const code = newCurrency.trim().toUpperCase();
+    setRatesJson(prev => ({ ...prev, [code]: parseFloat(newRate) }));
+    setCurrencies(prev => prev.includes(code) ? prev : [...prev, code]);
+    setNewCurrency(''); setNewRate('');
+  }
+
+  function removeCurrency(code: string) {
+    if (code === baseCurrency) { showToast('Cannot remove base currency.', false); return; }
+    const { [code]: _, ...rest } = ratesJson;
+    setRatesJson(rest);
+    setCurrencies(prev => prev.filter(c => c !== code));
+  }
+
+  function addMethod() {
+    if (!newMethod.trim()) return;
+    setPaymentMethods(prev => [...prev, newMethod.trim()]);
+    setNewMethod('');
+  }
+
+  if (!loaded) return <div className="flex items-center gap-2 py-2"><Loader2 size={14} className="animate-spin text-slate-400"/><p className="text-slate-400 text-sm font-bold">Loading...</p></div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Base currency */}
+      <div>
+        <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Base Currency (all amounts stored in this)</label>
+        <input value={baseCurrency} onChange={e=>setBaseCurrency(e.target.value.toUpperCase())}
+          className="w-32 border-2 border-slate-200 focus:border-green-600 rounded-2xl px-5 py-3 font-black text-slate-800 outline-none uppercase"/>
+      </div>
+
+      {/* Exchange rates table */}
+      <div>
+        <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Exchange Rates (1 currency = X {baseCurrency})</p>
+        <div className="space-y-2">
+          {Object.entries(ratesJson).map(([code, rate]) => (
+            <div key={code} className="flex items-center gap-3 bg-slate-50 rounded-2xl p-3">
+              <span className="font-black text-slate-800 w-16 text-sm uppercase">{code}</span>
+              <span className="text-slate-400 font-bold text-xs">1 {code} =</span>
+              <input
+                type="number" value={rate} min="0" step="0.01"
+                onChange={e => setRatesJson(prev => ({ ...prev, [code]: parseFloat(e.target.value)||0 }))}
+                className="w-28 border-2 border-slate-200 focus:border-green-600 rounded-xl px-3 py-2 font-black text-slate-800 outline-none text-sm"
+              />
+              <span className="text-slate-400 font-bold text-xs">{baseCurrency}</span>
+              {code !== baseCurrency && (
+                <button onClick={() => removeCurrency(code)} className="text-red-400 hover:text-red-600 ml-auto p-1"><X size={14}/></button>
+              )}
+              {code === baseCurrency && <span className="text-green-600 font-black text-[10px] uppercase ml-auto">Base</span>}
+            </div>
+          ))}
+        </div>
+
+        {/* Add currency */}
+        <div className="flex gap-2 mt-3">
+          <input value={newCurrency} onChange={e=>setNewCurrency(e.target.value)} placeholder="USD" maxLength={4}
+            className="w-24 border-2 border-slate-200 focus:border-green-600 rounded-xl px-3 py-2.5 font-black outline-none text-sm uppercase text-slate-800"/>
+          <input value={newRate} onChange={e=>setNewRate(e.target.value)} type="number" placeholder="Rate" min="0" step="0.01"
+            className="w-28 border-2 border-slate-200 focus:border-green-600 rounded-xl px-3 py-2.5 font-bold outline-none text-sm text-slate-800"/>
+          <button onClick={addCurrency} className="bg-green-600 hover:bg-green-700 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">+ Add</button>
+        </div>
+      </div>
+
+      {/* Payment methods */}
+      <div>
+        <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Payment Methods</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {paymentMethods.map((m,i) => (
+            <div key={i} className="flex items-center gap-2 bg-slate-100 rounded-full px-3 py-1.5">
+              <span className="text-xs font-bold text-slate-700">{m}</span>
+              <button onClick={() => setPaymentMethods(prev => prev.filter((_,j)=>j!==i))} className="text-slate-400 hover:text-red-600"><X size={11}/></button>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input value={newMethod} onChange={e=>setNewMethod(e.target.value)} placeholder="e.g. Western Union"
+            className="flex-1 border-2 border-slate-200 focus:border-green-600 rounded-xl px-4 py-2.5 font-bold outline-none text-sm text-slate-800"/>
+          <button onClick={addMethod} className="bg-slate-700 hover:bg-slate-600 text-white font-black uppercase text-xs px-4 py-2.5 rounded-xl transition-all">+ Add</button>
+        </div>
+      </div>
+
+      <button onClick={save} disabled={saving}
+        className="bg-green-600 hover:bg-green-700 text-white font-black uppercase px-8 py-4 rounded-2xl flex items-center gap-2 transition-all disabled:opacity-50">
+        {saving ? <><Loader2 size={16} className="animate-spin"/>Saving...</> : <><CheckCircle2 size={16}/>Save Currency Settings</>}
+      </button>
     </div>
   );
 }
