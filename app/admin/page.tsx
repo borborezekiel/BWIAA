@@ -3080,27 +3080,6 @@ function AttendanceReport({ events, members, isHeadAdmin, myChapter }: {
     unmarked: 'bg-slate-100 text-slate-500 border-slate-200',
   };
 
-  return (
-    <Card>
-      <SectionTitle>📋 Attendance Report</SectionTitle>
-      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-5 -mt-2">
-        Select a meeting or event to view full attendance
-      </p>
-
-      <div className="mb-5">
-        <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Select Meeting / Event</label>
-        <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)}
-          className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none text-slate-800">
-          <option value="">— Choose an event —</option>
-          {pastEvents.map(e => (
-            <option key={e.id} value={e.id}>
-              {e.title} · {new Date(e.event_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
-              {e.chapter ? ` · ${e.chapter}` : ' · All Chapters'}
-            </option>
-          ))}
-        </select>
-      </div>
-
 
   function exportCSV() {
     if (!selectedEvent) return;
@@ -3134,6 +3113,28 @@ function AttendanceReport({ events, members, isHeadAdmin, myChapter }: {
     ];
     navigator.clipboard.writeText(lines.join('\n')).then(()=>alert('Caption copied to clipboard!'));
   }
+
+
+  return (
+    <Card>
+      <SectionTitle>📋 Attendance Report</SectionTitle>
+      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-5 -mt-2">
+        Select a meeting or event to view full attendance
+      </p>
+
+      <div className="mb-5">
+        <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Select Meeting / Event</label>
+        <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)}
+          className="w-full border-2 border-slate-200 focus:border-red-600 rounded-2xl px-5 py-4 font-bold outline-none text-slate-800">
+          <option value="">— Choose an event —</option>
+          {pastEvents.map(e => (
+            <option key={e.id} value={e.id}>
+              {e.title} · {new Date(e.event_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
+              {e.chapter ? ` · ${e.chapter}` : ' · All Chapters'}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {selectedEventId && (
         <>
