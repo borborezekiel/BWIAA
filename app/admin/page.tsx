@@ -8,7 +8,6 @@ import {
   CheckCircle2, XCircle, Terminal, Crown, Download, Printer,
   FileText, Sliders, Search, CreditCard, DollarSign, Key, Calendar,
   MapPin, Bell, TrendingUp, ChevronRight, Lock, Eye, EyeOff,
-  Heart, Receipt, UserPlus, ChevronUp, ChevronDown, X,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -17,7 +16,7 @@ interface Candidate      { id: number; full_name: string; position_name: string;
 interface VoteRow        { id: number; voter_name: string; voter_id: string; position_name: string; candidate_name: string; chapter: string; class_year: string; created_at: string; }
 interface EligibleVoter  { email: string; chapter: string; created_at: string; }
 interface BlacklistedVoter { id: number; email: string; reason: string; created_at: string; }
-interface ElectionAdmin  { id: number; email: string; branch: string; role?: string | null; }
+interface ElectionAdmin  { id: number; email: string; branch: string; }
 interface Application {
   id: string; full_name: string; dob: string; class_name: string; year_graduated: number;
   sponsor_name: string; principal_name: string; id_number: string; applicant_email: string;
@@ -154,7 +153,7 @@ export default function AdminPage() {
         setIsHeadAdmin(true); setIsAuthorized(true);
       } else {
         const { data } = await supabase
-          .from('election_admins').select('email, branch, role').eq('email', lowerEmail).maybeSingle();
+          .from('election_admins').select('email, branch').eq('email', lowerEmail).maybeSingle();
         if (data) { setIsAuthorized(true); setMyAdminChapter(data.branch); setMyRole(data.role ?? 'admin'); }
       }
       setLoading(false);
@@ -274,7 +273,7 @@ export default function AdminPage() {
     { id: "expenses",     label: "Expenses",     icon: Receipt },
     { id: "associated",   label: "Associated",   icon: UserPlus },
     { id: "reports",      label: "Reports",      icon: FileText },
-    { id: "rbac",        label: "RBAC",         icon: ShieldCheck, headOnly: true },
+    { id: "rbac",        label: "RBAC",         icon: Shield, headOnly: true },
   ];
   const tabs = allTabs.filter(t => (!t.headOnly || isHeadAdmin) && allowedTabs.includes(t.id));
 
@@ -360,7 +359,7 @@ export default function AdminPage() {
         {activeTab === "audit"        && isHeadAdmin && <AuditLogTab log={auditLog} config={config}/>}
         {activeTab === "investments"  && isHeadAdmin && <InvestmentsTab showToast={showToast} isHeadAdmin={isHeadAdmin} members={members} config={config}/>}
         {activeTab === "admins"       && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
-        {activeTab === "settings"     && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline} phases={phases} setPhases={setPhases} isHeadAdmin={isHeadAdmin}/>}
+        {activeTab === "settings"     && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline} phases={phases} setPhases={setPhases}/>}
         {activeTab === "donations"     && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "contributions" && <ContributionsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "expenses"      && <ExpensesAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} config={config}/>}
@@ -1860,11 +1859,10 @@ function AdminsTab({ admins, setAdmins, showToast, deadline, setDeadline }: {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: SETTINGS — with integrated Phase Controls
 // ─────────────────────────────────────────────────────────────────────────────
-function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases, isHeadAdmin }: {
+function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases }: {
   config: ElectionConfig; setConfig: React.Dispatch<React.SetStateAction<ElectionConfig>>;
   showToast: (m: string, ok?: boolean) => void; deadline: string | null;
   phases: ElectionPhases; setPhases: React.Dispatch<React.SetStateAction<ElectionPhases>>;
-  isHeadAdmin: boolean;
 }) {
   const [local, setLocal]           = useState<ElectionConfig>(JSON.parse(JSON.stringify(config)));
   const [saving, setSaving]         = useState(false);
@@ -3082,43 +3080,6 @@ function AttendanceReport({ events, members, isHeadAdmin, myChapter }: {
     unmarked: 'bg-slate-100 text-slate-500 border-slate-200',
   };
 
-  function exportCSV() {
-    if (!selectedEvent) return;
-    const headers = ['Member','Chapter','Status','Note'];
-    const rows = report.map(({ member: m, status, note }) => [m.full_name, m.chapter, status, note || '--']);
-    const csv = [headers, ...rows]
-      .map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `attendance_${(selectedEvent.title || 'event').replace(/\s+/g, '_')}_${selectedEvent.event_date}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function copyCaption() {
-    if (!selectedEvent) return;
-    const presentList = report.filter(r => r.status === 'present').map(r => `- ${r.member.full_name}`);
-    const absentList = report.filter(r => r.status === 'absent').map(r => `- ${r.member.full_name}`);
-    const excusedList = report.filter(r => r.status === 'excused').map(r => `- ${r.member.full_name}`);
-    const lines = [
-      'ATTENDANCE REPORT',
-      `Event: ${selectedEvent.title}`,
-      `Date: ${new Date(selectedEvent.event_date).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}`,
-      `Chapter: ${selectedEvent.chapter || 'All Chapters'}`,
-      '',
-      `Present: ${counts.present} | Absent: ${counts.absent} | Excused: ${counts.excused} | Total: ${approvedMembers.length}`,
-      '',
-      'PRESENT:', ...presentList,
-      '',
-      'ABSENT:', ...absentList,
-      ...(excusedList.length > 0 ? ['', 'EXCUSED:', ...excusedList] : []),
-    ];
-    navigator.clipboard.writeText(lines.join('\n')).then(() => alert('Caption copied to clipboard!'));
-  }
-
   return (
     <Card>
       <SectionTitle>📋 Attendance Report</SectionTitle>
@@ -3141,6 +3102,38 @@ function AttendanceReport({ events, members, isHeadAdmin, myChapter }: {
       </div>
 
 
+  function exportCSV() {
+    if (!selectedEvent) return;
+    const headers = ['Member','Chapter','Status','Note'];
+    const rows = report.map(({ member: m, status, note }) => [m.full_name, m.chapter, status, note||'--']);
+    const csv = [headers,...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'''')}"`).join(',')).join('\n');
+    const blob = new Blob([csv],{type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url;
+    a.download=`attendance_${(selectedEvent.title||'event').replace(/\s+/g,'_')}_${selectedEvent.event_date}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  function copyCaption() {
+    if (!selectedEvent) return;
+    const presentList = report.filter(r=>r.status==='present').map(r=>`• ${r.member.full_name}`);
+    const absentList  = report.filter(r=>r.status==='absent').map(r=>`• ${r.member.full_name}`);
+    const excusedList = report.filter(r=>r.status==='excused').map(r=>`• ${r.member.full_name}`);
+    const lines = [
+      '📋 ATTENDANCE REPORT',
+      `Event: ${selectedEvent.title}`,
+      `Date: ${new Date(selectedEvent.event_date).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}`,
+      `Chapter: ${selectedEvent.chapter||'All Chapters'}`,
+      '',
+      `✅ Present: ${counts.present}  |  ❌ Absent: ${counts.absent}  |  ⚠️ Excused: ${counts.excused}  |  Total: ${approvedMembers.length}`,
+      '',
+      'PRESENT:', ...presentList,
+      '',
+      'ABSENT:',  ...absentList,
+      ...(excusedList.length>0 ? [''  ,'EXCUSED:',...excusedList] : []),
+    ];
+    navigator.clipboard.writeText(lines.join('\n')).then(()=>alert('Caption copied to clipboard!'));
+  }
 
       {selectedEventId && (
         <>
@@ -4402,124 +4395,6 @@ function CurrencySettingsPanel({ showToast }: { showToast: (m: string, ok?: bool
 }
 
 // ─── Donations Admin Tab (with currency conversion display) ───────────────────
-function ContributionsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; myChapter: string | null }) {
-  const [contributions, setContributions] = useState<any[]>([]);
-  const [loading, setLoading]             = useState(true);
-  const [filter, setFilter]               = useState<'all'|'pending'|'approved'|'rejected'>('all');
-  const [expanded, setExpanded]           = useState<string|null>(null);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('contributions')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (data) {
-        setContributions(
-          isHeadAdmin
-            ? data
-            : data.filter((c: any) => c.from_chapter === myChapter || c.to_chapter === myChapter)
-        );
-      }
-      setLoading(false);
-    })();
-  }, [isHeadAdmin, myChapter]);
-
-  async function approve(c: any) {
-    await supabase.from('contributions').update({ status: 'approved' }).eq('id', c.id);
-    setContributions(prev => prev.map(x => x.id === c.id ? { ...x, status: 'approved' } : x));
-  }
-
-  async function reject(c: any) {
-    await supabase.from('contributions').update({ status: 'rejected' }).eq('id', c.id);
-    setContributions(prev => prev.map(x => x.id === c.id ? { ...x, status: 'rejected' } : x));
-  }
-
-  const filtered = contributions.filter(c => filter === 'all' || c.status === filter);
-  const totalApproved = contributions
-    .filter(c => c.status === 'approved')
-    .reduce((s, c) => s + (Number(c.amount) || 0), 0);
-
-  const STATUS_COLORS: Record<string,string> = {
-    pending:  'bg-yellow-100 text-yellow-700 border-yellow-200',
-    approved: 'bg-green-100 text-green-700 border-green-200',
-    rejected: 'bg-red-100 text-red-700 border-red-200',
-  };
-
-  if (loading) return <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600" size={24}/></div>;
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h3 className="text-xl font-black uppercase italic text-slate-800">Solidarity Contributions</h3>
-          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-            Total approved: <span className="text-green-700 font-black">{totalApproved.toLocaleString()} LRD</span>
-          </p>
-        </div>
-      </div>
-
-      <div className="flex gap-2 flex-wrap">
-        {(['all','pending','approved','rejected'] as const).map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${filter===f?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>
-            {f} ({contributions.filter(c=>f==='all'||c.status===f).length})
-          </button>
-        ))}
-      </div>
-
-      {filtered.length === 0
-        ? <div className="bg-white rounded-3xl p-12 text-center"><p className="text-slate-400 font-bold">No solidarity contributions found.</p></div>
-        : <div className="space-y-3">
-          {filtered.map(c => {
-            const isOpen = expanded === c.id;
-            const receiptUrl = c.receipt_url ?? c.screenshot_url;
-            return (
-              <div key={c.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100">
-                <button onClick={() => setExpanded(isOpen ? null : c.id)}
-                  className="w-full flex items-center gap-4 p-5 text-left hover:bg-slate-50 transition-all">
-                  <div className="bg-blue-50 text-blue-700 rounded-2xl p-3 shrink-0"><Users size={18}/></div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <p className="font-black text-slate-800 truncate">{c.from_member_name ?? 'Member'}</p>
-                      <span className="text-slate-400 text-xs font-black">to</span>
-                      <p className="font-black text-slate-800 truncate">{c.to_member_name ?? 'Member'}</p>
-                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${STATUS_COLORS[c.status]??''}`}>{c.status}</span>
-                    </div>
-                    <p className="text-xs text-slate-400 font-bold">
-                      {c.reason_type ?? 'solidarity'} - {c.from_chapter ?? 'Unknown'} to {c.to_chapter ?? 'Unknown'} - {new Date(c.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-black text-slate-800 text-base">{(Number(c.amount) || 0).toLocaleString()} {c.currency ?? 'LRD'}</p>
-                  </div>
-                  {isOpen?<ChevronUp size={14} className="text-slate-400"/>:<ChevronDown size={14} className="text-slate-400"/>}
-                </button>
-                {isOpen && (
-                  <div className="border-t border-slate-100 p-5 bg-slate-50 space-y-2">
-                    {c.reason && <p className="text-xs text-slate-500 font-bold">{c.reason}</p>}
-                    {receiptUrl && <img src={receiptUrl} className="rounded-xl max-h-32 cursor-pointer border border-slate-200" onClick={()=>window.open(receiptUrl,'_blank')}/>}
-                    {c.status==='pending' && (
-                      <div className="flex gap-3 pt-2">
-                        <button onClick={()=>approve(c)} className="flex-1 bg-green-600 text-white font-black uppercase py-3 rounded-2xl text-xs hover:bg-green-700 transition-all flex items-center justify-center gap-2">
-                          <CheckCircle2 size={14}/> Approve
-                        </button>
-                        <button onClick={()=>reject(c)} className="flex-1 bg-red-100 text-red-700 font-black uppercase py-3 rounded-2xl text-xs hover:bg-red-200 transition-all flex items-center justify-center gap-2">
-                          <X size={14}/> Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>}
-    </div>
-  );
-}
-
 function DonationsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; myChapter: string | null }) {
   const [donations, setDonations] = useState<any[]>([]);
   const [loading, setLoading]     = useState(true);
