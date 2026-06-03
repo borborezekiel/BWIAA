@@ -153,7 +153,7 @@ export default function AdminPage() {
         setIsHeadAdmin(true); setIsAuthorized(true);
       } else {
         const { data } = await supabase
-          .from('election_admins').select('email, branch').eq('email', lowerEmail).maybeSingle();
+          .from('election_admins').select('email, branch, role').eq('email', lowerEmail).maybeSingle();
         if (data) { setIsAuthorized(true); setMyAdminChapter(data.branch); setMyRole(data.role ?? 'admin'); }
       }
       setLoading(false);
