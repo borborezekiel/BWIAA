@@ -360,7 +360,7 @@ export default function AdminPage() {
         {activeTab === "audit"        && isHeadAdmin && <AuditLogTab log={auditLog} config={config}/>}
         {activeTab === "investments"  && isHeadAdmin && <InvestmentsTab showToast={showToast} isHeadAdmin={isHeadAdmin} members={members} config={config}/>}
         {activeTab === "admins"       && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
-        {activeTab === "settings"     && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline} phases={phases} setPhases={setPhases}/>}
+        {activeTab === "settings"     && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline} phases={phases} setPhases={setPhases} isHeadAdmin={isHeadAdmin}/>}
         {activeTab === "donations"     && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
         {activeTab === "contributions" && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} labelOverride="Contributions"/>}
         {activeTab === "expenses"      && <ExpensesAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} config={config}/>}
@@ -1860,10 +1860,11 @@ function AdminsTab({ admins, setAdmins, showToast, deadline, setDeadline }: {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: SETTINGS — with integrated Phase Controls
 // ─────────────────────────────────────────────────────────────────────────────
-function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases }: {
+function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases, isHeadAdmin }: {
   config: ElectionConfig; setConfig: React.Dispatch<React.SetStateAction<ElectionConfig>>;
   showToast: (m: string, ok?: boolean) => void; deadline: string | null;
   phases: ElectionPhases; setPhases: React.Dispatch<React.SetStateAction<ElectionPhases>>;
+  isHeadAdmin: boolean;
 }) {
   const [local, setLocal]           = useState<ElectionConfig>(JSON.parse(JSON.stringify(config)));
   const [saving, setSaving]         = useState(false);
