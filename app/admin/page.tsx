@@ -362,7 +362,7 @@ export default function AdminPage() {
         {activeTab === "admins"       && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
         {activeTab === "settings"     && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline} phases={phases} setPhases={setPhases}/>}
         {activeTab === "donations"     && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
-        {activeTab === "contributions" && <ContributionsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
+        {activeTab === "contributions" && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} labelOverride="Contributions"/>}
         {activeTab === "expenses"      && <ExpensesAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} config={config}/>}
         {activeTab === "associated"    && <AssociatedAdminTab isHeadAdmin={isHeadAdmin} showToast={showToast} adminEmail={user?.email ?? ''}/>}
         {activeTab === "reports"       && <ReportsAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} members={members}/>}
@@ -4397,7 +4397,7 @@ function CurrencySettingsPanel({ showToast }: { showToast: (m: string, ok?: bool
 }
 
 // ─── Donations Admin Tab (with currency conversion display) ───────────────────
-function DonationsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; myChapter: string | null }) {
+function DonationsAdminTab({ isHeadAdmin, myChapter, labelOverride }: { isHeadAdmin: boolean; myChapter: string | null; labelOverride?: string }) {
   const [donations, setDonations] = useState<any[]>([]);
   const [loading, setLoading]     = useState(true);
   const [baseCurrency, setBaseCurrency] = useState('LRD');
@@ -4412,7 +4412,7 @@ function DonationsAdminTab({ isHeadAdmin, myChapter }: { isHeadAdmin: boolean; m
       if (settings) {
         const get = (k:string) => settings.find((r:any)=>r.key===k)?.value;
         if (get('base_currency')) setBaseCurrency(get('base_currency'));
-        if (get('donations_label')) setLabel(get('donations_label'));
+        if (labelOverride) setLabel(labelOverride); else if (get('donations_label')) setLabel(get('donations_label'));
       }
       const q = isHeadAdmin
         ? supabase.from('donations').select('*').order('created_at',{ascending:false})
