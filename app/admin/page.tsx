@@ -3085,7 +3085,7 @@ function AttendanceReport({ events, members, isHeadAdmin, myChapter }: {
     if (!selectedEvent) return;
     const headers = ['Member','Chapter','Status','Note'];
     const rows = report.map(({ member: m, status, note }) => [m.full_name, m.chapter, status, note||'--']);
-    const csv = [headers,...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'''')}"`).join(',')).join('\n');
+    const csv = [headers,...rows].map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
     const blob = new Blob([csv],{type:'text/csv'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href=url;
