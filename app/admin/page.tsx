@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, Terminal, Crown, Download, Printer,
   FileText, Sliders, Search, CreditCard, DollarSign, Key, Calendar,
   MapPin, Bell, TrendingUp, ChevronRight, Lock, Eye, EyeOff,
-  Heart, Receipt, UserPlus, Shield, TrendingDown, ArrowRight, ChevronDown, ChevronUp, Clock, Info, AlertTriangle, Globe, Edit2, AlertCircle,
+  Heart, Receipt, UserPlus, Shield, X, TrendingDown, ArrowRight, ChevronDown, ChevronUp, Clock, Info, AlertTriangle, Globe, Edit2, AlertCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 
