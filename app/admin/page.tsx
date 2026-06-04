@@ -2073,15 +2073,13 @@ function SettingsTab({ config, setConfig, showToast, deadline, phases, setPhases
       </Card>
 
       {/* ── Portal Lockdown ── */}
-      {isHeadAdmin && (
-        <Card accent="red">
-          <SectionTitle>🔒 Portal Access Control</SectionTitle>
-          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-5 -mt-2">
-            Lock the entire portal between election cycles. Members see a closed notice — admins retain full access.
-          </p>
-          <PortalLockPanel showToast={showToast}/>
-        </Card>
-      )}
+      <Card accent="red">
+        <SectionTitle>🔒 Portal Access Control</SectionTitle>
+        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-5 -mt-2">
+          Lock the entire portal between election cycles. Members see a closed notice — admins retain full access.
+        </p>
+        <PortalLockPanel showToast={showToast}/>
+      </Card>
 
       {/* ── Ticker / Announcements Control ── */}
       <Card accent="slate">
