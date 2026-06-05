@@ -252,7 +252,7 @@ export default function AdminPage() {
   const pendingDues     = dues.filter(d => d.status === 'pending').length;
 
   const allowedTabs = isHeadAdmin
-    ? ['overview','results','candidates','voters','roster','admins','applications','settings','members','dues','events','audit','investments','donations','contributions']
+    ? ROLE_TABS['head_admin']
     : (ROLE_TABS[myRole] ?? ROLE_TABS['admin']);
 
   const allTabs: { id: Tab; label: string; icon: any; headOnly?: boolean }[] = [
@@ -362,7 +362,7 @@ export default function AdminPage() {
         {activeTab === "admins"       && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
         {activeTab === "settings"     && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline} phases={phases} setPhases={setPhases} isHeadAdmin={isHeadAdmin}/>}
         {activeTab === "donations"     && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
-        {activeTab === "contributions" && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} labelOverride="Contributions"/>}
+        {activeTab === "contributions" && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} labelOverride="Contributions" tableName="contributions"/>}
         {activeTab === "expenses"      && <ExpensesAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} config={config}/>}
         {activeTab === "associated"    && <AssociatedAdminTab isHeadAdmin={isHeadAdmin} showToast={showToast} adminEmail={user?.email ?? ''}/>}
         {activeTab === "reports"       && <ReportsAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} members={members}/>}
@@ -4396,7 +4396,7 @@ function CurrencySettingsPanel({ showToast }: { showToast: (m: string, ok?: bool
 }
 
 // ─── Donations Admin Tab (with currency conversion display) ───────────────────
-function DonationsAdminTab({ isHeadAdmin, myChapter, labelOverride }: { isHeadAdmin: boolean; myChapter: string | null; labelOverride?: string }) {
+function DonationsAdminTab({ isHeadAdmin, myChapter, labelOverride, tableName }: { isHeadAdmin: boolean; myChapter: string | null; labelOverride?: string; tableName?: string }) {
   const [donations, setDonations] = useState<any[]>([]);
   const [loading, setLoading]     = useState(true);
   const [baseCurrency, setBaseCurrency] = useState('LRD');
@@ -4413,9 +4413,10 @@ function DonationsAdminTab({ isHeadAdmin, myChapter, labelOverride }: { isHeadAd
         if (get('base_currency')) setBaseCurrency(get('base_currency'));
         if (labelOverride) setLabel(labelOverride); else if (get('donations_label')) setLabel(get('donations_label'));
       }
+      const tbl = tableName ?? 'donations';
       const q = isHeadAdmin
-        ? supabase.from('donations').select('*').order('created_at',{ascending:false})
-        : supabase.from('donations').select('*').eq('chapter', myChapter??'').order('created_at',{ascending:false});
+        ? supabase.from(tbl as any).select('*').order('created_at',{ascending:false})
+        : supabase.from(tbl as any).select('*').eq('chapter', myChapter??'').order('created_at',{ascending:false});
       const { data } = await q;
       if (data) setDonations(data);
       setLoading(false);
