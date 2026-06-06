@@ -96,6 +96,8 @@ export default function AdminPage() {
   const [isHeadAdmin, setIsHeadAdmin]       = useState(false);
   const [myAdminChapter, setMyAdminChapter] = useState<string | null>(null);
   const [myRole, setMyRole]                 = useState<string>('admin');
+  const [donationsTabLabel, setDonationsTabLabel]       = useState('Donations');
+  const [contributionsTabLabel, setContributionsTabLabel] = useState('Contributions');
 
   // ── Role-based tab permissions ────────────────────────────────────────────
   const ROLE_TABS: Record<string, string[]> = {
@@ -211,6 +213,9 @@ export default function AdminPage() {
       if (get('chapters'))  { try { const p = JSON.parse(get('chapters')!);  merged.chapters = p;        CHAPTERS  = p; } catch {} }
       if (get('positions_fees')) { try { const p = JSON.parse(get('positions_fees')!); merged.positions_fees = p; POSITIONS = p.map((x: any) => x.position); } catch {} }
       setConfig(merged);
+      // Load tab labels from settings (SSS)
+      if (get('donations_label'))      setDonationsTabLabel(get('donations_label')!);
+      if (get('contributions_label'))  setContributionsTabLabel(get('contributions_label')!);
       setPhases({
         registration_open: get('registration_open') === 'true',
         voting_open:        get('voting_open')        === 'true',
@@ -269,8 +274,8 @@ export default function AdminPage() {
     { id: "investments",  label: "Investments",  icon: TrendingUp, headOnly: true },
     { id: "admins",       label: "Admins",       icon: Settings, headOnly: true },
     { id: "settings",     label: "Settings",     icon: Sliders, headOnly: true },
-    { id: "donations",    label: "Donations",    icon: Heart },
-    { id: "contributions",label: "Contributions",icon: Users },
+    { id: "donations",    label: donationsTabLabel,    icon: Heart },
+    { id: "contributions",label: contributionsTabLabel,icon: Users },
     { id: "expenses",     label: "Expenses",     icon: Receipt },
     { id: "associated",   label: "Associated",   icon: UserPlus },
     { id: "reports",      label: "Reports",      icon: FileText },
@@ -361,8 +366,8 @@ export default function AdminPage() {
         {activeTab === "investments"  && isHeadAdmin && <InvestmentsTab showToast={showToast} isHeadAdmin={isHeadAdmin} members={members} config={config}/>}
         {activeTab === "admins"       && isHeadAdmin && <AdminsTab admins={admins} setAdmins={setAdmins} showToast={showToast} deadline={deadline} setDeadline={setDeadline}/>}
         {activeTab === "settings"     && isHeadAdmin && <SettingsTab config={config} setConfig={setConfig} showToast={showToast} deadline={deadline} phases={phases} setPhases={setPhases} isHeadAdmin={isHeadAdmin}/>}
-        {activeTab === "donations"     && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter}/>}
-        {activeTab === "contributions" && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} labelOverride="Contributions" tableName="contributions"/>}
+        {activeTab === "donations"     && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} tableName="donations" labelOverride={donationsTabLabel}/>}
+        {activeTab === "contributions" && <DonationsAdminTab isHeadAdmin={isHeadAdmin} myChapter={myAdminChapter} tableName="contributions" labelOverride={contributionsTabLabel}/>}
         {activeTab === "expenses"      && <ExpensesAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} config={config}/>}
         {activeTab === "associated"    && <AssociatedAdminTab isHeadAdmin={isHeadAdmin} showToast={showToast} adminEmail={user?.email ?? ''}/>}
         {activeTab === "reports"       && <ReportsAdminTab adminEmail={user?.email ?? ''} isHeadAdmin={isHeadAdmin} showToast={showToast} members={members}/>}
@@ -4423,18 +4428,27 @@ function DonationsAdminTab({ isHeadAdmin, myChapter, labelOverride, tableName }:
     })();
   }, []);
 
+  const tblName = tableName ?? 'donations';
   async function approve(d: any) {
-    await supabase.from('donations').update({ status:'approved' }).eq('id', d.id);
+    await supabase.from(tblName as any).update({ status:'approved' }).eq('id', d.id);
     setDonations(prev => prev.map(x => x.id===d.id ? {...x,status:'approved'} : x));
   }
   async function reject(d: any) {
-    await supabase.from('donations').update({ status:'rejected' }).eq('id', d.id);
+    await supabase.from(tblName as any).update({ status:'rejected' }).eq('id', d.id);
     setDonations(prev => prev.map(x => x.id===d.id ? {...x,status:'rejected'} : x));
   }
 
   const filtered = donations.filter(d => filter==='all' || d.status===filter);
   const totalBase = donations.filter(d=>d.status==='approved')
-    .reduce((s,d) => s + (d.converted_amount ?? d.amount ?? 0), 0);
+    .reduce((s,d) => {
+      // Use converted_amount if stored, else apply exchange rate
+      if (d.converted_amount && d.converted_amount > 0) return s + d.converted_amount;
+      if (d.original_currency && d.original_currency !== baseCurrency) {
+        // fallback multiply
+        return s + d.amount;
+      }
+      return s + (d.amount ?? 0);
+    }, 0);
 
   const STATUS_COLORS: Record<string,string> = {
     pending:  'bg-yellow-100 text-yellow-700 border-yellow-200',
