@@ -466,7 +466,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
         const membershipFees = (duesData ?? [])
           .filter((d: any) => d.status === 'approved' && d.period === 'Membership Registration Fee' &&
             (d.chapter === ch || !d.chapter || d.chapter === ''))
-          .reduce((s: number, d: any) => toBase(d.amount ?? 0, d.currency ?? base), 0);
+          .reduce((s: number, d: any) => s + toBase(d.amount ?? 0, d.currency ?? base), 0);
 
         const duesCollected = (duesData ?? [])
           .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.period !== 'Membership Registration Fee')
@@ -477,7 +477,7 @@ function OverviewTab({ votes, candidates, roster, admins, blacklist, isHeadAdmin
 
         const maintenanceFees = (duesData ?? [])
           .filter((d: any) => d.chapter === ch && d.status === 'approved' && d.period !== 'Membership Registration Fee')
-          .reduce((s: number, d: any) => toBase(d.maintenance_fee ?? 0, d.currency ?? base), 0);
+          .reduce((s: number, d: any) => s + toBase(d.maintenance_fee ?? 0, d.currency ?? base), 0);
 
         // Donations — use converted_amount if available, else convert on the fly
         const donations = (donationData ?? [])
@@ -4217,7 +4217,19 @@ function RBACAdminTab({ showToast }: { showToast: (m: string, ok?: boolean) => v
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 font-bold truncate">{a.email}</p>
-                  <p className="text-[10px] text-slate-300 font-bold">{ROLE_TABS[a.role??'admin']?.slice(0,60)}...</p>
+                  <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
+                    {({
+                      admin:               '📋 All tabs except Settings & RBAC',
+                      president:           '👑 Overview · Members · Candidates · Voters · Dues · Events · Expenses · Reports · Contributions · Applications',
+                      vp_admin:            '📁 Members · Applications · Dues · Events · Contributions · Voters · Roster · Expenses · Reports · Associated',
+                      vp_operations:       '⚙️ Overview · Events · Audit · Reports',
+                      financial_secretary: '💰 Overview · Dues · Expenses · Contributions · Investments · Reports',
+                      secretary_general:   '📝 Overview · Members · Events · Reports',
+                      parliamentarian:     '⚖️ Overview · Events · Audit · Reports',
+                      treasurer:           '🏦 Overview · Dues · Expenses · Contributions · Investments · Reports',
+                      chaplain:            '🙏 Overview · Events · Reports',
+                    } as Record<string,string>)[a.role??'admin'] ?? 'All standard tabs'}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <select value={a.role??'admin'} onChange={e=>updateRole(a.id,a.email,e.target.value)}
@@ -4405,6 +4417,7 @@ function DonationsAdminTab({ isHeadAdmin, myChapter, labelOverride, tableName }:
   const [donations, setDonations] = useState<any[]>([]);
   const [loading, setLoading]     = useState(true);
   const [baseCurrency, setBaseCurrency] = useState('LRD');
+  const [exchangeRates, setExchangeRates] = useState<Record<string,number>>({LRD:1, USD:184, EUR:200, GBP:230});
   const [label, setLabel]         = useState('Donations');
   const [filter, setFilter]       = useState<'all'|'pending'|'approved'|'rejected'>('all');
   const [expanded, setExpanded]   = useState<string|null>(null);
@@ -4412,11 +4425,12 @@ function DonationsAdminTab({ isHeadAdmin, myChapter, labelOverride, tableName }:
   useEffect(() => {
     (async () => {
       const { data: settings } = await supabase.from('election_settings').select('key,value')
-        .in('key',['base_currency','donations_label']);
+        .in('key',['base_currency','donations_label','exchange_rates']);
       if (settings) {
         const get = (k:string) => settings.find((r:any)=>r.key===k)?.value;
         if (get('base_currency')) setBaseCurrency(get('base_currency'));
         if (labelOverride) setLabel(labelOverride); else if (get('donations_label')) setLabel(get('donations_label'));
+        if (get('exchange_rates')) { try { setExchangeRates(JSON.parse(get('exchange_rates'))); } catch {} }
       }
       const tbl = tableName ?? 'donations';
       const q = isHeadAdmin
@@ -4439,16 +4453,19 @@ function DonationsAdminTab({ isHeadAdmin, myChapter, labelOverride, tableName }:
   }
 
   const filtered = donations.filter(d => filter==='all' || d.status===filter);
+  // Helper: convert to base currency
+  const toBase = (d: any) => {
+    if (d.converted_amount && d.converted_amount > 0) return d.converted_amount;
+    const cur = d.original_currency ?? d.currency ?? baseCurrency;
+    if (cur !== baseCurrency) {
+      const rate = exchangeRates[cur] ?? 1;
+      return (d.original_amount ?? d.amount ?? 0) * rate;
+    }
+    return d.amount ?? 0;
+  };
+
   const totalBase = donations.filter(d=>d.status==='approved')
-    .reduce((s,d) => {
-      // Use converted_amount if stored, else apply exchange rate
-      if (d.converted_amount && d.converted_amount > 0) return s + d.converted_amount;
-      if (d.original_currency && d.original_currency !== baseCurrency) {
-        // fallback multiply
-        return s + d.amount;
-      }
-      return s + (d.amount ?? 0);
-    }, 0);
+    .reduce((s,d) => s + toBase(d), 0);
 
   const STATUS_COLORS: Record<string,string> = {
     pending:  'bg-yellow-100 text-yellow-700 border-yellow-200',
@@ -4484,24 +4501,32 @@ function DonationsAdminTab({ isHeadAdmin, myChapter, labelOverride, tableName }:
         : <div className="space-y-3">
           {filtered.map(d => {
             const isOpen = expanded === d.id;
-            const showConv = d.original_currency && d.original_currency !== baseCurrency;
+            const showConv = (d.original_currency && d.original_currency !== baseCurrency)
+                 || (d.currency && d.currency !== baseCurrency && !d.original_currency);
             return (
               <div key={d.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100">
                 <button onClick={() => setExpanded(isOpen?null:d.id)}
                   className="w-full flex items-center gap-4 p-5 text-left hover:bg-slate-50 transition-all">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <p className="font-black text-slate-800">{d.member_name ?? d.donor_name ?? 'Anonymous'}</p>
+                      <p className="font-black text-slate-800">
+                      {d.member_name ?? d.donor_name ?? d.full_name ?? 'Unknown Member'}
+                    </p>
                       <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${STATUS_COLORS[d.status]??''}`}>{d.status}</span>
                     </div>
-                    <p className="text-xs text-slate-400 font-bold">{d.chapter} · {d.donation_type} · {new Date(d.created_at).toLocaleDateString()}</p>
+                    <p className="text-xs text-slate-400 font-bold">
+                      {d.chapter} · {d.payment_method ?? d.donation_type ?? 'N/A'} · {new Date(d.created_at).toLocaleDateString()}
+                    </p>
+                    {(d.reason || d.purpose || d.notes) && (
+                      <p className="text-xs text-slate-400 font-bold italic">{d.reason ?? d.purpose ?? d.notes}</p>
+                    )}
                     {d.reason && <p className="text-xs text-slate-400 font-bold italic">{d.reason}</p>}
                   </div>
                   <div className="text-right shrink-0">
                     {showConv ? (
                       <>
-                        <p className="font-black text-red-600 text-base">{(d.original_amount??d.amount).toLocaleString()} {d.original_currency}</p>
-                        <p className="text-xs text-slate-400 font-bold">= {(d.converted_amount??d.amount).toLocaleString()} {baseCurrency}</p>
+                        <p className="font-black text-blue-700 text-base">{(d.original_amount??d.amount).toLocaleString()} {d.original_currency}</p>
+                        <p className="text-xs text-slate-400 font-bold">= {Math.round(toBase(d)).toLocaleString()} {baseCurrency}</p>
                       </>
                     ) : (
                       <p className="font-black text-slate-800 text-base">{d.amount.toLocaleString()} {d.currency??baseCurrency}</p>

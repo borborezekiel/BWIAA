@@ -274,15 +274,18 @@ export default function ContributionsPage() {
                 {/* Conversion display */}
                 {currency !== baseCurrency && convertedAmount > 0 && (
                   <div className="sm:col-span-2 bg-green-50 border-2 border-green-200 rounded-2xl p-4">
-                    <p className="text-xs font-black text-green-700 uppercase tracking-widest mb-1">🔄 Currency Conversion</p>
+                    <p className="text-xs font-black text-green-700 uppercase tracking-widest mb-1">🔄 Currency Conversion — Rate Locked at Submission</p>
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className="font-black text-green-800 text-lg">{parseFloat(amount || '0').toLocaleString()} {currency}</span>
                       <span className="text-green-600 font-bold">×</span>
-                      <span className="font-bold text-green-700 text-sm">{exchangeRates[currency] ?? 1} (rate)</span>
+                      <span className="font-bold text-green-700 text-sm">{exchangeRates[currency] ?? 1}</span>
                       <span className="text-green-600 font-bold">=</span>
                       <span className="font-black text-green-900 text-xl">{convertedAmount.toLocaleString()} {baseCurrency}</span>
                     </div>
-                    <p className="text-[10px] text-green-600 font-bold mt-1">Both original and converted amounts are stored. Exchange rates are set by the administrator.</p>
+                    <p className="text-[10px] text-green-600 font-bold mt-1">
+                      Rate of 1 {currency} = {exchangeRates[currency] ?? 1} {baseCurrency} is locked at time of submission.
+                      Future rate changes will NOT affect this record.
+                    </p>
                   </div>
                 )}
 
