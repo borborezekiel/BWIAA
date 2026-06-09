@@ -3,11 +3,25 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
-  Heart, Upload, CheckCircle2, Loader2, AlertCircle,
+  Heart, Upload, Loader2, AlertCircle,
   X, ChevronDown, ChevronUp, Gift, DollarSign,
-  Package, BookOpen, Utensils, Wrench, Users
+  Package, BookOpen, Utensils, Wrench
 } from 'lucide-react';
 import Link from 'next/link';
+
+interface ElectionSetting {
+  key: string;
+  value: string | null;
+}
+
+interface MemberProfile {
+  id: string;
+  full_name: string;
+  chapter: string | null;
+  status: string;
+}
+
+type DetailRow = [label: string, value: string];
 
 interface Donation {
   id: string; donor_name: string; donor_type: string; donor_contact: string | null;
@@ -28,12 +42,6 @@ const DONATION_TYPES = [
 ];
 
 const DONOR_TYPES = ['individual','politician','business','organization','ngo','alumni','other'];
-
-const STATUS_CFG: Record<string,{label:string;color:string;bg:string}> = {
-  pending:  {label:'Pending',  color:'text-yellow-700', bg:'bg-yellow-50 border-yellow-200'},
-  approved: {label:'Approved', color:'text-green-700',  bg:'bg-green-50 border-green-200'},
-  rejected: {label:'Rejected', color:'text-red-700',    bg:'bg-red-50 border-red-200'},
-};
 
 export default function DonationsPage() {
   const [tab, setTab]           = useState<'donate'|'history'>('donate');
@@ -66,26 +74,40 @@ export default function DonationsPage() {
   const [photoPreview, setPhotoPreview]   = useState<string|null>(null);
 
   // Check if logged-in user is a member
-  const [myMember, setMyMember] = useState<any>(null);
+  const [myMember, setMyMember] = useState<MemberProfile | null>(null);
 
   useEffect(() => {
     (async () => {
       const { data: settings } = await supabase.from('election_settings').select('*');
       if (settings) {
-        const get = (k: string) => settings.find((r: any) => r.key === k)?.value;
-        if (get('org_name'))   setOrgName(get('org_name'));
-        if (get('currency'))   setCurrency(get('currency') ?? 'LRD');
-        if (get('chapters'))   { try { const c = JSON.parse(get('chapters')); setChapters(c); setChapter(c[0]); } catch {} }
+        const typedSettings = settings as ElectionSetting[];
+        const get = (k: string) => typedSettings.find(r => r.key === k)?.value;
+        const orgNameSetting = get('org_name');
+        const currencySetting = get('currency');
+        const chaptersSetting = get('chapters');
+
+        if (orgNameSetting)   setOrgName(orgNameSetting);
+        if (currencySetting)   setCurrency(currencySetting);
+        if (chaptersSetting)   {
+          try {
+            const parsedChapters: unknown = JSON.parse(chaptersSetting);
+            if (Array.isArray(parsedChapters) && parsedChapters.every(c => typeof c === 'string')) {
+              setChapters(parsedChapters);
+              setChapter(parsedChapters[0] ?? '');
+            }
+          } catch {}
+        }
       }
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.email) {
         const { data: mem } = await supabase.from('members').select('id,full_name,chapter,status')
           .eq('email', user.email.toLowerCase()).eq('status','approved').maybeSingle();
         if (mem) {
-          setMyMember(mem);
-          setDonorName(mem.full_name);
+          const member = mem as MemberProfile;
+          setMyMember(member);
+          setDonorName(member.full_name);
           setDonorType('alumni');
-          setChapter(mem.chapter);
+          setChapter(member.chapter ?? '');
         }
       }
       const { data } = await supabase.from('donations').select('*').order('created_at',{ascending:false}).limit(50);
@@ -154,7 +176,7 @@ export default function DonationsPage() {
       if (ie) throw new Error(ie.message);
       setDonations(prev => [data, ...prev]);
       setSubmitted(true);
-    } catch (e: any) { setError(e.message ?? 'Submission failed.'); }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Submission failed.'); }
     finally { setSubmitting(false); }
   }
 
@@ -174,8 +196,8 @@ export default function DonationsPage() {
           <div className="flex items-center gap-3">
             <div className="bg-red-600 p-2 rounded-xl"><Heart size={18} className="text-white"/></div>
             <div>
-              <h1 className="text-white font-black uppercase italic text-sm">{orgName} — Donations</h1>
-              <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Support the Association</p>
+              <h1 className="text-white font-black uppercase italic text-sm">{orgName} — Contributions</h1>
+              <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Contribute to the Association · Multi-Currency</p>
             </div>
           </div>
           <Link href="/" className="text-white/40 hover:text-white text-xs font-black uppercase tracking-widest">← Home</Link>
@@ -217,7 +239,7 @@ export default function DonationsPage() {
         ) : (
           <div className="bg-white rounded-[2.5rem] p-8 md:p-10 shadow-xl space-y-6">
             <div>
-              <h2 className="text-2xl font-black uppercase italic text-slate-900">Record a Donation</h2>
+              <h2 className="text-2xl font-black uppercase italic text-slate-900">Record a Contribution</h2>
               <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">
                 Open to members, politicians, businesses and all supporters
               </p>
@@ -387,22 +409,11 @@ export default function DonationsPage() {
             {donations.filter(d => d.status === 'approved').length === 0 ? (
               <div className="bg-white/5 rounded-3xl p-16 text-center">
                 <Gift size={48} className="mx-auto mb-4 text-white/20"/>
-                <p className="text-white/40 font-black uppercase tracking-widest text-sm">No approved donations yet</p>
+                <p className="text-white/40 font-black uppercase tracking-widest text-sm">No approved contributions yet</p>
               </div>
             ) : donations.filter(d => d.status === 'approved').map(d => {
               const isOpen = expanded === d.id;
               const dtCfg  = DONATION_TYPES.find(t => t.key === d.donation_type);
-              const details: ([string, React.ReactNode] | null)[] = [
-                ['Donor', d.donor_name],
-                ['Type', d.donor_type],
-                d.donor_organization ? ['Organization', d.donor_organization] : null,
-                d.donor_contact ? ['Contact', d.donor_contact] : null,
-                d.material_description ? ['Items', d.material_description] : null,
-                d.quantity ? ['Quantity', d.quantity] : null,
-                d.estimated_value ? ['Est. Value', `${d.estimated_value.toLocaleString()} LRD`] : null,
-                d.chapter ? ['Chapter', d.chapter] : ['Chapter', 'All Chapters'],
-                ['Date', new Date(d.created_at).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})],
-              ];
               return (
                 <div key={d.id} className="bg-white rounded-3xl overflow-hidden shadow-sm">
                   <button onClick={() => setExpanded(isOpen ? null : d.id)}
@@ -428,7 +439,17 @@ export default function DonationsPage() {
                   {isOpen && (
                     <div className="border-t border-slate-100 p-5 bg-slate-50 space-y-3">
                       <div className="grid grid-cols-2 gap-3 text-xs">
-                        {details.filter((item): item is [string, React.ReactNode] => Boolean(item)).map(([l,v]) => (
+                        {([
+                          ['Donor', d.donor_name],
+                          ['Type', d.donor_type],
+                          d.donor_organization ? ['Organization', d.donor_organization] : null,
+                          d.donor_contact ? ['Contact', d.donor_contact] : null,
+                          d.material_description ? ['Items', d.material_description] : null,
+                          d.quantity ? ['Quantity', d.quantity] : null,
+                          d.estimated_value ? ['Est. Value', `${d.estimated_value.toLocaleString()} LRD`] : null,
+                          d.chapter ? ['Chapter', d.chapter] : ['Chapter', 'All Chapters'],
+                          ['Date', new Date(d.created_at).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})],
+                        ] as Array<DetailRow | null>).filter((row): row is DetailRow => row !== null).map(([l,v]) => (
                           <div key={l} className="bg-white rounded-xl p-3 border border-slate-100">
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{l}</p>
                             <p className="font-black text-slate-800 mt-0.5">{v}</p>
@@ -439,7 +460,7 @@ export default function DonationsPage() {
                         <img src={d.photo_url} className="rounded-2xl max-h-48 border border-slate-200 cursor-pointer w-full object-cover"
                           alt="Donation photo" onClick={() => window.open(d.photo_url!,'_blank')}/>
                       )}
-                      {d.notes && <p className="text-sm text-slate-600 font-bold italic">"{d.notes}"</p>}
+                      {d.notes && <p className="text-sm text-slate-600 font-bold italic">&ldquo;{d.notes}&rdquo;</p>}
                     </div>
                   )}
                 </div>
@@ -450,5 +471,4 @@ export default function DonationsPage() {
       </div>
     </div>
   );
-
 }

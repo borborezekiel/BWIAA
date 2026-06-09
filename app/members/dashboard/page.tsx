@@ -981,7 +981,7 @@ export default function MemberDashboard() {
                 {href:'/expenses',      label:'Financials',     icon:<DollarSign size={20}/>,  color:'bg-emerald-600'},
                 {href:'/reports',       label:'Mtg Reports',    icon:<FileText size={20}/>,    color:'bg-purple-600'},
                 {href:'/dues',          label:'Pay Dues',       icon:<CreditCard size={20}/>,  color:'bg-green-600'},
-                {href:'/donations',     label:'Donations',      icon:<Plus size={20}/>,        color:'bg-red-600'},
+                {href:'/donations',     label:'Contributions',  icon:<Plus size={20}/>,        color:'bg-red-600'},
                 {href:'/contributions', label:'Solidarity',     icon:<Users size={20}/>,       color:'bg-blue-600'},
               ].map(({href,label,icon,color}) => (
                 <Link key={href} href={href} className={`flex flex-col items-center gap-3 ${card} border rounded-3xl p-5 hover:border-red-400 transition-all shadow-sm text-center`}>

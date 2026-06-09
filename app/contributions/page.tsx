@@ -181,7 +181,7 @@ export default function ContributionsPage() {
           <div className="flex items-center gap-3">
             <div className="bg-blue-600 p-2 rounded-xl"><Heart size={18} className="text-white" /></div>
             <div>
-              <h1 className="text-white font-black uppercase italic text-sm">{orgName} {label}</h1>
+              <h1 className="text-white font-black uppercase italic text-sm">BWIAA Solidarity</h1>
               <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Member-to-Member Support · Multi-Currency</p>
             </div>
           </div>
@@ -193,7 +193,7 @@ export default function ContributionsPage() {
         {/* Summary */}
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: `Total ${label} (${baseCurrency})`, value: totalApproved.toLocaleString(),  color: 'bg-blue-600' },
+            { label: `Total Solidarity (LRD)`, value: totalApproved.toLocaleString(),  color: 'bg-blue-600' },
             { label: 'Approved Records',                  value: contributions.filter(c=>c.status==='approved').length, color: 'bg-green-600' },
             { label: 'My Contributions',                  value: myContributions.length,          color: 'bg-slate-700' },
           ].map(s => (
@@ -207,8 +207,8 @@ export default function ContributionsPage() {
         {/* Tabs */}
         <div className="flex gap-2 bg-white p-1 rounded-2xl shadow-sm">
           {[
-            { id: 'view', label: `📋 All ${label}` },
-            ...(member ? [{ id: 'submit', label: `💙 Submit ${label}` }] : []),
+            { id: 'view', label: `📋 All Solidarity` },
+            ...(member ? [{ id: 'submit', label: `💙 Submit Solidarity` }] : []),
           ].map((t: any) => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`flex-1 py-3 rounded-xl font-black uppercase text-xs tracking-widest transition-all ${tab === t.id ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900'}`}>
@@ -222,7 +222,7 @@ export default function ContributionsPage() {
           submitted ? (
             <div className="bg-white rounded-[2rem] p-10 text-center shadow-sm">
               <CheckCircle2 size={48} className="text-green-600 mx-auto mb-4" />
-              <h2 className="text-2xl font-black uppercase italic text-slate-900 mb-2">Contribution Submitted!</h2>
+              <h2 className="text-2xl font-black uppercase italic text-slate-900 mb-2">Solidarity Submitted!</h2>
               <p className="text-slate-500 font-bold text-sm mb-2">Pending review by your chapter administrator.</p>
               {convertedAmount > 0 && currency !== baseCurrency && (
                 <p className="text-blue-600 font-black text-sm mb-6">
@@ -239,7 +239,7 @@ export default function ContributionsPage() {
           ) : (
             <div className="bg-white rounded-[2rem] p-8 shadow-sm space-y-6">
               <div>
-                <h2 className="text-2xl font-black uppercase italic text-slate-900">Submit a Contribution</h2>
+                <h2 className="text-2xl font-black uppercase italic text-slate-900">Submit Solidarity Payment</h2>
                 <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Pending admin approval before it appears in records</p>
               </div>
 
@@ -247,7 +247,7 @@ export default function ContributionsPage() {
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3">
                 <Info size={16} className="text-blue-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-black text-blue-800 uppercase tracking-widest mb-1">How Contributions Work</p>
+                  <p className="text-xs font-black text-blue-800 uppercase tracking-widest mb-1">How Solidarity Works</p>
                   <p className="text-xs text-blue-700 font-bold leading-relaxed">
                     Contributions are member-to-member solidarity payments. They are separate from organizational funds.
                     If you pay in USD or another currency, the system automatically converts to {baseCurrency} at the current exchange rate for record-keeping.
@@ -355,7 +355,7 @@ export default function ContributionsPage() {
 
               <button onClick={submit} disabled={submitting}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black uppercase py-5 rounded-2xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 text-sm">
-                {submitting ? <><Loader2 size={16} className="animate-spin" />Submitting...</> : <><CheckCircle2 size={16} />Submit Contribution</>}
+                {submitting ? <><Loader2 size={16} className="animate-spin" />Submitting...</> : <><CheckCircle2 size={16} />Submit Solidarity</>}
               </button>
             </div>
           )
